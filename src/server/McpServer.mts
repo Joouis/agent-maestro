@@ -180,14 +180,10 @@ export class McpServer {
     try {
       // Stop task manager and cleanup
       await this.taskManager.dispose();
-
       // Stop MCP server
-      if (this.server) {
-        await this.server.stop();
-      }
+      await this.server.stop();
 
       this.isRunning = false;
-      await this.server.stop();
       logger.info("MCP Server stopped");
     } catch (error) {
       logger.error("Failed to stop MCP server:", error);
