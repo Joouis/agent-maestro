@@ -201,7 +201,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(...disposables);
 
-  await vscode.commands.executeCommand("agent-maestro.startServer");
+  await vscode.commands.executeCommand("agent-maestro.startProxyServer");
   await vscode.commands.executeCommand("agent-maestro.startMcpServer");
 
   return controller;

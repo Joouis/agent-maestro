@@ -1,6 +1,7 @@
 import { logger } from "../utils/logger";
 import { ExtensionController } from "./controller";
 import { RooCodeAdapter, TaskEventHandlers } from "./RooCodeAdapter";
+import { v4 as uuidv4 } from "uuid";
 
 export interface TaskRun {
   task: string;
@@ -111,7 +112,7 @@ export class McpTaskManager {
     streamContent?: StreamContentCallback,
     timeout = 300000,
   ): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>(async (resolve, reject) => {
       let taskId = "";
 
       // Set up timeout
@@ -231,34 +232,35 @@ export class McpTaskManager {
         },
       };
 
-      // Start the RooCode task
-      this.rooAdapter
-        .startNewTask({
+      try {
+        const taskId = await this.rooAdapter.startNewTask({
           text: taskQuery,
           newTab: true,
           eventHandlers,
-        })
-        .catch((error) => {
-          clearTimeout(timeoutId);
-          logger.error(`Failed to start RooCode task: ${taskQuery}`, error);
-
-          // Create a temporary task entry for the error
-          const tempTaskId = `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          run[tempTaskId] = {
-            task: taskQuery,
-            status: "failed",
-            result: `Failed to start task: ${error.message}`,
-          };
-
-          if (streamContent) {
-            streamContent({
-              type: "text",
-              text: this.summarizeRun(run),
-            });
-          }
-
-          reject(error);
         });
+        run[taskId] = {
+          task: taskQuery,
+          status: "created",
+          result: "Task created, waiting to start...",
+        };
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        logger.error(`Failed to start RooCode task: ${taskQuery}`, error);
+
+        run[uuidv4()] = {
+          task: taskQuery,
+          status: "failed",
+          result: `Failed to start task: ${error.message}`,
+        };
+
+        if (streamContent) {
+          await streamContent({
+            type: "text",
+            text: this.summarizeRun(run),
+          });
+        }
+        reject(error);
+      }
     });
   }
 

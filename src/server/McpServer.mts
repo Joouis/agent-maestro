@@ -106,7 +106,9 @@ export class McpServer {
           streamingHint: true, // Enable streaming for real-time updates
           readOnlyHint: true,
         },
-        execute: async (args: any, { streamContent }: any) => {
+        // reportProgress: (progress: Progress) => Promise<void>;
+        // streamContent: (content: Content | Content[]) => Promise<void>;
+        execute: async (args: any, { reportProgress, streamContent }: any) => {
           const { tasks, maxConcurrency = 3 } = args;
           logger.info(
             `MCP Tool Execute_Roo_Tasks called with ${tasks.length} tasks, maxConcurrency: ${maxConcurrency}`,
@@ -126,8 +128,10 @@ export class McpServer {
 
             logger.info(`MCP Tool Execute_Roo_Tasks completed.`);
 
-            // Return final result as JSON string
-            return;
+            return {
+              type: "text",
+              text: JSON.stringify(taskResults),
+            };
           } catch (error) {
             logger.error("Error in Execute_Roo_Tasks tool:", error);
             throw error;
