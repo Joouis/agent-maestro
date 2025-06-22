@@ -15,11 +15,11 @@ const ExecuteRooTasksSchema = z.object({
   maxConcurrency: z
     .number()
     .min(1)
-    .max(10)
+    .max(20)
     .default(defaultMaxConcurrency)
     .optional()
     .describe(
-      `Maximum number of parallel tasks (1-10, default: ${defaultMaxConcurrency})`,
+      `Maximum number of parallel tasks (1-20, default: ${defaultMaxConcurrency})`,
     ),
 });
 
