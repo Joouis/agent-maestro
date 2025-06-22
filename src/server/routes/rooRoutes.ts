@@ -1,9 +1,13 @@
-import { isEqual } from "es-toolkit";
+import { ClineMessage } from "@roo-code/types";
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "../../utils/logger";
 import { ExtensionController, ExtensionType } from "../../core/controller";
 import { MessageRequest, ActionRequest } from "../types";
+import {
+  isMessageCompleted,
+  areCompletedMessagesEqual,
+} from "../utils/rooUtils";
 
 export enum SSEEventType {
   STREAM_CLOSED = "stream_closed",
@@ -18,11 +22,6 @@ export enum SSEEventType {
 
 const filteredSayTypes = ["api_req_started"];
 const CLOSE_SSE_STREAM_DELAY_MS = 1_000;
-
-// Helper function to check if message is complete (handles undefined partial)
-function isMessageCompleted(message: any): boolean {
-  return !message.partial;
-}
 
 // Helper function to set up SSE headers and return sendSSE function
 function setupSSEResponse(reply: FastifyReply, request: FastifyRequest) {
@@ -65,24 +64,17 @@ function createTaskEventHandlers(
   sendSSE: (eventType: string, data: any) => void,
   closeSSEStream: (message: string) => void,
 ) {
-  let lastMessage: any = null;
+  let lastMessage: ClineMessage | undefined;
 
   return {
-    onMessage: (handlerTaskId: string, message: any) => {
-      if (filteredSayTypes.includes(message.say)) {
+    onMessage: (handlerTaskId: string, message: ClineMessage) => {
+      if (filteredSayTypes.includes(message.say ?? "")) {
         return;
       }
 
-      // Check for duplicate messages when partial is false
-      if (
-        isMessageCompleted(message) &&
-        lastMessage &&
-        isMessageCompleted(lastMessage)
-      ) {
-        if (isEqual(message, lastMessage)) {
-          // Skip duplicate message
-          return;
-        }
+      if (areCompletedMessagesEqual(message, lastMessage)) {
+        // Skip duplicate message
+        return;
       }
 
       // Store current message for next comparison

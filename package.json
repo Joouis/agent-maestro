@@ -139,7 +139,8 @@
     "prepare": "husky",
     "changeset": "changeset",
     "changeset:version": "pnpm changeset version && node .changeset/changelog-polish.js",
-    "changeset:tag": "changeset tag"
+    "changeset:tag": "changeset tag",
+    "mcp-inspector": "npx @modelcontextprotocol/inspector"
   },
   "lint-staged": {
     "**/*": "prettier --write --ignore-unknown"

@@ -106,9 +106,7 @@ export class McpServer {
           streamingHint: true, // Enable streaming for real-time updates
           readOnlyHint: true,
         },
-        // reportProgress: (progress: Progress) => Promise<void>;
-        // streamContent: (content: Content | Content[]) => Promise<void>;
-        execute: async (args: any, { reportProgress, streamContent }: any) => {
+        execute: async (args, { streamContent }) => {
           const { tasks, maxConcurrency = 3 } = args;
           logger.info(
             `MCP Tool Execute_Roo_Tasks called with ${tasks.length} tasks, maxConcurrency: ${maxConcurrency}`,

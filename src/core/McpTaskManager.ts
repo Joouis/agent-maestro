@@ -1,7 +1,13 @@
+import { ClineMessage } from "@roo-code/types";
+import { Semaphore } from "es-toolkit";
 import { logger } from "../utils/logger";
 import { ExtensionController } from "./controller";
 import { RooCodeAdapter, TaskEventHandlers } from "./RooCodeAdapter";
 import { v4 as uuidv4 } from "uuid";
+import {
+  areCompletedMessagesEqual,
+  isMessageCompleted,
+} from "../server/utils/rooUtils";
 
 export interface TaskRun {
   task: string;
@@ -82,22 +88,20 @@ export class McpTaskManager {
 
     // Process tasks with concurrency control
     const semaphore = new Semaphore(maxConcurrency);
-    const taskPromises: Promise<void>[] = [];
 
-    for (const taskQuery of taskQueries) {
-      const taskPromise = semaphore.acquire().then(async (release) => {
-        try {
-          await this.executeTask(taskQuery, run, streamContent, timeout);
-        } finally {
-          release();
-        }
-      });
+    const executeTaskWithSemaphore = async (taskQuery: string) => {
+      await semaphore.acquire();
+      try {
+        await this.executeTask(taskQuery, run, streamContent, timeout);
+      } finally {
+        semaphore.release();
+      }
+    };
 
-      taskPromises.push(taskPromise);
-    }
-
-    // Wait for all tasks to complete
-    await Promise.allSettled(taskPromises);
+    // Execute all tasks concurrently with semaphore control
+    await Promise.allSettled(
+      taskQueries.map((taskQuery) => executeTaskWithSemaphore(taskQuery)),
+    );
 
     logger.info(`Completed execution of ${taskQueries.length} RooCode tasks`);
     return run;
@@ -112,89 +116,67 @@ export class McpTaskManager {
     streamContent?: StreamContentCallback,
     timeout = 300000,
   ): Promise<void> {
-    return new Promise<void>(async (resolve, reject) => {
-      let taskId = "";
+    let taskId = "";
+    let lastMessage: ClineMessage | undefined;
+    let timeoutId: NodeJS.Timeout;
 
+    const updateRunAndStream = async (id: string) => {
+      if (streamContent) {
+        await streamContent({
+          type: "text",
+          text: this.summarizeRun(run),
+        });
+      }
+    };
+
+    // Promise that resolves when task completes or fails
+    const taskCompletionPromise = new Promise<void>((resolve, reject) => {
       // Set up timeout
-      const timeoutId = setTimeout(() => {
-        if (taskId && run[taskId]) {
+      timeoutId = setTimeout(() => {
+        if (run[taskId]) {
           run[taskId].status = "failed";
           run[taskId].result = "Task timed out after 5 minutes";
-
-          if (streamContent) {
-            streamContent({
-              type: "text",
-              text: this.summarizeRun(run),
-            });
-          }
+          updateRunAndStream(taskId);
         }
         reject(new Error("Task timeout"));
       }, timeout);
 
       // Create event handlers for this task
       const eventHandlers: TaskEventHandlers = {
-        onTaskCreated: async (id: string) => {
-          taskId = id;
-          run[taskId] = {
-            task: taskQuery,
-            status: "created",
-            result: "Task created, waiting to start...",
-          };
-
-          if (streamContent) {
-            await streamContent({
-              type: "text",
-              text: this.summarizeRun(run),
-            });
-          }
-        },
-
-        onTaskStarted: async (id: string) => {
-          if (run[id]) {
-            run[id].status = "running";
-            run[id].result = "Task started...";
-
-            if (streamContent) {
-              await streamContent({
-                type: "text",
-                text: this.summarizeRun(run),
-              });
-            }
-          }
-        },
-
         onMessage: async (id: string, message: any) => {
-          if (run[id]) {
-            // FIXME: read the message data structure from ProxyServer and update handler here
-            run[id].result = JSON.stringify(message, null, 2);
-            if (streamContent) {
-              await streamContent({
-                type: "text",
-                text: this.summarizeRun(run),
-              });
+          if (!run[id]) {
+            return;
+          }
+
+          if (areCompletedMessagesEqual(message, lastMessage)) {
+            return; // Skip duplicate messages
+          }
+
+          if (isMessageCompleted(message)) {
+            lastMessage = message;
+          }
+
+          if (message.say === "text" || message.say === "completion_result") {
+            if (run[id].status === "created") {
+              run[id].status = "running";
             }
+            run[id].result = message.text;
+            await updateRunAndStream(id);
           }
         },
 
         onTaskCompleted: async (
           id: string,
-          tokenUsage: any,
-          toolUsage: any,
+          // tokenUsage: any,
+          // toolUsage: any,
         ) => {
           clearTimeout(timeoutId);
           if (run[id]) {
             run[id].status = "completed";
-            // Keep the last message content as the final result
             if (!run[id].result || run[id].result === "Task started...") {
               run[id].result = "Task completed successfully";
             }
-
-            if (streamContent) {
-              await streamContent({
-                type: "text",
-                text: this.summarizeRun(run),
-              });
-            }
+            await updateRunAndStream(id);
           }
           resolve();
         },
@@ -204,13 +186,7 @@ export class McpTaskManager {
           if (run[id]) {
             run[id].status = "cancelled";
             run[id].result = "Task was cancelled";
-
-            if (streamContent) {
-              await streamContent({
-                type: "text",
-                text: this.summarizeRun(run),
-              });
-            }
+            await updateRunAndStream(id);
           }
           resolve();
         },
@@ -220,48 +196,44 @@ export class McpTaskManager {
           if (run[id]) {
             run[id].status = "failed";
             run[id].result = `Tool ${tool} failed: ${error}`;
-
-            if (streamContent) {
-              await streamContent({
-                type: "text",
-                text: this.summarizeRun(run),
-              });
-            }
+            await updateRunAndStream(id);
           }
           resolve();
         },
       };
 
-      try {
-        const taskId = await this.rooAdapter.startNewTask({
+      // Start the task
+      this.rooAdapter
+        .startNewTask({
           text: taskQuery,
           newTab: true,
           eventHandlers,
+        })
+        .then((id) => {
+          taskId = id;
+          run[taskId] = {
+            task: taskQuery,
+            status: "created",
+            result: "Task created, waiting to start...",
+          };
+        })
+        .catch((error) => {
+          clearTimeout(timeoutId);
+          logger.error(`Failed to start RooCode task: ${taskQuery}`, error);
+
+          const fallbackId = uuidv4();
+          run[fallbackId] = {
+            task: taskQuery,
+            status: "failed",
+            result: `Failed to start task: ${error.message}`,
+          };
+
+          updateRunAndStream(fallbackId);
+          reject(error);
         });
-        run[taskId] = {
-          task: taskQuery,
-          status: "created",
-          result: "Task created, waiting to start...",
-        };
-      } catch (error: any) {
-        clearTimeout(timeoutId);
-        logger.error(`Failed to start RooCode task: ${taskQuery}`, error);
-
-        run[uuidv4()] = {
-          task: taskQuery,
-          status: "failed",
-          result: `Failed to start task: ${error.message}`,
-        };
-
-        if (streamContent) {
-          await streamContent({
-            type: "text",
-            text: this.summarizeRun(run),
-          });
-        }
-        reject(error);
-      }
     });
+
+    return taskCompletionPromise;
   }
 
   /**
@@ -316,41 +288,5 @@ export class McpTaskManager {
     logger.info("Disposing McpTaskManager");
     this.isInitialized = false;
     logger.info("McpTaskManager disposed");
-  }
-}
-
-/**
- * Simple semaphore for concurrency control
- */
-class Semaphore {
-  private permits: number;
-  private waitQueue: Array<() => void> = [];
-
-  constructor(permits: number) {
-    this.permits = permits;
-  }
-
-  async acquire(): Promise<() => void> {
-    return new Promise((resolve) => {
-      if (this.permits > 0) {
-        this.permits--;
-        resolve(() => this.release());
-      } else {
-        this.waitQueue.push(() => {
-          this.permits--;
-          resolve(() => this.release());
-        });
-      }
-    });
-  }
-
-  private release(): void {
-    this.permits++;
-    if (this.waitQueue.length > 0) {
-      const next = this.waitQueue.shift();
-      if (next) {
-        next();
-      }
-    }
   }
 }
