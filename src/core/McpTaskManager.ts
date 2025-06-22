@@ -60,7 +60,7 @@ export class McpTaskManager {
   async executeRooTasks(
     taskQueries: string[],
     options: ExecuteRooTasksOptions = {},
-  ): Promise<{ [taskId: string]: TaskRun }> {
+  ): Promise<string> {
     if (!this.isInitialized) {
       throw new Error("McpTaskManager is not initialized");
     }
@@ -104,7 +104,8 @@ export class McpTaskManager {
     );
 
     logger.info(`Completed execution of ${taskQueries.length} RooCode tasks`);
-    return run;
+    // return run;
+    return this.summarizeRun(run);
   }
 
   /**
@@ -162,6 +163,14 @@ export class McpTaskManager {
             }
             run[id].result = message.text;
             await updateRunAndStream(id);
+
+            if (
+              message.say === "completion_result" &&
+              isMessageCompleted(message)
+            ) {
+              run[id].status = "completed";
+              resolve();
+            }
           }
         },
 
@@ -173,9 +182,6 @@ export class McpTaskManager {
           clearTimeout(timeoutId);
           if (run[id]) {
             run[id].status = "completed";
-            if (!run[id].result || run[id].result === "Task started...") {
-              run[id].result = "Task completed successfully";
-            }
             await updateRunAndStream(id);
           }
           resolve();
@@ -205,7 +211,7 @@ export class McpTaskManager {
       // Start the task
       this.rooAdapter
         .startNewTask({
-          text: taskQuery,
+          text: `${taskQuery}\n\nThis is an automation task, do not ask any follow-up question.`,
           newTab: true,
           eventHandlers,
         })

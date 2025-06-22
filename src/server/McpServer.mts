@@ -6,6 +6,7 @@ import { ExtensionController } from "../core/controller.js";
 import { McpTaskManager } from "../core/McpTaskManager.js";
 
 // Input schema for the Execute_Roo_Tasks tool
+const defaultMaxConcurrency = 5;
 const ExecuteRooTasksSchema = z.object({
   tasks: z
     .array(z.string())
@@ -15,9 +16,11 @@ const ExecuteRooTasksSchema = z.object({
     .number()
     .min(1)
     .max(10)
-    .default(3)
+    .default(defaultMaxConcurrency)
     .optional()
-    .describe("Maximum number of parallel tasks (1-10, default: 3)"),
+    .describe(
+      `Maximum number of parallel tasks (1-10, default: ${defaultMaxConcurrency})`,
+    ),
 });
 
 export interface McpServerConfig {
@@ -107,7 +110,7 @@ export class McpServer {
           readOnlyHint: true,
         },
         execute: async (args, { streamContent }) => {
-          const { tasks, maxConcurrency = 3 } = args;
+          const { tasks, maxConcurrency = defaultMaxConcurrency } = args;
           logger.info(
             `MCP Tool Execute_Roo_Tasks called with ${tasks.length} tasks, maxConcurrency: ${maxConcurrency}`,
           );
