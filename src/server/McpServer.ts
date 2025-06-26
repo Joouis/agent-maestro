@@ -1,3 +1,4 @@
+// @ts-ignore
 import { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { logger } from "../utils/logger.js";

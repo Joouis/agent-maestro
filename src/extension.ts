@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { logger } from "./utils/logger.js";
 import { ExtensionController } from "./core/controller.js";
 import { ProxyServer } from "./server/ProxyServer.js";
-import { McpServer } from "./server/McpServer.mjs";
+import { McpServer } from "./server/McpServer.js";
 
 let controller: ExtensionController;
 let proxy: ProxyServer;
@@ -27,11 +27,11 @@ export async function activate(context: vscode.ExtensionContext) {
     );
   }
 
-  proxy = new ProxyServer(controller, isDevMode ? 33333 : undefined);
   mcpServer = new McpServer({
     controller,
     port: isDevMode ? 33334 : undefined,
   });
+  proxy = new ProxyServer(controller, isDevMode ? 33333 : undefined, mcpServer);
 
   // Register commands
   const disposables = [

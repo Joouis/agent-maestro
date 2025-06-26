@@ -7,16 +7,24 @@ import { ExtensionController } from "../core/controller";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
+import { registerInfoRoutes } from "./routes/infoRoutes";
+import type { McpServer } from "./McpServer";
 
 export class ProxyServer {
   private fastify: FastifyInstance;
   private controller: ExtensionController;
+  private mcpServer?: McpServer;
   private isRunning = false;
   private port: number;
 
-  constructor(controller: ExtensionController, port = 23333) {
+  constructor(
+    controller: ExtensionController,
+    port = 23333,
+    mcpServer?: McpServer,
+  ) {
     this.controller = controller;
     this.port = port;
+    this.mcpServer = mcpServer;
     this.fastify = Fastify({
       logger: false, // Use our custom logger instead
     });
@@ -58,6 +66,10 @@ export class ProxyServer {
           {
             name: "FileSystem",
             description: "File system operations",
+          },
+          {
+            name: "System",
+            description: "System information and status",
           },
           {
             name: "Documentation",
@@ -162,6 +174,11 @@ export class ProxyServer {
         await registerClineRoutes(fastify, this.controller);
         await registerRooRoutes(fastify, this.controller);
         await registerFsRoutes(fastify);
+
+        // Register info routes only if MCP server is available
+        if (this.mcpServer) {
+          await registerInfoRoutes(fastify, this.controller, this.mcpServer);
+        }
 
         // GET /api/v1/openapi.json - OpenAPI specification
         fastify.get(
