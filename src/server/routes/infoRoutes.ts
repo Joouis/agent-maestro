@@ -1,10 +1,8 @@
 import { FastifyInstance } from "fastify";
-import * as vscode from "vscode";
-import * as os from "os";
 import { logger } from "../../utils/logger";
 import { ExtensionController } from "../../core/controller";
-import packageJson from "../../../package.json";
 import type { McpServer } from "../../server/McpServer";
+import { getSystemInfo } from "../../utils/systemInfo";
 
 export async function registerInfoRoutes(
   fastify: FastifyInstance,
@@ -110,76 +108,8 @@ export async function registerInfoRoutes(
     },
     async (_request, reply) => {
       try {
-        // Get extension name and version from package.json
-        const name = packageJson.displayName || packageJson.name;
-        const version = packageJson.version;
-
-        // Get extension status from controller
-        const extensionStatus = controller.getExtensionStatus();
-
-        // Get VSCode version
-        const vscodeVersion = vscode.version;
-
-        // Get OS information in the format: "Platform Architecture Release"
-        // Convert platform names to match expected format
-        const platform = os.platform();
-        let platformName: string = platform;
-        if (platform === "darwin") {
-          platformName = "Darwin";
-        } else if (platform === "win32") {
-          platformName = "Windows";
-        } else if (platform === "linux") {
-          platformName = "Linux";
-        }
-
-        const arch = os.arch();
-        const release = os.release();
-        const osInfo = `${platformName} ${arch} ${release}`;
-
-        // Get workspace root path
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        const workspace = workspaceFolder?.uri.fsPath || "No workspace";
-
-        // Get MCP server status
-        const mcpStatus = mcpServer.getStatus();
-
-        // Build response with the exact structure required
-        const response = {
-          name,
-          version,
-          extensions: {
-            cline: {
-              isInstalled: extensionStatus.cline.isInstalled,
-              isActive: extensionStatus.cline.isActive,
-              version: extensionStatus.cline.version || "Unknown",
-            },
-            roo: {
-              isInstalled: extensionStatus.roo.isInstalled,
-              isActive: extensionStatus.roo.isActive,
-              version: extensionStatus.roo.version || "Unknown",
-            },
-          },
-          vscodeVersion,
-          os: osInfo,
-          workspace,
-          mcpServer: {
-            isRunning: mcpStatus.isRunning,
-            port: mcpStatus.port,
-            url: mcpStatus.url,
-          },
-          timestamp: new Date().toISOString(),
-        };
-
-        logger.info("System info request completed", {
-          vscodeVersion,
-          workspace:
-            workspace.length > 50
-              ? workspace.substring(0, 50) + "..."
-              : workspace,
-          mcpRunning: mcpStatus.isRunning,
-        });
-
-        return reply.send(response);
+        const systemInfo = getSystemInfo(controller, mcpServer);
+        return reply.send(systemInfo);
       } catch (error) {
         logger.error("Error retrieving system information:", error);
         return reply.status(500).send({
