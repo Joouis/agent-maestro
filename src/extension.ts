@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
-import { logger } from "./utils/logger.js";
-import { ExtensionController } from "./core/controller.js";
-import { ProxyServer } from "./server/ProxyServer.js";
-import { McpServer } from "./server/McpServer.js";
+import { logger } from "./utils/logger";
+import { ExtensionController } from "./core/controller";
+import { ProxyServer } from "./server/ProxyServer";
+import { McpServer } from "./server/McpServer";
 
 let controller: ExtensionController;
 let proxy: ProxyServer;

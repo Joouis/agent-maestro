@@ -1,10 +1,10 @@
 // @ts-ignore
 import { FastMCP } from "fastmcp";
 import { z } from "zod";
-import { logger } from "../utils/logger.js";
-import { analyzePortUsage, findAvailablePort } from "../utils/portUtils.js";
-import { ExtensionController } from "../core/controller.js";
-import { McpTaskManager } from "../core/McpTaskManager.js";
+import { logger } from "../utils/logger";
+import { analyzePortUsage, findAvailablePort } from "../utils/portUtils";
+import { ExtensionController } from "../core/controller";
+import { McpTaskManager } from "../core/McpTaskManager";
 
 // Input schema for the Execute_Roo_Tasks tool
 const defaultMaxConcurrency = 5;
