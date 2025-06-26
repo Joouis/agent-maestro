@@ -1,4 +1,4 @@
-// @ts-ignore
+// @ts-expect-error "TS1479: The current file is a CommonJS module"
 import { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { logger } from "../utils/logger";
