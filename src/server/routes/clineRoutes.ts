@@ -1,5 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { v4 as uuidv4 } from "uuid";
+import { FastifyInstance } from "fastify";
 import { logger } from "../../utils/logger";
 import { ExtensionController, ExtensionType } from "../../core/controller";
 import { MessageRequest } from "../types";
@@ -43,13 +42,13 @@ export async function registerClineRoutes(
           });
         }
 
-        if (!controller.isExtensionAvailable(ExtensionType.CLINE)) {
+        if (!controller.clineAdapter.isActive) {
           return reply.status(500).send({
             message: "Cline extension is not available",
           });
         }
 
-        await controller.startNewTask({ text, images }, ExtensionType.CLINE);
+        await controller.clineAdapter.startNewTask({ task: text, images });
 
         const response = {
           id: "Cline does not support returning task ID",

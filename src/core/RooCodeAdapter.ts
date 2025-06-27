@@ -48,23 +48,18 @@ export interface SendMessageOptions {
  */
 export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
   private activeTaskHandlers: Map<string, TaskEventHandlers> = new Map();
+  private extensionId: string;
 
-  constructor() {
+  constructor(extensionId: string) {
     super();
+    this.extensionId = extensionId;
   }
 
   /**
    * Get the extension ID to discover
    */
   protected getExtensionId(): string {
-    return "rooveterinaryinc.roo-cline";
-  }
-
-  /**
-   * Get the display name for logging
-   */
-  protected getDisplayName(): string {
-    return "RooCodeAdapter";
+    return this.extensionId;
   }
 
   /**

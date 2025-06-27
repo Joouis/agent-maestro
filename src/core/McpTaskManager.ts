@@ -1,7 +1,6 @@
 import { ClineMessage } from "@roo-code/types";
 import { Semaphore } from "es-toolkit";
 import { logger } from "../utils/logger";
-import { ExtensionController } from "./controller";
 import { RooCodeAdapter, TaskEventHandlers } from "./RooCodeAdapter";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -32,8 +31,8 @@ export class McpTaskManager {
   private rooAdapter: RooCodeAdapter;
   private isInitialized = false;
 
-  constructor(controller: ExtensionController) {
-    this.rooAdapter = controller.rooCodeAdapter;
+  constructor(rooAdapter: RooCodeAdapter) {
+    this.rooAdapter = rooAdapter;
   }
 
   /**

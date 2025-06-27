@@ -1,13 +1,11 @@
 import { FastifyInstance } from "fastify";
 import { logger } from "../../utils/logger";
 import { ExtensionController } from "../../core/controller";
-import type { McpServer } from "../../server/McpServer";
 import { getSystemInfo } from "../../utils/systemInfo";
 
 export async function registerInfoRoutes(
   fastify: FastifyInstance,
   controller: ExtensionController,
-  mcpServer: McpServer,
 ) {
   // GET /api/v1/info - Get system and extension information
   fastify.get(
@@ -108,7 +106,7 @@ export async function registerInfoRoutes(
     },
     async (_request, reply) => {
       try {
-        const systemInfo = getSystemInfo(controller, mcpServer);
+        const systemInfo = getSystemInfo(controller);
         return reply.send(systemInfo);
       } catch (error) {
         logger.error("Error retrieving system information:", error);

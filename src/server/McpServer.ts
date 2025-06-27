@@ -35,6 +35,7 @@ export class McpServer {
   private port: number;
   private server: FastMCP;
   private isRunning = false;
+  private errorMessage?: string;
 
   constructor(config: McpServerConfig) {
     this.controller = config.controller;
@@ -46,7 +47,14 @@ export class McpServer {
         message: "Agent Maestro MCP Server is running",
       },
     });
-    this.taskManager = new McpTaskManager(this.controller);
+
+    const rooAdapter = this.controller.getRooAdapter();
+    if (!rooAdapter) {
+      throw new Error(
+        "MCP Server will not start because RooCode adapter is not available",
+      );
+    }
+    this.taskManager = new McpTaskManager(rooAdapter);
   }
 
   /**

@@ -1,10 +1,9 @@
 import { EventEmitter } from "events";
-import { v4 as uuidv4 } from "uuid";
+import * as vscode from "vscode";
 import { logger } from "../utils/logger";
 import { ClineAdapter } from "./ClineAdapter";
 import { RooCodeAdapter } from "./RooCodeAdapter";
-import { ExtensionBaseAdapter } from "./ExtensionBaseAdapter";
-import { RooCodeMessageOptions, RooCodeTaskOptions } from "./RooCodeAdapter";
+import { AgentMaestroConfiguration, readConfiguration } from "../utils/config";
 
 export interface ExtensionStatus {
   isInstalled: boolean;
@@ -23,18 +22,60 @@ export enum ExtensionType {
  */
 export class ExtensionController extends EventEmitter {
   public readonly clineAdapter: ClineAdapter;
-  public readonly rooCodeAdapter: RooCodeAdapter;
-  private adapters: Record<ExtensionType, ExtensionBaseAdapter>;
+  public readonly rooAdapterMap: Map<string, RooCodeAdapter> = new Map();
+  private currentConfig: AgentMaestroConfiguration = readConfiguration();
   public isInitialized = false;
 
   constructor() {
     super();
     this.clineAdapter = new ClineAdapter();
-    this.rooCodeAdapter = new RooCodeAdapter();
-    this.adapters = {
-      [ExtensionType.CLINE]: this.clineAdapter,
-      [ExtensionType.ROO_CODE]: this.rooCodeAdapter,
-    };
+
+    // Initialize RooCode adapters with current configuration
+    this.initializeRooAdapters(this.currentConfig);
+  }
+
+  /**
+   * Initialize RooCode adapters for default and variant identifiers
+   */
+  private initializeRooAdapters(config: AgentMaestroConfiguration): void {
+    // Check and create adapter for default RooCode extension
+    if (this.isExtensionInstalled(config.defaultRooIdentifier)) {
+      const defaultAdapter = new RooCodeAdapter(config.defaultRooIdentifier);
+      this.rooAdapterMap.set(config.defaultRooIdentifier, defaultAdapter);
+      logger.info(`Added RooCode adapter for: ${config.defaultRooIdentifier}`);
+    } else {
+      logger.warn(`Extension not found: ${config.defaultRooIdentifier}`);
+    }
+
+    // Check and create adapters for each variant identifier
+    for (const identifier of config.rooVariantIdentifiers) {
+      if (
+        identifier !== config.defaultRooIdentifier &&
+        this.isExtensionInstalled(identifier)
+      ) {
+        const adapter = new RooCodeAdapter(identifier);
+        this.rooAdapterMap.set(identifier, adapter);
+        logger.info(`Added RooCode adapter for: ${identifier}`);
+      } else if (identifier !== config.defaultRooIdentifier) {
+        logger.warn(`Extension not found: ${identifier}`);
+      }
+    }
+  }
+
+  /**
+   * Check if extension is installed
+   */
+  private isExtensionInstalled(extensionId: string): boolean {
+    return !!vscode.extensions.getExtension(extensionId);
+  }
+
+  /**
+   * Get RooCode adapter for specific extension ID
+   */
+  getRooAdapter(extensionId?: string): RooCodeAdapter | undefined {
+    return this.rooAdapterMap.get(
+      extensionId || this.currentConfig.defaultRooIdentifier,
+    );
   }
 
   /**
@@ -46,11 +87,22 @@ export class ExtensionController extends EventEmitter {
       return;
     }
 
-    for (const a in this.adapters) {
-      await this.adapters[a as ExtensionType].initialize();
+    // Initialize ClineAdapter
+    await this.clineAdapter.initialize();
+
+    // Initialize all RooCode adapters
+    for (const adapter of this.rooAdapterMap.values()) {
+      await adapter.initialize();
     }
 
-    if (Object.values(this.adapters).every((adapter) => !adapter.isActive)) {
+    // Check if at least one adapter is active
+    const hasActiveAdapter =
+      this.clineAdapter.isActive ||
+      Array.from(this.rooAdapterMap.values()).some(
+        (adapter) => adapter.isActive,
+      );
+
+    if (!hasActiveAdapter) {
       throw new Error(
         "No active extension found. This may be due to missing installations or activation issues.",
       );
@@ -61,126 +113,31 @@ export class ExtensionController extends EventEmitter {
   }
 
   /**
-   * Get status of both extensions
+   * Get status of extensions
    */
-  getExtensionStatus(): Record<ExtensionType, ExtensionStatus> {
-    const status: Record<ExtensionType, ExtensionStatus> = {} as Record<
-      ExtensionType,
+  getExtensionStatus(): Record<string, ExtensionStatus> {
+    const status: Record<string, ExtensionStatus> = {} as Record<
+      string,
       ExtensionStatus
     >;
-    for (const t in this.adapters) {
-      const type = t as ExtensionType;
-      const adapter = this.adapters[type];
-      status[type] = {
-        isInstalled: adapter.isActive,
-        isActive: adapter.isActive,
-        version: adapter.getVersion ? adapter.getVersion() : undefined,
+
+    // Cline status
+    status[ExtensionType.CLINE] = {
+      isInstalled: this.clineAdapter.isInstalled(),
+      isActive: this.clineAdapter.isActive,
+      version: this.clineAdapter.getVersion(),
+    };
+
+    // Roo variants status
+    for (const [extensionId, adapter] of this.rooAdapterMap) {
+      status[extensionId] = {
+        isInstalled: adapter?.isInstalled() ?? false,
+        isActive: adapter?.isActive ?? false,
+        version: adapter?.getVersion(),
       };
     }
+
     return status;
-  }
-
-  /**
-   * Unified API: Start a new task
-   * @param options Task options
-   * @param extensionType Which extension to use (defaults to "roo")
-   */
-  async startNewTask(
-    options: RooCodeTaskOptions,
-    extensionType = ExtensionType.ROO_CODE,
-  ): Promise<string> {
-    logger.info(`Starting new task with ${extensionType}`);
-
-    switch (extensionType) {
-      case ExtensionType.CLINE:
-        await this.clineAdapter.startNewTask({
-          task: options.text,
-          images: options.images,
-        });
-        return uuidv4(); // Cline does not return a task ID, so we generate a UUID
-      case ExtensionType.ROO_CODE:
-        return await this.rooCodeAdapter.startNewTask({
-          configuration: options.configuration,
-          text: options.text,
-          images: options.images,
-          newTab: options.newTab,
-          eventHandlers: options.eventHandlers,
-        });
-      default:
-        throw new Error(`Unsupported extension type: ${extensionType}`);
-    }
-  }
-
-  /**
-   * Unified API: Send message to current task
-   * @param message Message to send
-   * @param images Optional images
-   * @param extensionType Which extension to use (defaults to "roo")
-   */
-  async sendMessage(
-    data: RooCodeMessageOptions,
-    extensionType = ExtensionType.ROO_CODE,
-  ): Promise<void> {
-    logger.info(`Sending message with ${extensionType}`);
-
-    switch (extensionType) {
-      case ExtensionType.CLINE:
-        return this.clineAdapter.sendMessage(data.text, data.images);
-      case ExtensionType.ROO_CODE:
-        return await this.rooCodeAdapter.sendMessage(data.text, data.images, {
-          taskId: data.taskId ?? "",
-          eventHandlers: data.eventHandlers,
-        });
-      default:
-        throw new Error(`Unsupported extension type: ${extensionType}`);
-    }
-  }
-
-  /**
-   * Unified API: Press primary button
-   * @param extensionType Which extension to use (defaults to "roo")
-   */
-  async pressPrimaryButton(
-    extensionType = ExtensionType.ROO_CODE,
-  ): Promise<void> {
-    logger.info(`Pressing primary button with ${extensionType}`);
-    await this.adapters[extensionType].pressPrimaryButton();
-  }
-
-  /**
-   * Unified API: Press secondary button
-   * @param extensionType Which extension to use (defaults to "roo")
-   */
-  async pressSecondaryButton(
-    extensionType = ExtensionType.ROO_CODE,
-  ): Promise<void> {
-    logger.info(`Pressing secondary button with ${extensionType}`);
-    await this.adapters[extensionType].pressSecondaryButton();
-  }
-
-  /**
-   * Cline-specific: Get/Set custom instructions
-   */
-  async getCustomInstructions(): Promise<string | undefined> {
-    return await this.clineAdapter.getCustomInstructions();
-  }
-
-  async setCustomInstructions(value: string): Promise<void> {
-    await this.clineAdapter.setCustomInstructions(value);
-  }
-
-  /**
-   * Get active task IDs that have event handlers (delegates to RooCodeAdapter)
-   */
-  getActiveTaskIds(): string[] {
-    return this.rooCodeAdapter.getActiveTaskIds();
-  }
-
-  /**
-   * Check if specific extension is available
-   */
-  isExtensionAvailable(extensionType: ExtensionType): boolean {
-    return this.adapters[extensionType].isActive;
   }
 
   /**
@@ -191,6 +148,11 @@ export class ExtensionController extends EventEmitter {
     this.isInitialized = false;
 
     await this.clineAdapter.dispose();
-    await this.rooCodeAdapter.dispose();
+
+    // Dispose all RooCode adapters
+    for (const adapter of this.rooAdapterMap.values()) {
+      await adapter.dispose();
+    }
+    this.rooAdapterMap.clear();
   }
 }

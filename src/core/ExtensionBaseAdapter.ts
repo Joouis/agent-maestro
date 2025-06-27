@@ -20,7 +20,9 @@ export abstract class ExtensionBaseAdapter<TApi = any> {
   /**
    * Get the display name for logging
    */
-  protected abstract getDisplayName(): string;
+  protected getDisplayName(): string {
+    return `"${this.getExtensionId()}" Adapter`;
+  }
 
   /**
    * Perform any pre-activation setup

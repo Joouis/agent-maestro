@@ -55,13 +55,13 @@
           "default": [
             "kilocode.kilo-code"
           ],
-          "description": "List of extension identifiers that are considered Roo variants",
+          "description": "List of extension identifiers that are considered Roo variants (need restart to take effect)",
           "scope": "application"
         },
         "agent-maestro.defaultRooExtensionIdentifier": {
           "type": "string",
           "default": "rooveterinaryinc.roo-cline",
-          "description": "Default Roo extension identifier to use when multiple variants are available",
+          "description": "Default Roo extension identifier to use when multiple variants are available (need restart to take effect)",
           "scope": "application"
         }
       }
@@ -145,14 +145,14 @@
     "typescript": "^5.8.3"
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run package",
+    "vscode:prepublish": "pnpm run build:prod",
     "vscode:package": "vsce package --no-dependencies",
     "vscode:publish": "vsce publish --no-dependencies",
-    "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
+    "build": "pnpm run check-types && pnpm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "rimraf dist && pnpm run check-types && pnpm run lint && node esbuild.js --production",
+    "build:prod": "rimraf dist && pnpm run check-types && pnpm run lint && node esbuild.js --production",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",

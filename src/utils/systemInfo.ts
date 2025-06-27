@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import * as os from "os";
 import { ExtensionController } from "../core/controller";
-import type { McpServer } from "../server/McpServer";
 import packageJson from "../../package.json";
 
 export interface SystemInfo {
@@ -22,11 +21,6 @@ export interface SystemInfo {
   vscodeVersion: string;
   os: string;
   workspace: string;
-  mcpServer: {
-    isRunning: boolean;
-    port: number;
-    url: string;
-  };
   timestamp: string;
 }
 
@@ -34,10 +28,7 @@ export interface SystemInfo {
  * Gather comprehensive system information including extension status,
  * VSCode version, OS details, workspace, and MCP server status
  */
-export function getSystemInfo(
-  controller: ExtensionController,
-  mcpServer: McpServer,
-): SystemInfo {
+export function getSystemInfo(controller: ExtensionController): SystemInfo {
   // Get extension name and version from package.json
   const name = packageJson.displayName || packageJson.name;
   const version = packageJson.version;
@@ -68,9 +59,6 @@ export function getSystemInfo(
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   const workspace = workspaceFolder?.uri.fsPath || "";
 
-  // Get MCP server status
-  const mcpStatus = mcpServer.getStatus();
-
   // Build response with the exact structure required
   return {
     name,
@@ -90,11 +78,6 @@ export function getSystemInfo(
     vscodeVersion,
     os: osInfo,
     workspace,
-    mcpServer: {
-      isRunning: mcpStatus.isRunning,
-      port: mcpStatus.port,
-      url: mcpStatus.url,
-    },
     timestamp: new Date().toISOString(),
   };
 }

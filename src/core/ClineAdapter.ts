@@ -8,7 +8,7 @@ import { logger } from "../utils/logger";
 import { ClineAPI } from "../types/cline";
 import { ExtensionBaseAdapter } from "./ExtensionBaseAdapter";
 
-const ClineTestHost = "http://localhost:9876";
+// const ClineTestHost = "http://localhost:9876";
 
 export interface ClineTaskOptions {
   task?: string;

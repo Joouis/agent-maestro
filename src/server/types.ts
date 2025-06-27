@@ -5,6 +5,7 @@ export interface MessageRequest {
   images?: string[];
   configuration?: RooCodeSettings;
   newTab?: boolean;
+  extensionId?: string; // Optional: specify Roo variant extension like Kilo Code
 }
 
 export interface ActionRequest {
