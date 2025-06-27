@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { logger } from "../../utils/logger";
-import { ExtensionController, ExtensionType } from "../../core/controller";
+import { ExtensionController } from "../../core/controller";
 import { MessageRequest } from "../types";
 
 export async function registerClineRoutes(

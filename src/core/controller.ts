@@ -11,11 +11,6 @@ export interface ExtensionStatus {
   version?: string;
 }
 
-export enum ExtensionType {
-  CLINE = "cline",
-  ROO_CODE = "roo",
-}
-
 /**
  * Core controller to manage Cline and RooCode extensions
  * Provides unified API access and can be used by both VSCode extension and local server
@@ -122,7 +117,7 @@ export class ExtensionController extends EventEmitter {
     >;
 
     // Cline status
-    status[ExtensionType.CLINE] = {
+    status["cline"] = {
       isInstalled: this.clineAdapter.isInstalled(),
       isActive: this.clineAdapter.isActive,
       version: this.clineAdapter.getVersion(),

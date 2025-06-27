@@ -2,7 +2,7 @@ import { ClineMessage } from "@roo-code/types";
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "../../utils/logger";
-import { ExtensionController, ExtensionType } from "../../core/controller";
+import { ExtensionController } from "../../core/controller";
 import { MessageRequest, ActionRequest } from "../types";
 import {
   isMessageCompleted,
