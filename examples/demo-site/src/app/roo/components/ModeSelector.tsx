@@ -38,7 +38,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         disabled={disabled}
-        className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="flex items-center gap-2 px-3 py-2 text-sm text-black bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         title={selectedModeData?.whenToUse}
       >
         <span>{selectedModeData?.name || selectedMode}</span>

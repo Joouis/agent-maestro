@@ -91,6 +91,11 @@ export class ProxyServer {
           items: { type: "string" },
           description: "Optional array of base64-encoded images",
         },
+        extensionId: {
+          type: "string",
+          description:
+            "Optional, assign task to a specific Roo variant extension like Kilo Code, by default is RooCode extension",
+        },
       },
     });
     this.fastify.addSchema({

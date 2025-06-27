@@ -112,6 +112,7 @@ export const useChat = () => {
         const response = await apiClient.sendMessage(
           message,
           chatState.selectedMode,
+          chatState.selectedExtension,
           chatState.currentTaskId || undefined,
         );
 
@@ -157,6 +158,7 @@ export const useChat = () => {
     statusMessage: statusManager.statusMessage,
     showStatus: statusManager.showStatus,
     selectedMode: chatState.selectedMode,
+    selectedExtension: chatState.selectedExtension,
 
     // Refs
     textareaRef,
@@ -167,5 +169,6 @@ export const useChat = () => {
     sendMessage,
     setInputValue: chatState.setInputValue,
     setSelectedMode: chatState.setSelectedMode,
+    setSelectedExtension: chatState.setSelectedExtension,
   };
 };

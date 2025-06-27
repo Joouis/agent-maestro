@@ -17,6 +17,7 @@ export default function RooPage() {
     statusMessage,
     showStatus,
     selectedMode,
+    selectedExtension,
 
     // Refs
     textareaRef,
@@ -27,6 +28,7 @@ export default function RooPage() {
     sendMessage,
     setInputValue,
     setSelectedMode,
+    setSelectedExtension,
   } = useChat();
 
   return (
@@ -46,6 +48,8 @@ export default function RooPage() {
         disabled={isWaitingForResponse}
         selectedMode={selectedMode}
         onModeChange={setSelectedMode}
+        selectedExtension={selectedExtension}
+        onExtensionChange={setSelectedExtension}
         hasMessages={messages.length > 0}
       />
 

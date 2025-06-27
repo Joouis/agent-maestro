@@ -9,6 +9,9 @@ export const useChatState = () => {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [showTyping, setShowTyping] = useState(false);
   const [selectedMode, setSelectedMode] = useState(DEFAULT_MODE);
+  const [selectedExtension, setSelectedExtension] = useState(
+    "rooveterinaryinc.roo-cline",
+  );
 
   const addMessage = useCallback((message: Message) => {
     setMessages((prev) => [...prev, message]);
@@ -36,6 +39,7 @@ export const useChatState = () => {
     setInputValue("");
     setShowTyping(false);
     setSelectedMode(DEFAULT_MODE);
+    // Keep selected extension when resetting chat
   }, []);
 
   const setWaitingState = useCallback((waiting: boolean) => {
@@ -51,6 +55,7 @@ export const useChatState = () => {
     currentTaskId,
     showTyping,
     selectedMode,
+    selectedExtension,
 
     // Setters
     setInputValue,
@@ -58,6 +63,7 @@ export const useChatState = () => {
     setCurrentTaskId,
     setShowTyping,
     setSelectedMode,
+    setSelectedExtension,
 
     // Actions
     addMessage,

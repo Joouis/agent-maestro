@@ -10,6 +10,7 @@ export interface MessageRequest {
 
 export interface ActionRequest {
   action: "pressPrimaryButton" | "pressSecondaryButton" | "cancel" | "resume";
+  extensionId?: string; // Optional: specify Roo variant extension like Kilo Code
 }
 
 export interface FileReadRequest {

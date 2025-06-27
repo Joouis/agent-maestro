@@ -6,6 +6,7 @@ import {
 } from "../utils/chatHelpers";
 import { UI_CONFIG } from "../utils/constants";
 import { ModeSelector } from "./ModeSelector";
+import { ExtensionSelector } from "./ExtensionSelector";
 
 interface ChatInputProps {
   value: string;
@@ -15,6 +16,8 @@ interface ChatInputProps {
   placeholder?: string;
   selectedMode: string;
   onModeChange: (mode: string) => void;
+  selectedExtension: string;
+  onExtensionChange: (extension: string) => void;
   hasMessages: boolean;
 }
 
@@ -26,6 +29,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   placeholder = "Ask me anything...",
   selectedMode,
   onModeChange,
+  selectedExtension,
+  onExtensionChange,
   hasMessages,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -79,11 +84,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           >
             ➤
           </button>
-          <div className="flex items-center gap-2 ml-2">
+          <div className="flex items-center gap-4 ml-2">
             {/* <span className="text-sm text-gray-600 font-medium whitespace-nowrap">Mode:</span> */}
             <ModeSelector
               selectedMode={selectedMode}
               onModeChange={onModeChange}
+              disabled={disabled || hasMessages}
+            />
+            <ExtensionSelector
+              selectedExtension={selectedExtension}
+              onExtensionChange={onExtensionChange}
               disabled={disabled || hasMessages}
             />
           </div>

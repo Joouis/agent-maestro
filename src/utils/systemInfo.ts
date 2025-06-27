@@ -3,20 +3,17 @@ import * as os from "os";
 import { ExtensionController } from "../core/controller";
 import packageJson from "../../package.json";
 
+export interface ExtensionStatus {
+  isInstalled: boolean;
+  isActive: boolean;
+  version?: string;
+}
+
 export interface SystemInfo {
   name: string;
   version: string;
   extensions: {
-    cline: {
-      isInstalled: boolean;
-      isActive: boolean;
-      version: string;
-    };
-    roo: {
-      isInstalled: boolean;
-      isActive: boolean;
-      version: string;
-    };
+    [ext: string]: ExtensionStatus;
   };
   vscodeVersion: string;
   os: string;
@@ -64,16 +61,7 @@ export function getSystemInfo(controller: ExtensionController): SystemInfo {
     name,
     version,
     extensions: {
-      cline: {
-        isInstalled: extensionStatus.cline.isInstalled,
-        isActive: extensionStatus.cline.isActive,
-        version: extensionStatus.cline.version || "Unknown",
-      },
-      roo: {
-        isInstalled: extensionStatus.roo.isInstalled,
-        isActive: extensionStatus.roo.isActive,
-        version: extensionStatus.roo.version || "Unknown",
-      },
+      ...extensionStatus,
     },
     vscodeVersion,
     os: osInfo,

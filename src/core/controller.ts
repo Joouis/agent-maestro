@@ -4,12 +4,7 @@ import { logger } from "../utils/logger";
 import { ClineAdapter } from "./ClineAdapter";
 import { RooCodeAdapter } from "./RooCodeAdapter";
 import { AgentMaestroConfiguration, readConfiguration } from "../utils/config";
-
-export interface ExtensionStatus {
-  isInstalled: boolean;
-  isActive: boolean;
-  version?: string;
-}
+import { ExtensionStatus } from "../utils/systemInfo";
 
 /**
  * Core controller to manage Cline and RooCode extensions

@@ -301,11 +301,6 @@ export async function registerRooRoutes(
               type: "string",
               description: "The task ID to send the message to",
             },
-            extensionId: {
-              type: "string",
-              description:
-                "Assign task to the Roo variant extension like Kilo Code, by default is RooCode extension",
-            },
           },
           required: ["taskId"],
         },
@@ -340,11 +335,10 @@ export async function registerRooRoutes(
     },
     async (request, reply) => {
       try {
-        const { taskId, extensionId } = request.params as {
+        const { taskId } = request.params as {
           taskId: string;
-          extensionId?: string;
         };
-        const { text, images } = request.body as MessageRequest;
+        const { text, images, extensionId } = request.body as MessageRequest;
 
         if (!text || text.trim() === "") {
           return reply.status(400).send({
@@ -430,11 +424,6 @@ export async function registerRooRoutes(
               type: "string",
               description: "The task ID to perform the action on",
             },
-            extensionId: {
-              type: "string",
-              description:
-                "Assign task to the Roo variant extension like Kilo Code, by default is RooCode extension",
-            },
           },
           required: ["taskId"],
         },
@@ -450,6 +439,11 @@ export async function registerRooRoutes(
                 "resume",
               ],
               description: "The action to perform on the task",
+            },
+            extensionId: {
+              type: "string",
+              description:
+                "Assign task to the Roo variant extension like Kilo Code, by default is RooCode extension",
             },
           },
           required: ["action"],
@@ -475,11 +469,10 @@ export async function registerRooRoutes(
       },
     },
     async (request, reply) => {
-      const { taskId, extensionId } = request.params as {
+      const { taskId } = request.params as {
         taskId: string;
-        extensionId?: string;
       };
-      const { action } = request.body as ActionRequest;
+      const { action, extensionId } = request.body as ActionRequest;
 
       try {
         const adapter = controller.getRooAdapter(extensionId);

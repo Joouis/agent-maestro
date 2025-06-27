@@ -17,7 +17,7 @@ VS Code extensions like GitHub Copilot Chat, Cline, and Roo Code have collectiv
 Agent Maestro is a VS Code extension that provides a unified API interface for managing and controlling popular AI coding agents directly within your development environment. Key capabilities include:
 
 - **Unified API Gateway**: Single RESTful API interface to control multiple AI coding agents through a standardized endpoint
-- **Multi-Agent Support**: Currently supports RooCode and Cline extensions with plans for GitHub Copilot and Kilocode
+- **Multi-Agent Support**: Currently supports RooCode (and its variants like Kilo Code) and Cline extensions with plans for GitHub Copilot
 - **Real-time Event Streaming**: Server-Sent Events (SSE) support for live task monitoring and message streaming
 - **Task Management**: Comprehensive task lifecycle management including creation, execution, monitoring, and completion tracking
 - **Profile Management**: Advanced configuration management for different AI provider settings and profiles
@@ -111,8 +111,6 @@ These documents provide detailed schemas, examples, and implementation guidance 
 Our development roadmap includes several exciting enhancements:
 
 - **GitHub Copilot Integration**: Native support for GitHub Copilot and GitHub Copilot Chat
-- **Kilocode Integration**: Integration with Kilocode for expanded AI agent capabilities
-- **File System Access**: Expose file system read capabilities for enhanced agent interactions
 - **VS Code LM API**: Optional direct access to VS Code Language Model API for users preferring lower-level control
 - **Enhanced Extensibility**: Improved plugin architecture for third-party agent integrations
 
