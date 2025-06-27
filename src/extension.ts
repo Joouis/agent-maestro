@@ -4,10 +4,57 @@ import { ExtensionController } from "./core/controller";
 import { ProxyServer } from "./server/ProxyServer";
 import { McpServer } from "./server/McpServer";
 import { getSystemInfo } from "./utils/systemInfo";
+import {
+  CONFIG_KEYS,
+  DEFAULT_CONFIG,
+  type RooVariantConfiguration,
+  type AgentMaestroConfiguration,
+} from "./types/config";
 
 let controller: ExtensionController;
 let proxy: ProxyServer;
 let mcpServer: McpServer;
+let extensionConfig: AgentMaestroConfiguration;
+
+/**
+ * Reads the current configuration from VS Code workspace settings
+ */
+function readConfiguration(): AgentMaestroConfiguration {
+  const config = vscode.workspace.getConfiguration();
+
+  return {
+    rooVariantIdentifiers: config.get<string[]>(
+      CONFIG_KEYS.ROO_VARIANT_IDENTIFIERS,
+      DEFAULT_CONFIG.rooVariantIdentifiers,
+    ),
+    defaultRooExtensionIdentifier: config.get<string>(
+      CONFIG_KEYS.DEFAULT_ROO_EXTENSION_IDENTIFIER,
+      DEFAULT_CONFIG.defaultRooExtensionIdentifier,
+    ),
+  };
+}
+
+/**
+ * Gets the current extension configuration
+ */
+export function getExtensionConfig(): AgentMaestroConfiguration {
+  return extensionConfig || readConfiguration();
+}
+
+/**
+ * Updates the extension configuration and notifies listeners
+ */
+function updateConfiguration(): void {
+  const newConfig = readConfiguration();
+  const configChanged =
+    JSON.stringify(extensionConfig) !== JSON.stringify(newConfig);
+
+  if (configChanged) {
+    logger.info("Configuration updated:", newConfig);
+    extensionConfig = newConfig;
+    // Future: Emit configuration change event if needed
+  }
+}
 
 export async function activate(context: vscode.ExtensionContext) {
   // Only show logger automatically in development mode
@@ -15,6 +62,19 @@ export async function activate(context: vscode.ExtensionContext) {
   if (isDevMode) {
     logger.show();
   }
+
+  // Initialize configuration
+  extensionConfig = readConfiguration();
+  logger.info("Extension configuration loaded:", extensionConfig);
+
+  // Listen for configuration changes
+  const configChangeListener = vscode.workspace.onDidChangeConfiguration(
+    (event) => {
+      if (event.affectsConfiguration("agent-maestro")) {
+        updateConfiguration();
+      }
+    },
+  );
 
   // Initialize the extension controller
   controller = new ExtensionController();
@@ -209,7 +269,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   ];
 
-  context.subscriptions.push(...disposables);
+  context.subscriptions.push(...disposables, configChangeListener);
 
   await vscode.commands.executeCommand("agent-maestro.startProxyServer");
   await vscode.commands.executeCommand("agent-maestro.startMcpServer");

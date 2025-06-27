@@ -43,6 +43,29 @@
   "preview": true,
   "main": "./dist/extension.js",
   "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Agent Maestro Configuration",
+      "properties": {
+        "agent-maestro.rooVariantIdentifiers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "kilocode.kilo-code"
+          ],
+          "description": "List of extension identifiers that are considered Roo variants",
+          "scope": "application"
+        },
+        "agent-maestro.defaultRooExtensionIdentifier": {
+          "type": "string",
+          "default": "rooveterinaryinc.roo-cline",
+          "description": "Default Roo extension identifier to use when multiple variants are available",
+          "scope": "application"
+        }
+      }
+    },
     "commands": [
       {
         "command": "agent-maestro.getStatus",
