@@ -284,7 +284,7 @@ export async function checkAgentMaestroMcpConfig(
     const settings = await readMcpSettings(settingsFilePath);
 
     // Check if Agent Maestro config exists
-    const exists = hasAgentMaestroConfig(settings);
+    const exists = hasAgentMaestroConfig(settings.mcpServers);
 
     return {
       success: true,
