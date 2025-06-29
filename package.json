@@ -58,7 +58,7 @@
           "description": "List of extension identifiers that are considered Roo variants (need restart to take effect)",
           "scope": "application"
         },
-        "agent-maestro.defaultRooExtensionIdentifier": {
+        "agent-maestro.defaultRooIdentifier": {
           "type": "string",
           "default": "rooveterinaryinc.roo-cline",
           "description": "Default Roo extension identifier to use when multiple variants are available (need restart to take effect)",
