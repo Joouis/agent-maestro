@@ -4,6 +4,10 @@ import { ExtensionController } from "./core/controller";
 import { ProxyServer } from "./server/ProxyServer";
 import { McpServer } from "./server/McpServer";
 import { getSystemInfo } from "./utils/systemInfo";
+import {
+  getAvailableExtensions,
+  addAgentMaestroMcpConfig,
+} from "./utils/mcpConfig";
 
 let controller: ExtensionController;
 let proxy: ProxyServer;
@@ -37,7 +41,7 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.error("Failed to initialize MCP server:", error);
   }
 
-  proxy = new ProxyServer(controller, isDevMode ? 33333 : undefined);
+  proxy = new ProxyServer(controller, isDevMode ? 33333 : undefined, context);
 
   // Register commands
   const disposables = [
@@ -212,6 +216,91 @@ export async function activate(context: vscode.ExtensionContext) {
         `MCP Server Status: ${status.isRunning ? "Running" : "Stopped"} | Port: ${status.port} | URL: ${status.url}`,
       );
     }),
+
+    vscode.commands.registerCommand(
+      "agent-maestro.installMcpConfig",
+      async () => {
+        try {
+          // Get available extensions (only installed ones)
+          const availableExtensions = getAvailableExtensions();
+
+          if (availableExtensions.length === 0) {
+            vscode.window.showErrorMessage(
+              "No supported extensions found for MCP configuration. Please ensure you have Roo Code or Kilo Code extensions installed.",
+            );
+            return;
+          }
+
+          // Create quick pick items with display names from installed extensions
+          const quickPickItems = availableExtensions.map((extension) => ({
+            label: extension.displayName,
+            description: extension.id,
+            detail: `Install Agent Maestro MCP configuration for ${extension.displayName}`,
+            extensionId: extension.id,
+          }));
+
+          // Show quick pick dialog
+          const selectedItem = await vscode.window.showQuickPick(
+            quickPickItems,
+            {
+              title: "Select Extension for MCP Configuration",
+              placeHolder:
+                "Choose which extension to configure with Agent Maestro MCP server",
+              canPickMany: false,
+            },
+          );
+
+          if (!selectedItem) {
+            // User cancelled the selection
+            return;
+          }
+
+          // Show progress during configuration
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: "Installing MCP Configuration",
+              cancellable: false,
+            },
+            async (progress) => {
+              progress.report({
+                message: `Configuring ${selectedItem.label}...`,
+              });
+
+              // Add the MCP configuration
+              const result = await addAgentMaestroMcpConfig({
+                extensionId: selectedItem.extensionId,
+                globalStorageUri: context.globalStorageUri,
+              });
+
+              if (result.success) {
+                vscode.window.showInformationMessage(
+                  `Successfully installed Agent Maestro MCP configuration for ${selectedItem.label}. The extension can now access Agent Maestro tools and resources.`,
+                );
+                logger.info(
+                  `MCP configuration installed for ${selectedItem.extensionId}: ${result.configPath}`,
+                );
+              } else {
+                if (result.message.includes("already exists")) {
+                  vscode.window.showInformationMessage(
+                    `Agent Maestro MCP configuration already exists for ${selectedItem.label}. No changes were made.`,
+                  );
+                } else {
+                  vscode.window.showErrorMessage(
+                    `Failed to install MCP configuration for ${selectedItem.label}: ${result.message}`,
+                  );
+                }
+              }
+            },
+          );
+        } catch (error) {
+          logger.error("Error installing MCP configuration:", error);
+          vscode.window.showErrorMessage(
+            `Failed to install MCP configuration: ${(error as Error).message}`,
+          );
+        }
+      },
+    ),
   ];
 
   context.subscriptions.push(...disposables);

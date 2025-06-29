@@ -1,6 +1,7 @@
 import { ClineMessage } from "@roo-code/types";
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { v4 as uuidv4 } from "uuid";
+import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { ExtensionController } from "../../core/controller";
 import { MessageRequest, ActionRequest } from "../types";
@@ -8,6 +9,10 @@ import {
   isMessageCompleted,
   areCompletedMessagesEqual,
 } from "../utils/rooUtils";
+import {
+  addAgentMaestroMcpConfig,
+  getAvailableExtensions,
+} from "../../utils/mcpConfig";
 
 export enum SSEEventType {
   STREAM_CLOSED = "stream_closed",
@@ -131,6 +136,7 @@ function createTaskEventHandlers(
 export async function registerRooRoutes(
   fastify: FastifyInstance,
   controller: ExtensionController,
+  context?: vscode.ExtensionContext,
 ) {
   // Add the shared schema to fastify
   fastify.addSchema({
@@ -755,6 +761,134 @@ export async function registerRooRoutes(
         );
         return reply.code(500).send({
           error: "Internal server error",
+          message:
+            error instanceof Error ? error.message : "Unknown error occurred",
+        });
+      }
+    },
+  );
+
+  // POST /api/v1/roo/install-mcp-config - Auto install Agent Maestro MCP config to the extension
+  fastify.post(
+    "/roo/install-mcp-config",
+    {
+      schema: {
+        tags: ["MCP Configuration"],
+        summary: "Add Agent Maestro MCP configuration",
+        description:
+          "Adds Agent Maestro MCP server configuration to the specified extension's settings",
+        body: {
+          type: "object",
+          properties: {
+            extensionId: {
+              type: "string",
+              description:
+                "The extension ID to add configuration to. If not provided, uses the first available installed extension that supports MCP configuration.",
+            },
+          },
+        },
+        response: {
+          200: {
+            description: "Configuration added successfully",
+            type: "object",
+            properties: {
+              extensionId: {
+                type: "string",
+                description: "The extension ID that was configured",
+              },
+              extensionDisplayName: {
+                type: "string",
+                description: "The display name of the configured extension",
+              },
+              success: {
+                type: "boolean",
+                description: "Whether the operation was successful",
+              },
+              message: {
+                type: "string",
+                description: "Success message",
+              },
+            },
+            required: [
+              "extensionId",
+              "extensionDisplayName",
+              "success",
+              "message",
+            ],
+          },
+          400: {
+            description:
+              "Bad request - invalid extension ID, no supported extensions installed, or configuration already exists",
+            $ref: "ErrorResponse#",
+          },
+          500: {
+            description: "Internal server error",
+            $ref: "ErrorResponse#",
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        if (!context) {
+          return reply.status(500).send({
+            message: "Extension context not available",
+          });
+        }
+
+        const { extensionId } = request.body as { extensionId?: string };
+
+        // Get available extensions (now returns ExtensionInfo[] with id and displayName)
+        const availableExtensions = getAvailableExtensions();
+
+        // Handle case where no supported extensions are installed
+        if (availableExtensions.length === 0) {
+          return reply.status(400).send({
+            message:
+              "No supported extensions are currently installed. Please install a compatible extension like Roo Code or Kilo Code.",
+          });
+        }
+
+        // Use default extension ID if not provided - use the first available extension
+        const targetExtensionId = extensionId || availableExtensions[0].id;
+
+        // Validate that the target extension is in the available extensions
+        const targetExtension = availableExtensions.find(
+          (ext) => ext.id === targetExtensionId,
+        );
+        if (!targetExtension) {
+          const extensionNames = availableExtensions.map(
+            (ext) => `${ext.displayName} (${ext.id})`,
+          );
+          return reply.status(400).send({
+            message: `Unsupported extension ID: ${targetExtensionId}. Available extensions: ${extensionNames.join(", ")}`,
+          });
+        }
+
+        const result = await addAgentMaestroMcpConfig({
+          extensionId: targetExtensionId,
+          globalStorageUri: context.globalStorageUri,
+        });
+
+        if (!result.success) {
+          return reply.status(400).send({
+            message: result.message,
+          });
+        }
+
+        logger.info(
+          `Added Agent Maestro MCP configuration for ${targetExtensionId}`,
+        );
+
+        return reply.send({
+          extensionId: targetExtensionId,
+          extensionDisplayName: targetExtension.displayName,
+          success: true,
+          message: result.message,
+        });
+      } catch (error) {
+        logger.error("Error adding MCP configuration:", error);
+        return reply.status(500).send({
           message:
             error instanceof Error ? error.message : "Unknown error occurred",
         });

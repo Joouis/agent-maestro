@@ -110,7 +110,7 @@ export class McpServer {
       await this.taskManager.initialize();
 
       this.server.addTool({
-        name: "Execute_Roo_Tasks",
+        name: "Execute Roo Tasks",
         description:
           "Execute multiple RooCode tasks in parallel. Returns real-time progress and results for each task.",
         parameters: ExecuteRooTasksSchema,
@@ -121,7 +121,7 @@ export class McpServer {
         execute: async (args, { streamContent }) => {
           const { tasks, maxConcurrency = defaultMaxConcurrency } = args;
           logger.info(
-            `MCP Tool Execute_Roo_Tasks called with ${tasks.length} tasks, maxConcurrency: ${maxConcurrency}`,
+            `MCP Tool Execute Roo Tasks called with ${tasks.length} tasks, maxConcurrency: ${maxConcurrency}`,
           );
 
           try {
@@ -136,14 +136,14 @@ export class McpServer {
               },
             });
 
-            logger.info(`MCP Tool Execute_Roo_Tasks completed.`);
+            logger.info(`MCP Tool Execute Roo Tasks completed.`);
 
             return {
               type: "text",
               text: JSON.stringify(taskResults),
             };
           } catch (error) {
-            logger.error("Error in Execute_Roo_Tasks tool:", error);
+            logger.error("Error in Execute Roo Tasks tool:", error);
             throw error;
           }
         },
@@ -162,6 +162,8 @@ export class McpServer {
 
       logger.info(`MCP Server started on http://127.0.0.1:${this.port}`);
       logger.info(`MCP Server is ready to accept tool calls`);
+
+      // TODO: Add MCP server info to global state
 
       return {
         started: true,

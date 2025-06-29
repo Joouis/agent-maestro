@@ -1,6 +1,7 @@
 import Fastify, { FastifyInstance } from "fastify";
 import swagger from "@fastify/swagger";
 import cors from "@fastify/cors";
+import * as vscode from "vscode";
 import { logger } from "../utils/logger";
 import { analyzePortUsage, findAvailablePort } from "../utils/portUtils";
 import { ExtensionController } from "../core/controller";
@@ -12,11 +13,17 @@ import { registerInfoRoutes } from "./routes/infoRoutes";
 export class ProxyServer {
   private fastify: FastifyInstance;
   private controller: ExtensionController;
+  private context?: vscode.ExtensionContext;
   private isRunning = false;
   private port: number;
 
-  constructor(controller: ExtensionController, port = 23333) {
+  constructor(
+    controller: ExtensionController,
+    port = 23333,
+    context?: vscode.ExtensionContext,
+  ) {
     this.controller = controller;
+    this.context = context;
     this.port = port;
     this.fastify = Fastify({
       logger: false, // Use our custom logger instead
@@ -63,6 +70,10 @@ export class ProxyServer {
           {
             name: "System",
             description: "System information and status",
+          },
+          {
+            name: "MCP Configuration",
+            description: "MCP server configuration operations",
           },
           {
             name: "Documentation",
@@ -170,7 +181,7 @@ export class ProxyServer {
     this.fastify.register(
       async (fastify) => {
         await registerClineRoutes(fastify, this.controller);
-        await registerRooRoutes(fastify, this.controller);
+        await registerRooRoutes(fastify, this.controller, this.context);
         await registerFsRoutes(fastify);
         await registerInfoRoutes(fastify, this.controller);
 
