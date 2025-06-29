@@ -124,9 +124,14 @@ async function findExistingMcpSettingsFile(
   globalStorageUri: vscode.Uri,
   extensionId: string,
 ): Promise<string | null> {
+  // Get the parent globalStorage directory to access other extensions' storage
+  const globalStorageFolderUri = vscode.Uri.file(
+    path.dirname(globalStorageUri.fsPath),
+  );
+
   for (const filename of MCP_SETTINGS_FILENAMES) {
     const filePath = getMcpSettingsPath(
-      globalStorageUri,
+      globalStorageFolderUri,
       extensionId,
       filename,
     );
@@ -189,14 +194,9 @@ export async function addAgentMaestroMcpConfig(
   const { extensionId, globalStorageUri } = options;
 
   try {
-    // Get the parent globalStorage directory to access other extensions' storage
-    const parentGlobalStorageUri = vscode.Uri.file(
-      path.dirname(globalStorageUri.fsPath),
-    );
-
     // Find existing MCP settings file or determine where to create one
     let settingsFilePath = await findExistingMcpSettingsFile(
-      parentGlobalStorageUri,
+      globalStorageUri,
       extensionId,
     );
 
@@ -249,61 +249,6 @@ export async function addAgentMaestroMcpConfig(
       success: false,
       message: errorMessage,
       extensionId,
-    };
-  }
-}
-
-/**
- * Checks if Agent Maestro MCP configuration exists for a given extension
- *
- * @param options Configuration options including extension ID and storage path
- * @returns Result indicating whether the configuration exists
- */
-export async function checkAgentMaestroMcpConfig(
-  options: Pick<AddMcpConfigOptions, "extensionId" | "globalStorageUri">,
-): Promise<McpConfigResult & { exists: boolean }> {
-  const { extensionId, globalStorageUri } = options;
-
-  try {
-    // Find existing MCP settings file
-    const settingsFilePath = await findExistingMcpSettingsFile(
-      globalStorageUri,
-      extensionId,
-    );
-
-    if (!settingsFilePath) {
-      return {
-        success: true,
-        message: "No MCP settings file found",
-        extensionId,
-        exists: false,
-      };
-    }
-
-    // Read existing settings
-    const settings = await readMcpSettings(settingsFilePath);
-
-    // Check if Agent Maestro config exists
-    const exists = hasAgentMaestroConfig(settings.mcpServers);
-
-    return {
-      success: true,
-      message: exists
-        ? "Agent Maestro MCP configuration found"
-        : "Agent Maestro MCP configuration not found",
-      extensionId,
-      configPath: settingsFilePath,
-      exists,
-    };
-  } catch (error) {
-    const errorMessage = `Failed to check Agent Maestro MCP configuration: ${(error as Error).message}`;
-    logger.error(errorMessage, error);
-
-    return {
-      success: false,
-      message: errorMessage,
-      extensionId,
-      exists: false,
     };
   }
 }
