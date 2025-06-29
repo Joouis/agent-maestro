@@ -21,8 +21,8 @@ jobs:
       - name: Setup Node.js and pnpm
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Build and package extension
-        run: pnpm run package
+      - name: Build extension
+        run: pnpm run build:prod
 
       - name: Create VSIX package
         run: pnpm run vscode:package
