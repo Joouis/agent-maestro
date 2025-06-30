@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 
 export const closeAllEmptyTabGroups = async (): Promise<void> => {
-  const emptyGroups = [];
+  const emptyGroups: vscode.TabGroup[] = [];
   for (const group of vscode.window.tabGroups.all) {
     if (group.tabs.length === 0) {
       emptyGroups.push(group);
