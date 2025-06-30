@@ -1,3 +1,5 @@
+import * as vscode from "vscode";
+
 import { ClineMessage } from "@roo-code/types";
 import { Semaphore } from "es-toolkit";
 import { logger } from "../utils/logger";
@@ -7,6 +9,7 @@ import {
   areCompletedMessagesEqual,
   isMessageCompleted,
 } from "../server/utils/rooUtils";
+import { closeAllEmptyTabGroups } from "../utils/extension";
 
 export interface TaskRun {
   task: string;
@@ -88,18 +91,33 @@ export class McpTaskManager {
     // Process tasks with concurrency control
     const semaphore = new Semaphore(maxConcurrency);
 
-    const executeTaskWithSemaphore = async (taskQuery: string) => {
-      await semaphore.acquire();
-      try {
-        await this.executeTask(taskQuery, run, streamContent, timeout);
-      } finally {
-        semaphore.release();
-      }
-    };
-
     // Execute all tasks concurrently with semaphore control
     await Promise.allSettled(
-      taskQueries.map((taskQuery) => executeTaskWithSemaphore(taskQuery)),
+      taskQueries.map(async (taskQuery, idx) => {
+        await semaphore.acquire();
+        try {
+          /**
+           * executeRooTasks will launch the max number of tasks at same time,
+           * however this will trigger a bug in Roo Code that create multiple empty editor groups.
+           * We have to wait the first startNewTask returns task id then launch other tasks.
+           */
+          const onTaskCreated =
+            idx === maxConcurrency - 1 || idx === taskQueries.length - 1
+              ? async () => {
+                  await closeAllEmptyTabGroups();
+                }
+              : undefined;
+          await this.executeTask(
+            taskQuery,
+            run,
+            streamContent,
+            timeout,
+            onTaskCreated,
+          );
+        } finally {
+          semaphore.release();
+        }
+      }),
     );
 
     logger.info(`Completed execution of ${taskQueries.length} RooCode tasks`);
@@ -115,6 +133,7 @@ export class McpTaskManager {
     run: { [taskId: string]: TaskRun },
     streamContent?: StreamContentCallback,
     timeout = 300000,
+    onTaskCreated?: (taskId: string) => void,
   ): Promise<void> {
     let taskId = "";
     let lastMessage: ClineMessage | undefined;
@@ -221,6 +240,10 @@ export class McpTaskManager {
             status: "created",
             result: "Task created, waiting to start...",
           };
+
+          if (onTaskCreated) {
+            onTaskCreated(taskId);
+          }
         })
         .catch((error) => {
           clearTimeout(timeoutId);
