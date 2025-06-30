@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { logger } from "./logger";
 
 export const closeAllEmptyTabGroups = async (): Promise<void> => {
   const emptyGroups: vscode.TabGroup[] = [];
@@ -11,6 +12,6 @@ export const closeAllEmptyTabGroups = async (): Promise<void> => {
   try {
     await vscode.window.tabGroups.close(emptyGroups);
   } catch (error) {
-    console.error("Error closing empty tab group:", error);
+    logger.error("Error closing empty tab groups:", error);
   }
 };
