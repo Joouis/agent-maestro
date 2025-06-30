@@ -1,5 +1,3 @@
-import * as vscode from "vscode";
-
 import { ClineMessage } from "@roo-code/types";
 import { Semaphore } from "es-toolkit";
 import { logger } from "../utils/logger";
