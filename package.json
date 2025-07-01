@@ -145,6 +145,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.1.0",
     "npm-run-all": "^4.1.5",
+    "ovsx": "^0.10.4",
     "prettier": "3.5.3",
     "rimraf": "^6.0.1",
     "typescript": "^5.8.3"
@@ -152,7 +153,8 @@
   "scripts": {
     "vscode:prepublish": "pnpm run build:prod",
     "vscode:package": "vsce package --no-dependencies",
-    "vscode:publish": "vsce publish --no-dependencies",
+    "publish:vs-marketplace": "vsce publish --no-dependencies",
+    "publish:open-vsx": "ovsx publish --no-dependencies",
     "build": "pnpm run check-types && pnpm run lint && node esbuild.js",
     "build:prod": "rimraf dist && pnpm run check-types && pnpm run lint && node esbuild.js --production",
     "build-tests": "tsc -p . --outDir out",

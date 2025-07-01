@@ -34,7 +34,22 @@ jobs:
       - name: Publish to VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: pnpm run vscode:publish
+        run: |
+          if [[ "${{ steps.package-version.outputs.version }}" == *"beta"* ]]; then
+            pnpm run publish:vs-marketplace --pre-release
+          else
+            pnpm run publish:vs-marketplace
+          fi
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [[ "${{ steps.package-version.outputs.version }}" == *"beta"* ]]; then
+            pnpm run publish:open-vsx --pre-release
+          else
+            pnpm run publish:open-vsx
+          fi
 
       - name: Find previous tag
         if: startsWith(github.ref, 'refs/tags/')
@@ -58,17 +73,17 @@ jobs:
           vsix_file=$(find . -name "*.vsix" -type f | head -1)
 
           # Create release with changelog between tags
-          if [ "${{ steps.previous-tag.outputs.found }}" = "true" ]; then
-            # Generate notes from previous tag to current tag
+          if [[ "${{ steps.package-version.outputs.version }}" == *"beta"* ]]; then
             gh release create ${{ github.ref_name }} \
               --title "Release ${{ github.ref_name }}" \
               --generate-notes \
               --notes-start-tag "${{ steps.previous-tag.outputs.tag }}" \
+              --prerelease \
               "$vsix_file"
           else
-            # First release - generate notes for all commits
             gh release create ${{ github.ref_name }} \
               --title "Release ${{ github.ref_name }}" \
               --generate-notes \
+              --notes-start-tag "${{ steps.previous-tag.outputs.tag }}" \
               "$vsix_file"
           fi
