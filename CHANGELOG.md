@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.0 - 2025.07.01-beta.0
+
+- Enable parallel roo tasks execution feature by self-hosting MCP server
+- New extension config to use Roo extension variants like Kilo Code
+- Support install MCP server config to extension by command and API
+- Add `/info` API for proxy server
+- Fix new empty tab groups created when executing multiple roo tasks
+
 ## v0.4.0 - 2025.06.19
 
 - Support cancel current Roo task and resume Roo task by ID
