@@ -75,12 +75,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             disabled={disabled}
             placeholder={disabled ? "Waiting for response..." : placeholder}
             rows={1}
-            className="flex-1 min-h-12 max-h-30 p-4 border-2 border-gray-200 rounded-3xl text-black resize-none outline-none transition-colors focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed scrollbar-hide"
+            className="flex-1 max-h-30 px-4 py-2 border-2 border-gray-200 rounded-3xl text-black text-sm resize-none outline-none transition-colors focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed scrollbar-hide"
           />
           <button
             onClick={handleSend}
             disabled={!canSend}
-            className="w-11 h-11 rounded-full bg-blue-500 text-white flex items-center justify-center text-lg transition-all hover:bg-blue-600 hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none"
+            className="size-9 rounded-full bg-blue-500 text-white flex items-center justify-center text-lg transition-all hover:bg-blue-600 hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none"
           >
             ➤
           </button>

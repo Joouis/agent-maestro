@@ -1,4 +1,13 @@
-const PORT = 33333; // Dev mode port for Agent Maestro
+// Check if isDev query parameter exists to determine port
+const getPort = () => {
+  if (typeof window !== "undefined") {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.has("isDev") ? 33333 : 23333;
+  }
+  return 23333;
+};
+
+const PORT = getPort();
 export const API_BASE_URL = `http://127.0.0.1:${PORT}/api/v1/roo`;
 const INFO_API_BASE_URL = `http://127.0.0.1:${PORT}/api/v1`;
 
