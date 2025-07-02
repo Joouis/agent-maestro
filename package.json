@@ -40,7 +40,6 @@
     "github copilot",
     "github copilot chat"
   ],
-  "preview": true,
   "main": "./dist/extension.js",
   "contributes": {
     "configuration": {
