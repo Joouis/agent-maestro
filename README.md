@@ -16,6 +16,7 @@ VS Code extensions like GitHub Copilot Chat, Cline, and Roo Code have collectiv
 
 Agent Maestro is a VS Code extension that provides a unified API interface for managing and controlling popular AI coding agents directly within your development environment. Key capabilities include:
 
+- **Parallel Task Execution**: Execute up to 20 concurrent AI coding tasks through built-in MCP server integration. And support install MCP server config to the Roo extensions via command.
 - **Unified API Gateway**: Single RESTful API interface to control multiple AI coding agents through a standardized endpoint
 - **Multi-Agent Support**: Currently supports RooCode (and its variants like Kilo Code) and Cline extensions with plans for GitHub Copilot
 - **Real-time Event Streaming**: Server-Sent Events (SSE) support for live task monitoring and message streaming
@@ -47,6 +48,10 @@ Install the [Agent Maestro extension](https://marketplace.visualstudio.com/items
    - `Agent Maestro: Stop API Server` - Stop the proxy API server
    - `Agent Maestro: Restart API Server` - Restart the proxy API server
    - `Agent Maestro: Get API Server Status` - Check current server status
+   - `Agent Maestro: Start MCP Server` - Start the Model Context Protocol server
+   - `Agent Maestro: Stop MCP Server` - Stop the MCP server
+   - `Agent Maestro: Get MCP Server Status` - Check current MCP server status
+   - `Agent Maestro: Install MCP Configuration` - Install MCP configuration for supported extensions
 
 3. **Development Resources**:
    - **API Documentation**: Complete reference in [docs/roo-code/](docs/roo-code/README.md) for all Roo Code interfaces, events, and message structures
@@ -61,13 +66,18 @@ The following diagram illustrates the basic workflow for task creation and conve
 
 This workflow shows how tasks are created, how messages flow between the client and AI agents, and how the system handles real-time communication through Server-Sent Events (SSE).
 
+Another workflow to introduce parallel Roo tasks execution will be added soon.
+
 ## API Overview
 
 Agent Maestro exposes a RESTful API that abstracts the complexity of different AI coding agents into a unified interface.
 
 _Note: For latest API documentation, always refer to `/api/v1/openapi.json`._
 
-**Base URL**: `http://localhost:23333/api/v1`
+**Base URLs**:
+
+- **REST API**: `http://localhost:23333/api/v1`
+- **MCP Server**: `http://localhost:23334`
 
 **RooCode Agent Routes:**
 
@@ -110,6 +120,7 @@ These documents provide detailed schemas, examples, and implementation guidance 
 
 Our development roadmap includes several exciting enhancements:
 
+- **Production usage**: Explore the scenario that running on code-server for containerization and deployment.
 - **GitHub Copilot Integration**: Native support for GitHub Copilot and GitHub Copilot Chat
 - **VS Code LM API**: Optional direct access to VS Code Language Model API for users preferring lower-level control
 - **Enhanced Extensibility**: Improved plugin architecture for third-party agent integrations
