@@ -35,7 +35,7 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          if [[ "${{ steps.package-version.outputs.version }}" == *"beta"* ]]; then
+          if [[ "${{ steps.package-version.outputs.version }}" =~ ^[1-9][0-9]*\.0\.0$ ]]; then
             pnpm run publish:vs-marketplace --pre-release
           else
             pnpm run publish:vs-marketplace
@@ -45,7 +45,7 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
-          if [[ "${{ steps.package-version.outputs.version }}" == *"beta"* ]]; then
+          if [[ "${{ steps.package-version.outputs.version }}" =~ ^[1-9][0-9]*\.0\.0$ ]]; then
             pnpm run publish:open-vsx --pre-release
           else
             pnpm run publish:open-vsx
@@ -73,7 +73,7 @@ jobs:
           vsix_file=$(find . -name "*.vsix" -type f | head -1)
 
           # Create release with changelog between tags
-          if [[ "${{ steps.package-version.outputs.version }}" == *"beta"* ]]; then
+          if [[ "${{ steps.package-version.outputs.version }}" =~ ^[1-9][0-9]*\.0\.0$ ]]; then
             gh release create ${{ github.ref_name }} \
               --title "Release ${{ github.ref_name }}" \
               --generate-notes \
