@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0-beta.0 - 2025.07.01
+## v1.0.0 - 2025.07.02
 
 - Enable parallel roo tasks execution feature by self-hosting MCP server
 - New extension config to use Roo extension variants like Kilo Code
