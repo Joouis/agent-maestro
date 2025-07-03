@@ -38,7 +38,10 @@ export class ExtensionController extends EventEmitter {
     }
 
     // Check and create adapters for each variant identifier
-    for (const identifier of config.rooVariantIdentifiers) {
+    for (const identifier of new Set([
+      ...config.rooVariantIdentifiers,
+      "rooveterinaryinc.roo-cline",
+    ])) {
       if (
         identifier !== config.defaultRooIdentifier &&
         this.isExtensionInstalled(identifier)
