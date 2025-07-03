@@ -62,6 +62,18 @@
           "default": "rooveterinaryinc.roo-cline",
           "description": "Default Roo extension identifier to use when multiple variants are available (need restart to take effect)",
           "scope": "application"
+        },
+        "agent-maestro.proxyServerPort": {
+          "type": "number",
+          "default": 23333,
+          "description": "Port for the Agent Maestro proxy server (need restart to take effect)",
+          "scope": "application"
+        },
+        "agent-maestro.mcpServerPort": {
+          "type": "number",
+          "default": 23334,
+          "description": "Port for the Agent Maestro MCP server (need restart to take effect)",
+          "scope": "application"
         }
       }
     },

@@ -2,9 +2,10 @@
 import { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { logger } from "../utils/logger";
-import { analyzePortUsage, findAvailablePort } from "../utils/portUtils";
+import { analyzePortUsage } from "../utils/portUtils";
 import { ExtensionController } from "../core/controller";
 import { McpTaskManager } from "../core/McpTaskManager";
+import { DEFAULT_CONFIG } from "../utils/config";
 
 // Input schema for the Execute_Roo_Tasks tool
 const defaultMaxConcurrency = 5;
@@ -35,11 +36,10 @@ export class McpServer {
   private port: number;
   private server: FastMCP;
   private isRunning = false;
-  private errorMessage?: string;
 
   constructor(config: McpServerConfig) {
     this.controller = config.controller;
-    this.port = config.port || 23334;
+    this.port = config.port || DEFAULT_CONFIG.mcpServerPort;
     this.server = new FastMCP({
       name: "Agent Maestro MCP Server",
       version: "1.0.0",
@@ -70,7 +70,7 @@ export class McpServer {
     const analysis = await analyzePortUsage(this.port);
     logger.debug(`MCP Port analysis for ${this.port}:`, analysis);
 
-    let actualPort = this.port;
+    const actualPort = this.port;
 
     switch (analysis.action) {
       case "use":
@@ -87,19 +87,13 @@ export class McpServer {
         };
 
       case "findAlternative":
-        // Port is occupied by another application, try to find an alternative
-        logger.info(`MCP Server: ${analysis.message}`);
-        const alternativePort = await findAvailablePort(this.port + 1, 10);
-
-        if (alternativePort) {
-          logger.info(`MCP Server: Found alternative port: ${alternativePort}`);
-          actualPort = alternativePort;
-        } else {
-          const errorMsg = `MCP Server: No available ports found (tried ${this.port}-${this.port + 10})`;
-          logger.error(errorMsg);
-          throw new Error(errorMsg);
-        }
-        break;
+        // Port is occupied by another application
+        logger.error(
+          `MCP Server: Port ${this.port} is in use by another application`,
+        );
+        throw new Error(
+          `MCP Server: Port ${this.port} is already in use by another application. Please configure a different port in settings.`,
+        );
 
       default:
         throw new Error(`Unknown port analysis action: ${analysis.action}`);
@@ -167,10 +161,7 @@ export class McpServer {
 
       return {
         started: true,
-        reason:
-          actualPort !== this.port
-            ? `Started on alternative port (${this.port} was occupied)`
-            : "MCP Server started successfully",
+        reason: "MCP Server started successfully",
         port: actualPort,
       };
     } catch (error) {

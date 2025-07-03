@@ -27,7 +27,7 @@ export function isPortAvailable(port: number): Promise<boolean> {
 export function isOurProxyServer(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.get(
-      `http://127.0.0.1:${port}/api/v1/openapi.json`,
+      `http://127.0.0.1:${port}/api/v1/info`,
       {
         timeout: 2000,
       },
@@ -40,9 +40,7 @@ export function isOurProxyServer(port: number): Promise<boolean> {
         res.on("end", () => {
           try {
             const parsed = JSON.parse(data);
-            // Check if it's our API by looking for our specific API title
-            const isOurs =
-              parsed.info && parsed.info.title === "Cline Maestro API";
+            const isOurs = parsed.name === "Agent Maestro";
             resolve(isOurs);
           } catch {
             resolve(false);

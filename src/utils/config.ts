@@ -3,6 +3,8 @@ import * as vscode from "vscode";
 export interface AgentMaestroConfiguration {
   rooVariantIdentifiers: string[];
   defaultRooIdentifier: string;
+  proxyServerPort: number;
+  mcpServerPort: number;
 }
 
 /**
@@ -11,6 +13,8 @@ export interface AgentMaestroConfiguration {
 export const CONFIG_KEYS = {
   ROO_VARIANT_IDENTIFIERS: "agent-maestro.rooVariantIdentifiers",
   DEFAULT_ROO_IDENTIFIER: "agent-maestro.defaultRooIdentifier",
+  PROXY_SERVER_PORT: "agent-maestro.proxyServerPort",
+  MCP_SERVER_PORT: "agent-maestro.mcpServerPort",
 } as const;
 
 /**
@@ -19,6 +23,8 @@ export const CONFIG_KEYS = {
 export const DEFAULT_CONFIG: AgentMaestroConfiguration = {
   rooVariantIdentifiers: ["kilocode.kilo-code"],
   defaultRooIdentifier: "rooveterinaryinc.roo-cline",
+  proxyServerPort: 23333,
+  mcpServerPort: 23334,
 };
 
 /**
@@ -35,6 +41,14 @@ export const readConfiguration = (): AgentMaestroConfiguration => {
     defaultRooIdentifier: config.get<string>(
       CONFIG_KEYS.DEFAULT_ROO_IDENTIFIER,
       DEFAULT_CONFIG.defaultRooIdentifier,
+    ),
+    proxyServerPort: config.get<number>(
+      CONFIG_KEYS.PROXY_SERVER_PORT,
+      DEFAULT_CONFIG.proxyServerPort,
+    ),
+    mcpServerPort: config.get<number>(
+      CONFIG_KEYS.MCP_SERVER_PORT,
+      DEFAULT_CONFIG.mcpServerPort,
     ),
   };
 };

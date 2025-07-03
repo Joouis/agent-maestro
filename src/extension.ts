@@ -4,6 +4,7 @@ import { ExtensionController } from "./core/controller";
 import { ProxyServer } from "./server/ProxyServer";
 import { McpServer } from "./server/McpServer";
 import { getSystemInfo } from "./utils/systemInfo";
+import { readConfiguration } from "./utils/config";
 import {
   getAvailableExtensions,
   addAgentMaestroMcpConfig,
@@ -32,16 +33,23 @@ export async function activate(context: vscode.ExtensionContext) {
     );
   }
 
+  // Get configuration
+  const config = readConfiguration();
+
   try {
     mcpServer = new McpServer({
       controller,
-      port: isDevMode ? 33334 : undefined,
+      port: isDevMode ? 33334 : config.mcpServerPort,
     });
   } catch (error) {
     logger.error("Failed to initialize MCP server:", error);
   }
 
-  proxy = new ProxyServer(controller, isDevMode ? 33333 : undefined, context);
+  proxy = new ProxyServer(
+    controller,
+    isDevMode ? 33333 : config.proxyServerPort,
+    context,
+  );
 
   // Register commands
   const disposables = [
@@ -172,7 +180,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
           if (result.started) {
             vscode.window.showInformationMessage(
-              `MCP Server started successfully on port ${result.port}`,
+              `Agent Maestro MCP Server started successfully on port ${result.port}`,
             );
           } else {
             vscode.window.showInformationMessage(
