@@ -4,7 +4,12 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { readConfiguration } from "../../utils/config";
-import { FileReadRequest, FileReadResponse } from "../types";
+import {
+  FileReadRequest,
+  FileReadResponse,
+  FileWriteRequest,
+  FileWriteResponse,
+} from "../types";
 import { getMimeType } from "../utils/mimeTypes";
 
 // Validate that the path is within the workspace
@@ -72,7 +77,88 @@ function validateWorkspacePath(requestedPath: string): {
   }
 }
 
+const registerSchemas = (fastify: FastifyInstance) => {
+  fastify.addSchema({
+    $id: "FileReadRequest",
+    type: "object",
+    required: ["path"],
+    properties: {
+      path: {
+        type: "string",
+        description: "File path relative to VS Code workspace root",
+      },
+    },
+  });
+  fastify.addSchema({
+    $id: "FileReadResponse",
+    type: "object",
+    properties: {
+      path: {
+        type: "string",
+        description: "The file path that was read",
+      },
+      content: {
+        type: "string",
+        description:
+          "File content (UTF-8 for text files, base64 for binary files)",
+      },
+      encoding: {
+        type: "string",
+        description:
+          "Content encoding (utf8 for text files, base64 for binary files)",
+      },
+      size: {
+        type: "number",
+        description: "File size in bytes",
+      },
+      mimeType: {
+        type: "string",
+        description: "Detected MIME type",
+      },
+    },
+  });
+
+  fastify.addSchema({
+    $id: "FileWriteRequest",
+    type: "object",
+    required: ["path", "content", "encoding"],
+    properties: {
+      path: {
+        type: "string",
+        description: "File path relative to VS Code workspace root",
+      },
+      content: {
+        type: "string",
+        description:
+          "File content to write (UTF-8 text or base64-encoded binary)",
+      },
+      encoding: {
+        type: "string",
+        enum: ["utf8", "base64"],
+        description: "Content encoding (utf8 for text, base64 for binary)",
+      },
+    },
+  });
+
+  fastify.addSchema({
+    $id: "FileWriteResponse",
+    type: "object",
+    properties: {
+      path: {
+        type: "string",
+        description: "The file path that was written",
+      },
+      size: {
+        type: "number",
+        description: "Size of the written file in bytes",
+      },
+    },
+  });
+};
+
 export async function registerFsRoutes(fastify: FastifyInstance) {
+  registerSchemas(fastify);
+
   // POST /api/v1/fs/read - Read file content
   fastify.post(
     "/fs/read",
@@ -187,6 +273,114 @@ export async function registerFsRoutes(fastify: FastifyInstance) {
         }
       } catch (error) {
         logger.error("Error reading file:", error);
+        return reply.status(500).send({
+          message:
+            error instanceof Error ? error.message : "Unknown error occurred",
+        });
+      }
+    },
+  );
+
+  // POST /api/v1/fs/write - Write file content
+  fastify.post(
+    "/fs/write",
+    {
+      schema: {
+        tags: ["FileSystem"],
+        summary: "Write file content",
+        description:
+          "Writes content to a file within the VS Code workspace. Supports both UTF-8 text and base64-encoded binary data",
+        body: { $ref: "FileWriteRequest#" },
+        response: {
+          200: {
+            description: "File content written successfully",
+            $ref: "FileWriteResponse#",
+          },
+          400: {
+            description: "Bad request - invalid path or access denied",
+            $ref: "ErrorResponse#",
+          },
+          500: {
+            description: "Internal server error",
+            $ref: "ErrorResponse#",
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const {
+          path: requestedPath,
+          content,
+          encoding,
+        } = request.body as FileWriteRequest;
+
+        if (!requestedPath || requestedPath.trim() === "") {
+          return reply.status(400).send({
+            message: "File path is required",
+          });
+        }
+
+        if (content === undefined) {
+          return reply.status(400).send({
+            message: "File content is required",
+          });
+        }
+
+        if (!encoding || (encoding !== "utf8" && encoding !== "base64")) {
+          return reply.status(400).send({
+            message: "Valid encoding (utf8 or base64) is required",
+          });
+        }
+
+        // Validate workspace path
+        const validation = validateWorkspacePath(requestedPath);
+        if (!validation.isValid) {
+          return reply.status(400).send({
+            message: validation.error,
+          });
+        }
+
+        const resolvedPath = validation.resolvedPath!;
+
+        try {
+          // Create parent directories if they don't exist
+          const parentDir = path.dirname(resolvedPath);
+          await fs.mkdir(parentDir, { recursive: true });
+
+          // Write file content with the specified encoding
+          let buffer: Buffer;
+          if (encoding === "base64") {
+            buffer = Buffer.from(content, "base64");
+          } else {
+            buffer = Buffer.from(content, "utf8");
+          }
+
+          await fs.writeFile(resolvedPath, buffer);
+
+          // Get file stats to return size
+          const stats = await fs.stat(resolvedPath);
+
+          const response: FileWriteResponse = {
+            path: requestedPath,
+            size: stats.size,
+          };
+
+          logger.info(
+            `File written successfully: ${requestedPath} (${stats.size} bytes)`,
+          );
+          return reply.send(response);
+        } catch (fileError: any) {
+          if (fileError.code === "EACCES") {
+            return reply.status(400).send({
+              message: "Access denied: Insufficient permissions to write file",
+            });
+          } else {
+            throw fileError;
+          }
+        }
+      } catch (error) {
+        logger.error("Error writing file:", error);
         return reply.status(500).send({
           message:
             error instanceof Error ? error.message : "Unknown error occurred",

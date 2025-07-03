@@ -141,45 +141,6 @@ export class ProxyServer {
         message: { type: "string" },
       },
     });
-    this.fastify.addSchema({
-      $id: "FileReadRequest",
-      type: "object",
-      required: ["path"],
-      properties: {
-        path: {
-          type: "string",
-          description: "File path relative to VS Code workspace root",
-        },
-      },
-    });
-    this.fastify.addSchema({
-      $id: "FileReadResponse",
-      type: "object",
-      properties: {
-        path: {
-          type: "string",
-          description: "The file path that was read",
-        },
-        content: {
-          type: "string",
-          description:
-            "File content (UTF-8 for text files, base64 for binary files)",
-        },
-        encoding: {
-          type: "string",
-          description:
-            "Content encoding (utf8 for text files, base64 for binary files)",
-        },
-        size: {
-          type: "number",
-          description: "File size in bytes",
-        },
-        mimeType: {
-          type: "string",
-          description: "Detected MIME type",
-        },
-      },
-    });
   }
 
   private async setupRoutes(): Promise<void> {

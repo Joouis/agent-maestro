@@ -24,3 +24,14 @@ export interface FileReadResponse {
   size: number;
   mimeType: string;
 }
+
+export interface FileWriteRequest {
+  path: string;
+  content: string;
+  encoding: string;
+}
+
+export interface FileWriteResponse {
+  path: string;
+  size: number;
+}
