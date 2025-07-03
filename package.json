@@ -74,6 +74,12 @@
           "default": 23334,
           "description": "Port for the Agent Maestro MCP server (need restart to take effect)",
           "scope": "application"
+        },
+        "agent-maestro.allowOutsideWorkspaceAccess": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the extension to access files outside of the current workspace",
+          "scope": "application"
         }
       }
     },

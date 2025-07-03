@@ -3,6 +3,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
+import { readConfiguration } from "../../utils/config";
 import { FileReadRequest, FileReadResponse } from "../types";
 import { getMimeType } from "../utils/mimeTypes";
 
@@ -28,12 +29,16 @@ function validateWorkspacePath(requestedPath: string): {
     const resolvedPath = path.resolve(workspaceRoot, requestedPath);
 
     // Check if the resolved path is within the workspace
-    const relativePath = path.relative(workspaceRoot, resolvedPath);
-    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-      return {
-        isValid: false,
-        error: "Access denied: Path is outside workspace boundaries",
-      };
+    const config = readConfiguration();
+    if (!config.allowOutsideWorkspaceAccess) {
+      const relativePath = path.relative(workspaceRoot, resolvedPath);
+      if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+        return {
+          isValid: false,
+          error:
+            "Access denied: Path is outside workspace boundaries. Enable 'allowOutsideWorkspaceAccess' in settings to access files outside the workspace.",
+        };
+      }
     }
 
     // Additional security checks for sensitive files

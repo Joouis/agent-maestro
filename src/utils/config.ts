@@ -5,6 +5,7 @@ export interface AgentMaestroConfiguration {
   defaultRooIdentifier: string;
   proxyServerPort: number;
   mcpServerPort: number;
+  allowOutsideWorkspaceAccess: boolean;
 }
 
 /**
@@ -15,6 +16,7 @@ export const CONFIG_KEYS = {
   DEFAULT_ROO_IDENTIFIER: "agent-maestro.defaultRooIdentifier",
   PROXY_SERVER_PORT: "agent-maestro.proxyServerPort",
   MCP_SERVER_PORT: "agent-maestro.mcpServerPort",
+  ALLOW_OUTSIDE_WORKSPACE_ACCESS: "agent-maestro.allowOutsideWorkspaceAccess",
 } as const;
 
 /**
@@ -25,6 +27,7 @@ export const DEFAULT_CONFIG: AgentMaestroConfiguration = {
   defaultRooIdentifier: "rooveterinaryinc.roo-cline",
   proxyServerPort: 23333,
   mcpServerPort: 23334,
+  allowOutsideWorkspaceAccess: false,
 };
 
 /**
@@ -49,6 +52,10 @@ export const readConfiguration = (): AgentMaestroConfiguration => {
     mcpServerPort: config.get<number>(
       CONFIG_KEYS.MCP_SERVER_PORT,
       DEFAULT_CONFIG.mcpServerPort,
+    ),
+    allowOutsideWorkspaceAccess: config.get<boolean>(
+      CONFIG_KEYS.ALLOW_OUTSIDE_WORKSPACE_ACCESS,
+      DEFAULT_CONFIG.allowOutsideWorkspaceAccess,
     ),
   };
 };
