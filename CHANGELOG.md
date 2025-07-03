@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.0 - 2025.07.03
+
+- Support `/fs/write` API
+- New config to allow file access outside the current workspace
+
 ## v1.1.0 - 2025.07.03
 
 - Make server ports configurable and code refactoring

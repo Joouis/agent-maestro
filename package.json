@@ -2,7 +2,7 @@
   "name": "agent-maestro",
   "displayName": "Agent Maestro",
   "description": "Headless VS Code AI: bring best-in-class AI agents into any workflow — assist, automate tasks, and generate solutions everywhere.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
   "repository": "https://github.com/Joouis/agent-maestro",
