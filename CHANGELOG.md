@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.0 - 2025.07.03
+
+- Make server ports configurable and code refactoring
+- Fix missing init original Roo adapter
+
 ## v1.0.1 - 2025.07.02
 
 - Enable parallel roo tasks execution feature by self-hosting MCP server
