@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.0 - 2025.07.10
+
+- Enhanced OS data for `/info` API
+- Support open VSC workspaces and close all
+
 ## v1.2.0 - 2025.07.03
 
 - Support `/fs/write` API
