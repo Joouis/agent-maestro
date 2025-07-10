@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import * as vscode from "vscode";
+import * as fs from "fs/promises";
 import { logger } from "../../utils/logger";
 import {
   WorkspaceUpdateRequest,
@@ -108,20 +109,23 @@ export async function registerVscodeRoutes(fastify: FastifyInstance) {
       try {
         const { folders } = request.body as WorkspaceUpdateRequest;
 
-        // Validate input
-        if (!Array.isArray(folders)) {
-          return reply.status(400).send({
-            message: "folders must be an array of strings",
-          });
+        // Check if all folders exist before proceeding
+        const invalidFolders: string[] = [];
+        for (const folder of folders) {
+          try {
+            const stats = await fs.stat(folder);
+            if (!stats.isDirectory()) {
+              invalidFolders.push(`${folder} (not a directory)`);
+            }
+          } catch (error) {
+            invalidFolders.push(`${folder} (does not exist)`);
+          }
         }
 
-        // Validate that all paths are absolute
-        for (const folder of folders) {
-          if (typeof folder !== "string" || !folder.trim()) {
-            return reply.status(400).send({
-              message: "All workspace folders must be non-empty strings",
-            });
-          }
+        if (invalidFolders.length > 0) {
+          return reply.status(400).send({
+            message: `Invalid folders: ${invalidFolders.join(", ")}`,
+          });
         }
 
         // Add the new workspace folders
