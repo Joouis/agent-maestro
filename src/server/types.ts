@@ -35,3 +35,22 @@ export interface FileWriteResponse {
   path: string;
   size: number;
 }
+
+export interface WorkspaceUpdateRequest {
+  folders: string[];
+}
+
+export interface WorkspaceUpdateResponse {
+  success: boolean;
+  message: string;
+  workspaceFolders: Array<{
+    uri: string;
+    name: string;
+    index: number;
+  }>;
+}
+
+export interface CloseWorkspacesResponse {
+  success: boolean;
+  message: string;
+}

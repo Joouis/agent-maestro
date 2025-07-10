@@ -1,0 +1,242 @@
+import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import * as vscode from "vscode";
+import { logger } from "../../utils/logger";
+import {
+  WorkspaceUpdateRequest,
+  WorkspaceUpdateResponse,
+  CloseWorkspacesResponse,
+} from "../types";
+
+const registerSchemas = (fastify: FastifyInstance) => {
+  fastify.addSchema({
+    $id: "WorkspaceUpdateRequest",
+    type: "object",
+    required: ["folders"],
+    properties: {
+      folders: {
+        type: "array",
+        items: {
+          type: "string",
+        },
+        description: "Array of absolute paths for workspace folders to add",
+      },
+    },
+  });
+
+  fastify.addSchema({
+    $id: "WorkspaceUpdateResponse",
+    type: "object",
+    properties: {
+      success: {
+        type: "boolean",
+        description: "Whether the operation succeeded",
+      },
+      message: {
+        type: "string",
+        description: "Status message",
+      },
+      workspaceFolders: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            uri: {
+              type: "string",
+              description: "Workspace folder URI",
+            },
+            name: {
+              type: "string",
+              description: "Workspace folder name",
+            },
+            index: {
+              type: "number",
+              description: "Index in workspace folders list",
+            },
+          },
+        },
+        description: "Current workspace folders after update",
+      },
+    },
+  });
+
+  fastify.addSchema({
+    $id: "CloseWorkspacesResponse",
+    type: "object",
+    properties: {
+      success: {
+        type: "boolean",
+        description: "Whether the operation succeeded",
+      },
+      message: {
+        type: "string",
+        description: "Status message",
+      },
+    },
+  });
+};
+
+export async function registerVscodeRoutes(fastify: FastifyInstance) {
+  registerSchemas(fastify);
+
+  // POST /api/v1/vscode/updateWorkspaceFolders - Update workspace folders
+  fastify.post(
+    "/vscode/updateWorkspaceFolders",
+    {
+      schema: {
+        tags: ["VSCode"],
+        summary: "Update workspace folders",
+        description:
+          "Adds new workspace folders to VSCode. Note: This operation may fail if existing workspace folders are open. It's recommended to call /vscode/closeAllWorkspaces first to ensure reliability. Both operations will trigger a VSCode window reload.",
+        body: { $ref: "WorkspaceUpdateRequest#" },
+        response: {
+          200: {
+            description: "Workspace folders updated successfully",
+            $ref: "WorkspaceUpdateResponse#",
+          },
+          400: {
+            description: "Bad request - invalid parameters",
+            $ref: "ErrorResponse#",
+          },
+          500: {
+            description: "Internal server error",
+            $ref: "ErrorResponse#",
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { folders } = request.body as WorkspaceUpdateRequest;
+
+        // Validate input
+        if (!Array.isArray(folders)) {
+          return reply.status(400).send({
+            message: "folders must be an array of strings",
+          });
+        }
+
+        // Validate that all paths are absolute
+        for (const folder of folders) {
+          if (typeof folder !== "string" || !folder.trim()) {
+            return reply.status(400).send({
+              message: "All workspace folders must be non-empty strings",
+            });
+          }
+        }
+
+        // Add the new workspace folders
+        if (folders.length > 0) {
+          // Convert string paths to workspace folders
+          const workspaceFolderObjects = folders.map((folderPath) => ({
+            uri: vscode.Uri.file(folderPath),
+          }));
+
+          const addSuccess = vscode.workspace.updateWorkspaceFolders(
+            0,
+            0,
+            ...workspaceFolderObjects,
+          );
+
+          if (!addSuccess) {
+            return reply.status(500).send({
+              message: "Failed to add new workspace folders",
+            });
+          }
+
+          logger.info(`Added ${folders.length} new workspace folders`);
+        }
+
+        // Get updated workspace folders
+        const workspaceFolders = (vscode.workspace.workspaceFolders || []).map(
+          (folder, index) => ({
+            uri: folder.uri.toString(),
+            name: folder.name,
+            index,
+          }),
+        );
+
+        const response: WorkspaceUpdateResponse = {
+          success: true,
+          message: `Successfully updated workspace folders. ${folders.length} folders added.`,
+          workspaceFolders,
+        };
+
+        logger.info(
+          `Workspace folders updated: added=${folders.length} folders`,
+        );
+
+        return reply.send(response);
+      } catch (error) {
+        logger.error("Error updating workspace folders:", error);
+        return reply.status(500).send({
+          message:
+            error instanceof Error ? error.message : "Unknown error occurred",
+        });
+      }
+    },
+  );
+
+  // POST /api/v1/vscode/closeAllWorkspaces - Close all workspace folders
+  fastify.post(
+    "/vscode/closeAllWorkspaces",
+    {
+      schema: {
+        tags: ["VSCode"],
+        summary: "Close all workspace folders",
+        description:
+          "Closes all currently open workspace folders in VSCode. This operation will trigger a VSCode window reload.",
+        response: {
+          200: {
+            description: "Workspace folders closed successfully",
+            $ref: "CloseWorkspacesResponse#",
+          },
+          500: {
+            description: "Internal server error",
+            $ref: "ErrorResponse#",
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        // Get current workspace folders count
+        const currentWorkspaceFolders = vscode.workspace.workspaceFolders || [];
+        const currentCount = currentWorkspaceFolders.length;
+
+        if (currentCount === 0) {
+          const response: CloseWorkspacesResponse = {
+            success: true,
+            message: "No workspace folders to close",
+          };
+          return reply.send(response);
+        }
+
+        // Close all existing workspaces
+        const closeSuccess = vscode.workspace.updateWorkspaceFolders(
+          0,
+          currentCount,
+        );
+
+        if (!closeSuccess) {
+          return reply.status(500).send({
+            message: "Failed to close workspace folders",
+          });
+        }
+
+        const response: CloseWorkspacesResponse = {
+          success: true,
+          message: `Successfully closed ${currentCount} workspace folders`,
+        };
+
+        logger.info(`Closed ${currentCount} workspace folders`);
+        return reply.send(response);
+      } catch (error) {
+        logger.error("Error closing workspace folders:", error);
+        return reply.status(500).send({
+          message:
+            error instanceof Error ? error.message : "Unknown error occurred",
+        });
+      }
+    },
+  );
+}

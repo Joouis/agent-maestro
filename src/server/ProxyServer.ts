@@ -9,6 +9,7 @@ import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
+import { registerVscodeRoutes } from "./routes/vscodeRoutes";
 import { DEFAULT_CONFIG } from "../utils/config";
 
 export class ProxyServer {
@@ -76,6 +77,10 @@ export class ProxyServer {
           {
             name: "System",
             description: "System information and status",
+          },
+          {
+            name: "VSCode",
+            description: "VSCode workspace and editor operations",
           },
           {
             name: "MCP Configuration",
@@ -150,6 +155,7 @@ export class ProxyServer {
         await registerClineRoutes(fastify, this.controller);
         await registerRooRoutes(fastify, this.controller, this.context);
         await registerFsRoutes(fastify);
+        await registerVscodeRoutes(fastify);
         await registerInfoRoutes(fastify, this.controller);
 
         // GET /api/v1/openapi.json - OpenAPI specification
