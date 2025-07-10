@@ -55,23 +55,25 @@ export async function registerInfoRoutes(
                   platform: {
                     type: "string",
                     description:
-                      "Operating system platform, get from os.platform()",
+                      "Operating system platform, get from os.platform() of Node.js",
                     example: "darwin",
                   },
                   arch: {
                     type: "string",
-                    description: "System architecture, get from os.arch()",
+                    description:
+                      "System architecture, get from os.arch() of Node.js",
                     example: "arm64",
                   },
                   release: {
                     type: "string",
-                    description: "OS release version, get from os.release()",
+                    description:
+                      "OS release version, get from os.release() of Node.js",
                     example: "24.5.0",
                   },
                   homedir: {
                     type: "string",
                     description:
-                      "User home directory path, get from os.homedir()",
+                      "User home directory path, get from os.homedir() of Node.js",
                   },
                 },
                 required: ["platform", "arch", "release", "homedir"],
