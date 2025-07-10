@@ -9,6 +9,13 @@ export interface ExtensionStatus {
   version?: string;
 }
 
+export interface OsInfo {
+  platform: string;
+  arch: string;
+  release: string;
+  homedir: string;
+}
+
 export interface SystemInfo {
   name: string;
   version: string;
@@ -16,7 +23,7 @@ export interface SystemInfo {
     [ext: string]: ExtensionStatus;
   };
   vscodeVersion: string;
-  os: string;
+  os: OsInfo;
   workspace: string;
   timestamp: string;
 }
@@ -36,21 +43,13 @@ export function getSystemInfo(controller: ExtensionController): SystemInfo {
   // Get VSCode version
   const vscodeVersion = vscode.version;
 
-  // Get OS information in the format: "Platform Architecture Release"
-  // Convert platform names to match expected format
-  const platform = os.platform();
-  let platformName: string = platform;
-  if (platform === "darwin") {
-    platformName = "Darwin";
-  } else if (platform === "win32") {
-    platformName = "Windows";
-  } else if (platform === "linux") {
-    platformName = "Linux";
-  }
-
-  const arch = os.arch();
-  const release = os.release();
-  const osInfo = `${platformName} ${arch} ${release}`;
+  // Get OS information
+  const osInfo: OsInfo = {
+    platform: os.platform(),
+    arch: os.arch(),
+    release: os.release(),
+    homedir: os.homedir(),
+  };
 
   // Get workspace root path
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
