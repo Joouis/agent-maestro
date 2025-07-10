@@ -87,7 +87,14 @@ export const parseFollowupData = (
       finalContent = askData.question;
     }
     if (askData.suggest && Array.isArray(askData.suggest)) {
-      suggestions = askData.suggest;
+      // Handle new structure where suggestions are objects with 'answer' property
+      suggestions = askData.suggest.map((suggestion: any) => {
+        if (typeof suggestion === "object" && suggestion.answer) {
+          return suggestion.answer;
+        }
+        // Fallback for old format (plain strings)
+        return typeof suggestion === "string" ? suggestion : String(suggestion);
+      });
     }
   } catch (e) {
     console.error("Failed to parse ask data as JSON:", e);

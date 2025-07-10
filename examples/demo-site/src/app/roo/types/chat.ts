@@ -19,6 +19,7 @@ export interface ChatState {
 export interface ApiResponse {
   taskId?: string;
   message?: {
+    ts?: number;
     type: string;
     text: string;
     partial: boolean;
@@ -33,9 +34,13 @@ export interface McpServerData {
   arguments?: any;
 }
 
+export interface Suggestion {
+  answer: string;
+}
+
 export interface FollowupData {
   question?: string;
-  suggest?: string[];
+  suggest?: Suggestion[];
 }
 
 export type MessageEventType =
