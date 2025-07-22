@@ -1,6 +1,7 @@
 import Fastify, { FastifyInstance } from "fastify";
 import swagger from "@fastify/swagger";
 import cors from "@fastify/cors";
+import compress from "@fastify/compress";
 import * as vscode from "vscode";
 import { logger } from "../utils/logger";
 import { analyzePortUsage } from "../utils/portUtils";
@@ -37,6 +38,7 @@ export class ProxyServer {
    */
   private async initialize(): Promise<void> {
     await this.setupCors();
+    await this.setupCompression();
     await this.setupSwagger();
     await this.setupRoutes();
   }
@@ -47,6 +49,14 @@ export class ProxyServer {
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "Accept"],
       credentials: true,
+    });
+  }
+
+  private async setupCompression(): Promise<void> {
+    await this.fastify.register(compress, {
+      global: true,
+      threshold: 1024, // Only compress responses larger than 1KB
+      encodings: ["gzip", "deflate", "br"], // Support multiple compression algorithms
     });
   }
 
