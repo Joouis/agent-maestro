@@ -120,19 +120,12 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
           tokenUsage,
           toolUsage,
         );
-        // Clean up handlers when task is completed
-        // Add a timeout to wait for unexpected occasional message events
-        // setTimeout(() => {
-        //   this.activeTaskHandlers.delete(taskId);
-        // }, 3_000);
       },
     );
 
     this.api.on(RooCodeEventName.TaskAborted, (taskId) => {
       logger.info(`RooCode Task Aborted: ${taskId}`);
       this.forwardEventToTaskHandlers(taskId, "onTaskAborted", taskId);
-      // Clean up handlers when task is aborted
-      // this.activeTaskHandlers.delete(taskId);
     });
 
     this.api.on(RooCodeEventName.TaskPaused, (taskId) => {
@@ -217,6 +210,24 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
   }
 
   /**
+   * Remove task handlers for a specific task
+   */
+  removeTaskHandlers(taskId: string): void {
+    if (this.activeTaskHandlers.has(taskId)) {
+      this.activeTaskHandlers.delete(taskId);
+
+      const remainingHandlers = Array.from(this.activeTaskHandlers.keys());
+      let message = `Removed event handlers for task: ${taskId}`;
+      if (remainingHandlers.length === 0) {
+        message += ", no remaining handlers";
+      } else {
+        message += `, remaining handlers for other tasks: ${remainingHandlers.join(", ")}`;
+      }
+      logger.info(message);
+    }
+  }
+
+  /**
    * Start a new task
    */
   async startNewTask(options: RooCodeTaskOptions = {}): Promise<string> {
@@ -251,6 +262,45 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
 
     logger.info(`Resuming RooCode task: ${taskId}`);
     await this.api.resumeTask(taskId);
+
+    // Check if task appears in clineStack with interval since it may take a few milliseconds
+    return new Promise<void>((resolve, reject) => {
+      const maxAttempts = 50; // 5 seconds total (50 * 100ms)
+      let attempts = 0;
+
+      const checkInterval = setInterval(() => {
+        attempts++;
+
+        try {
+          const clineStack = (this.api as any).sidebarProvider?.clineStack;
+          if (clineStack && Array.isArray(clineStack)) {
+            const taskExists = clineStack.some(
+              (item: any) => item.taskId === taskId,
+            );
+            if (taskExists) {
+              logger.info(
+                `Task ${taskId} found in clineStack after ${attempts * 100}ms`,
+              );
+              clearInterval(checkInterval);
+              resolve();
+              return;
+            }
+          }
+
+          if (attempts >= maxAttempts) {
+            logger.warn(
+              `Task ${taskId} not found in clineStack after ${maxAttempts * 100}ms`,
+            );
+            clearInterval(checkInterval);
+            resolve(); // Still resolve to not break the flow
+          }
+        } catch (error) {
+          logger.error(`Error checking clineStack for task ${taskId}:`, error);
+          clearInterval(checkInterval);
+          reject(error);
+        }
+      }, 100); // Check every 100ms
+    });
   }
 
   /**

@@ -29,7 +29,11 @@ const filteredSayTypes = ["api_req_started"];
 const CLOSE_SSE_STREAM_DELAY_MS = 1_000;
 
 // Helper function to set up SSE headers and return sendSSE function
-function setupSSEResponse(reply: FastifyReply, request: FastifyRequest) {
+function setupSSEResponse(
+  reply: FastifyReply,
+  request: FastifyRequest,
+  onDisconnect?: () => void,
+) {
   // Set up SSE headers
   reply.raw.setHeader("Content-Type", "text/event-stream");
   reply.raw.setHeader("Cache-Control", "no-cache");
@@ -46,10 +50,12 @@ function setupSSEResponse(reply: FastifyReply, request: FastifyRequest) {
   // Handle client disconnect
   request.raw.on("close", () => {
     logger.info("Client disconnected from SSE stream");
+    onDisconnect?.();
   });
 
   request.raw.on("error", (err: Error) => {
     logger.error("SSE stream error:", err);
+    onDisconnect?.();
   });
 
   // Helper function to close SSE stream with event notification
@@ -58,6 +64,7 @@ function setupSSEResponse(reply: FastifyReply, request: FastifyRequest) {
 
     setTimeout(() => {
       reply.raw.end();
+      onDisconnect?.();
     }, CLOSE_SSE_STREAM_DELAY_MS);
   };
 
@@ -247,8 +254,19 @@ export async function registerRooRoutes(
           });
         }
 
+        let currentTaskId: string | undefined;
+        const onDisconnect = () => {
+          if (currentTaskId) {
+            adapter.removeTaskHandlers(currentTaskId);
+          }
+        };
+
         // Use shared SSE setup
-        const { sendSSE, closeSSEStream } = setupSSEResponse(reply, request);
+        const { sendSSE, closeSSEStream } = setupSSEResponse(
+          reply,
+          request,
+          onDisconnect,
+        );
         const eventHandlers = createTaskEventHandlers(sendSSE, closeSSEStream);
 
         try {
@@ -262,6 +280,9 @@ export async function registerRooRoutes(
             newTab,
             eventHandlers,
           });
+
+          // Store the task ID for cleanup on disconnect
+          currentTaskId = newTaskId;
 
           // Send initial task created event
           sendSSE(SSEEventType.TASK_CREATED, {
@@ -369,8 +390,16 @@ export async function registerRooRoutes(
           });
         }
 
+        const onDisconnect = () => {
+          adapter.removeTaskHandlers(taskId);
+        };
+
         // Use shared SSE setup
-        const { sendSSE, closeSSEStream } = setupSSEResponse(reply, request);
+        const { sendSSE, closeSSEStream } = setupSSEResponse(
+          reply,
+          request,
+          onDisconnect,
+        );
         const eventHandlers = createTaskEventHandlers(sendSSE, closeSSEStream);
 
         try {
@@ -382,17 +411,17 @@ export async function registerRooRoutes(
             await adapter.resumeTask(taskId);
           }
 
-          // Send the message
-          await adapter.sendMessage(text, images, {
-            taskId,
-            eventHandlers,
-          });
-
           // Send initial task resumed event
           sendSSE(SSEEventType.TASK_RESUMED, {
             taskId,
             status: "resumed",
             message: "Task resumed successfully",
+          });
+
+          // Send the message
+          await adapter.sendMessage(text, images, {
+            taskId,
+            eventHandlers,
           });
         } catch (taskError) {
           logger.error("Error processing RooCode task message:", taskError);
