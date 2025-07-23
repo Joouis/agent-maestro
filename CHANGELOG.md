@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.1 - 2025.07.23
+
+- Fix send message does not work for the inactive chat issue
+- Enable response compression when content size is larger than 1KB
+
 ## v1.3.0 - 2025.07.10
 
 - Enhanced OS data for `/info` API
