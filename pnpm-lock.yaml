@@ -42,8 +42,8 @@ importers:
         specifier: ^2.29.4
         version: 2.29.4
       "@roo-code/types":
-        specifier: ^1.31.0
-        version: 1.31.0
+        specifier: ^1.36.0
+        version: 1.36.0
       "@types/mocha":
         specifier: ^10.0.10
         version: 10.0.10
@@ -950,10 +950,10 @@ packages:
       }
     engines: { node: ">=14" }
 
-  "@roo-code/types@1.31.0":
+  "@roo-code/types@1.36.0":
     resolution:
       {
-        integrity: sha512-jLT7dC4a577HRgcx1hyHurqndzhQobXAShAljHU4ascF+mZtYFZ2dSCiVh4AP4uqwCvw/BiBAgNrl4Ps3hzsSQ==,
+        integrity: sha512-oCHpXf04K460la0202Ai1PpS1ltJxDA3ciMxxRYPoU2lLUi87UT3n1RT8nCjLygrRpi1lQMBlbFTnC+e4YVSNw==,
       }
 
   "@sec-ant/readable-stream@0.4.1":
@@ -6673,7 +6673,7 @@ snapshots:
   "@pkgjs/parseargs@0.11.0":
     optional: true
 
-  "@roo-code/types@1.31.0": {}
+  "@roo-code/types@1.36.0": {}
 
   "@sec-ant/readable-stream@0.4.1": {}
 
