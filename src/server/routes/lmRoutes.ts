@@ -75,7 +75,7 @@ export async function registerLmRoutes(fastify: FastifyInstance) {
               );
             }
           })
-          .filter((m) => !!m); // Filter out any undefined models
+          .filter(Boolean); // Filter out any undefined models
 
         logger.info(`Retrieved ${safeModels.length} chat models`);
         return reply.send(safeModels);
