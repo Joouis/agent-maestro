@@ -63,7 +63,7 @@ export async function registerLmRoutes(fastify: FastifyInstance) {
         const models = (await vscode.lm.selectChatModels({})) || [];
 
         // Apply JSON.stringify/parse to safely handle any function properties
-        const safeModels: object[] = models
+        const serializedModels: object[] = models
           .map((model) => {
             try {
               // Convert to plain object to remove any function properties
