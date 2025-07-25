@@ -1,0 +1,93 @@
+import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import * as vscode from "vscode";
+import { logger } from "../../utils/logger";
+
+const registerSchemas = (fastify: FastifyInstance) => {
+  fastify.addSchema({
+    $id: "ChatModelsResponse",
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        capabilities: {
+          type: "object",
+          properties: {
+            supportsImageToText: { type: "boolean" },
+            supportsToolCalling: { type: "boolean" },
+          },
+          additionalProperties: true,
+        },
+        family: { type: "string" },
+        id: { type: "string" },
+        maxInputTokens: { type: "number" },
+        name: { type: "string" },
+        vendor: { type: "string" },
+        version: { type: "string" },
+      },
+      additionalProperties: true,
+      description: "vscode.LanguageModelChat interface without methods",
+    },
+    description: "Array of available chat models",
+  });
+};
+
+export async function registerLmRoutes(fastify: FastifyInstance) {
+  registerSchemas(fastify);
+
+  // GET /api/v1/lm/chatModels - List all available chat models
+  fastify.get(
+    "/lm/chatModels",
+    {
+      schema: {
+        tags: ["Language Models"],
+        summary: "List available chat models",
+        description:
+          "Retrieves all available language models from VSCode's language model API. Models may support various capabilities like image-to-text conversion and tool calling.",
+        response: {
+          200: {
+            description: "Successfully retrieved chat models",
+            $ref: "ChatModelsResponse#",
+          },
+          500: {
+            description: "Internal server error",
+            $ref: "ErrorResponse#",
+          },
+        },
+      },
+    },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        logger.info("Fetching available chat models from VSCode LM API");
+
+        // Get all available chat models from VSCode
+        const models = (await vscode.lm.selectChatModels({})) || [];
+
+        // Apply JSON.stringify/parse to safely handle any function properties
+        const safeModels: object[] = models
+          .map((model) => {
+            try {
+              // Convert to plain object to remove any function properties
+              return JSON.parse(JSON.stringify(model));
+            } catch (parseError) {
+              logger.warn(
+                `Failed to parse model data for model ${model.id}:`,
+                parseError,
+              );
+            }
+          })
+          .filter((m) => !!m); // Filter out any undefined models
+
+        logger.info(`Retrieved ${safeModels.length} chat models`);
+        return reply.send(safeModels);
+      } catch (error) {
+        logger.error("Error fetching chat models:", error);
+        return reply.status(500).send({
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to fetch chat models",
+        });
+      }
+    },
+  );
+}
