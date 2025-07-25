@@ -122,12 +122,7 @@ export class McpServer {
             // Execute tasks through task manager with streaming
             const taskResults = await this.taskManager.executeRooTasks(tasks, {
               maxConcurrency,
-              streamContent: async (content: {
-                type: "text";
-                text: string;
-              }) => {
-                await streamContent(content);
-              },
+              streamContent,
             });
 
             logger.info(`MCP Tool Execute Roo Tasks completed.`);

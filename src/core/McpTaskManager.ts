@@ -1,5 +1,7 @@
 import { ClineMessage } from "@roo-code/types";
 import { Semaphore } from "es-toolkit";
+// @ts-expect-error "TS1479: The current file is a CommonJS module"
+import { Content } from "fastmcp";
 import { logger } from "../utils/logger";
 import { RooCodeAdapter, TaskEventHandlers } from "./RooCodeAdapter";
 import { v4 as uuidv4 } from "uuid";
@@ -15,13 +17,9 @@ export interface TaskRun {
   result: string;
 }
 
-export interface StreamContentCallback {
-  (content: { type: "text"; text: string }): Promise<void>;
-}
-
 export interface ExecuteRooTasksOptions {
   maxConcurrency?: number;
-  streamContent?: StreamContentCallback;
+  streamContent?: (content: Content | Content[]) => Promise<void>;
   timeout?: number;
 }
 
@@ -129,7 +127,7 @@ export class McpTaskManager {
   private async executeTask(
     taskQuery: string,
     run: { [taskId: string]: TaskRun },
-    streamContent?: StreamContentCallback,
+    streamContent?: (content: Content | Content[]) => Promise<void>,
     timeout = 300000,
     onTaskCreated?: (taskId: string) => void,
   ): Promise<void> {
