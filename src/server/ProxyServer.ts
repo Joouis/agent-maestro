@@ -10,7 +10,7 @@ import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
-import { registerVscodeRoutes } from "./routes/vscodeRoutes";
+import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
 import { DEFAULT_CONFIG } from "../utils/config";
 
@@ -90,8 +90,8 @@ export class ProxyServer {
             description: "System information and status",
           },
           {
-            name: "VSCode",
-            description: "VSCode workspace and editor operations",
+            name: "Workspace",
+            description: "Workspace management and editor operations",
           },
           {
             name: "Language Models",
@@ -170,7 +170,7 @@ export class ProxyServer {
         await registerClineRoutes(fastify, this.controller);
         await registerRooRoutes(fastify, this.controller, this.context);
         await registerFsRoutes(fastify);
-        await registerVscodeRoutes(fastify);
+        await registerWorkspaceRoutes(fastify);
         await registerLmRoutes(fastify);
         await registerInfoRoutes(fastify, this.controller);
 

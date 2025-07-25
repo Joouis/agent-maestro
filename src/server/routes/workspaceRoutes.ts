@@ -76,18 +76,18 @@ const registerSchemas = (fastify: FastifyInstance) => {
   });
 };
 
-export async function registerVscodeRoutes(fastify: FastifyInstance) {
+export async function registerWorkspaceRoutes(fastify: FastifyInstance) {
   registerSchemas(fastify);
 
-  // POST /api/v1/vscode/updateWorkspaceFolders - Update workspace folders
+  // POST /api/v1/workspace/updateWorkspaceFolders - Update workspace folders
   fastify.post(
-    "/vscode/updateWorkspaceFolders",
+    "/workspace/updateWorkspaceFolders",
     {
       schema: {
-        tags: ["VSCode"],
+        tags: ["Workspace"],
         summary: "Update workspace folders",
         description:
-          "Adds new workspace folders to VSCode. Note: This operation may fail if existing workspace folders are open. It's recommended to call /vscode/closeAllWorkspaces first to ensure reliability. Both operations will trigger a VSCode window reload.",
+          "Adds new workspace folders to the workspace. Note: This operation may fail if existing workspace folders are open. It's recommended to call /workspace/closeAllWorkspaces first to ensure reliability. Both operations will trigger a workspace window reload.",
         body: { $ref: "WorkspaceUpdateRequest#" },
         response: {
           200: {
@@ -180,15 +180,15 @@ export async function registerVscodeRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // POST /api/v1/vscode/closeAllWorkspaces - Close all workspace folders
+  // POST /api/v1/workspace/closeAllWorkspaces - Close all workspace folders
   fastify.post(
-    "/vscode/closeAllWorkspaces",
+    "/workspace/closeAllWorkspaces",
     {
       schema: {
-        tags: ["VSCode"],
+        tags: ["Workspace"],
         summary: "Close all workspace folders",
         description:
-          "Closes all currently open workspace folders in VSCode. This operation will trigger a VSCode window reload.",
+          "Closes all currently open workspace folders in the workspace. This operation will trigger a workspace window reload.",
         response: {
           200: {
             description: "Workspace folders closed successfully",
