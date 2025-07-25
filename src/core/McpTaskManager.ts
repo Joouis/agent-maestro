@@ -1,7 +1,7 @@
 import { ClineMessage } from "@roo-code/types";
 import { Semaphore } from "es-toolkit";
 // @ts-expect-error "TS1479: The current file is a CommonJS module"
-import { Content } from "fastmcp";
+import type { Content } from "fastmcp";
 import { logger } from "../utils/logger";
 import { RooCodeAdapter, TaskEventHandlers } from "./RooCodeAdapter";
 import { v4 as uuidv4 } from "uuid";

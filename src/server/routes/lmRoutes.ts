@@ -97,23 +97,8 @@ export async function registerLmRoutes(fastify: FastifyInstance) {
         // Get all available chat models from VSCode
         const models = (await vscode.lm.selectChatModels({})) || [];
 
-        // Apply JSON.stringify/parse to safely handle any function properties
-        const serializedModels: object[] = models
-          .map((model) => {
-            try {
-              // Convert to plain object to remove any function properties
-              return JSON.parse(JSON.stringify(model));
-            } catch (parseError) {
-              logger.warn(
-                `Failed to parse model data for model ${model.id}:`,
-                parseError,
-              );
-            }
-          })
-          .filter(Boolean); // Filter out any undefined models
-
-        logger.info(`Retrieved ${safeModels.length} chat models`);
-        return reply.send(safeModels);
+        logger.info(`Retrieved ${models.length} chat models`);
+        return reply.send(models);
       } catch (error) {
         logger.error("Error fetching chat models:", error);
         return reply.status(500).send({
