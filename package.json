@@ -136,6 +136,7 @@
     "onStartupFinished"
   ],
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.57.0",
     "@fastify/compress": "^8.1.0",
     "@fastify/cors": "^11.0.1",
     "@fastify/swagger": "^9.5.1",
@@ -147,7 +148,6 @@
     "zod": "^3.25.67"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.54.0",
     "@changesets/cli": "^2.29.4",
     "@roo-code/types": "^1.36.0",
     "@types/mocha": "^10.0.10",

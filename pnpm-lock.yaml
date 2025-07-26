@@ -7,6 +7,9 @@ settings:
 importers:
   .:
     dependencies:
+      "@anthropic-ai/sdk":
+        specifier: ^0.57.0
+        version: 0.57.0
       "@fastify/compress":
         specifier: ^8.1.0
         version: 8.1.0
@@ -35,9 +38,6 @@ importers:
         specifier: ^3.25.67
         version: 3.25.67
     devDependencies:
-      "@anthropic-ai/sdk":
-        specifier: ^0.54.0
-        version: 0.54.0
       "@changesets/cli":
         specifier: ^2.29.4
         version: 2.29.4
@@ -97,10 +97,10 @@ importers:
         version: 5.8.3
 
 packages:
-  "@anthropic-ai/sdk@0.54.0":
+  "@anthropic-ai/sdk@0.57.0":
     resolution:
       {
-        integrity: sha512-xyoCtHJnt/qg5GG6IgK+UJEndz8h8ljzt/caKXmq3LfBF81nC/BW6E4x2rOWCZcvsLyVW+e8U5mtIr6UCE/kJw==,
+        integrity: sha512-z5LMy0MWu0+w2hflUgj4RlJr1R+0BxKXL7ldXTO8FasU8fu599STghO+QKwId2dAD0d464aHtU+ChWuRHw4FNw==,
       }
     hasBin: true
 
@@ -6094,7 +6094,7 @@ packages:
       }
 
 snapshots:
-  "@anthropic-ai/sdk@0.54.0": {}
+  "@anthropic-ai/sdk@0.57.0": {}
 
   "@azu/format-text@1.0.2": {}
 

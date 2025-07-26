@@ -12,6 +12,7 @@ import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
+import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
 import { DEFAULT_CONFIG } from "../utils/config";
 
 export class ProxyServer {
@@ -96,6 +97,11 @@ export class ProxyServer {
           {
             name: "Language Models",
             description: "VSCode language model operations",
+          },
+          {
+            name: "Anthropic API",
+            description:
+              "Anthropic-compatible API endpoints using VSCode Language Models",
           },
           {
             name: "MCP Configuration",
@@ -201,6 +207,11 @@ export class ProxyServer {
       },
       { prefix: "/api/v1" },
     );
+
+    // No prefix to mock Anthropic API
+    await this.fastify.register(async (fastify) => {
+      await registerAnthropicRoutes(fastify);
+    });
   }
 
   async start(): Promise<{ started: boolean; reason: string; port?: number }> {
