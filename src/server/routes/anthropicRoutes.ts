@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import * as vscode from "vscode";
-import { v4 } from "uuid";
 import { logger } from "../../utils/logger";
 
 export async function registerAnthropicRoutes(fastify: FastifyInstance) {
@@ -70,6 +69,8 @@ export async function registerAnthropicRoutes(fastify: FastifyInstance) {
       const {
         model: modelId,
         messages,
+        tools,
+        tool_choice,
         ...msgCreateParams
       } = request.body as Anthropic.Messages.MessageCreateParams;
 
@@ -103,6 +104,17 @@ export async function registerAnthropicRoutes(fastify: FastifyInstance) {
           justification:
             "Anthropic-compatible /v1/messages endpoint with streaming support using VS Code Language Model API",
           modelOptions: msgCreateParams,
+          tools: (tools as Anthropic.Messages.Tool[] | undefined)?.map((t) => ({
+            name: t.name,
+            description: t.description ?? "",
+            inputSchema: t.input_schema,
+          })),
+          toolMode:
+            tool_choice?.type === "auto"
+              ? vscode.LanguageModelChatToolMode.Auto
+              : tool_choice?.type === "any"
+                ? vscode.LanguageModelChatToolMode.Required
+                : undefined,
         };
 
         // 4. Send request to the VS Code LM API
@@ -121,12 +133,12 @@ export async function registerAnthropicRoutes(fastify: FastifyInstance) {
 
           // https://docs.anthropic.com/en/api/messages#response-id
           const resp: Anthropic.Messages.Message = {
-            id: v4(),
+            id: `msg_${Date.now()}`,
             type: "message",
             role: "assistant",
+            model: modelId,
             // TODO: what about other ContentBlock like ToolUseBlock or ThinkingBlock?
             content: [{ type: "text", text: fullText, citations: null }],
-            model: modelId,
             stop_reason: "end_turn",
             stop_sequence: null,
             usage: {
@@ -144,32 +156,97 @@ export async function registerAnthropicRoutes(fastify: FastifyInstance) {
           return reply.send(resp);
         }
 
-        // 5. If streaming, pipe chunks as SSE
-        // reply.raw.writeHead(200, {
-        //     "Content-Type": "text/event-stream",
-        //     "Cache-Control": "no-cache, no-transform",
-        //     Connection: "keep-alive",
-        //   });
+        // 6. If streaming, pipe chunks as SSE
+        const sendSSE = (eventType: string, data: any) => {
+          const sseData = `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
+          reply.raw.write(sseData);
+        };
 
-        //   logger.info("Starting streaming response");
-        //   for await (const fragment of response.text) {
-        //     // const chunk: Anthropic.Messages. = {
-        //     //   id: `chunk_${Date.now()}`,
-        //     //   model,
-        //     //   object: "chat.completion.chunk",
-        //     //   choices: [
-        //     //     { delta: { text: fragment }, index: 0, finish_reason: null },
-        //     //   ],
-        //     // };
-        //     // reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-        //     if (fragment instanceof vscode.LanguageModelTextPart) {
-        //     }
-        //   }
-        //   // Signal end of stream
-        //   reply.raw.write(`data: [DONE]\n\n`);
-        //   reply.raw.end();
-        //   logger.info("Streaming response completed");
-        //   return;
+        logger.info("====================== STREAMING ======================");
+        reply.raw.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "Access-Control-Allow-Origin": "*",
+        });
+
+        sendSSE("message_start", {
+          type: "message_start",
+          message: {
+            id: `msg_${Date.now()}`,
+            type: "message",
+            role: "assistant",
+            model: "claude-opus-4-20250514",
+            content: [],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 0,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+              output_tokens: 0,
+              service_tier: "standard",
+            },
+          },
+        });
+
+        let isTextBlockStarted = false;
+        let isToolCallBlockStarted = false;
+
+        for await (const chunk of response.stream) {
+          if (chunk instanceof vscode.LanguageModelTextPart) {
+            logger.info(`Text: `, chunk);
+            if (!isTextBlockStarted) {
+              isTextBlockStarted = true;
+              sendSSE("content_block_start", {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "text", text: "" },
+              });
+            }
+            sendSSE("content_block_delta", {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "text_delta", text: chunk.value },
+            });
+          } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+            logger.info(`Tool call: `, chunk);
+            if (!isToolCallBlockStarted) {
+              isToolCallBlockStarted = true;
+              sendSSE("content_block_start", {
+                type: "content_block_start",
+                index: 0,
+                content_block: {
+                  type: "tool_use",
+                  id: chunk.callId,
+                  name: chunk.name,
+                  input: chunk.input,
+                },
+              });
+            }
+            // sendSSE("content_block_delta", {
+            //   type: "content_block_delta",
+            //   index: 0,
+            //   delta: { type: "input_json_delta", partial_json: chunk.input },
+            // });
+          }
+        }
+
+        sendSSE("content_block_stop", { type: "content_block_stop", index: 0 });
+        sendSSE("message_delta", {
+          type: "message_delta",
+          delta: {
+            stop_reason: isToolCallBlockStarted ? "tool_use" : "end_turn",
+            stop_sequence: null,
+          },
+          usage: { output_tokens: 0 },
+        });
+        sendSSE("message_stop", { type: "message_stop" });
+
+        // Signal end of stream
+        reply.raw.end();
+        logger.info("Streaming response completed");
+        return;
       } catch (error) {
         logger.error("Error processing Anthropic API request:", error);
         return reply.status(500).send({
