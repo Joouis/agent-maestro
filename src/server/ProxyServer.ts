@@ -1,7 +1,3 @@
-import Fastify, { FastifyInstance } from "fastify";
-import swagger from "@fastify/swagger";
-import cors from "@fastify/cors";
-import compress from "@fastify/compress";
 import * as vscode from "vscode";
 import { logger } from "../utils/logger";
 import { analyzePortUsage } from "../utils/portUtils";
@@ -15,17 +11,18 @@ import { registerLmRoutes } from "./routes/lmRoutes";
 import { honoHandleMessages } from "./routes/anthropicRoutes";
 import { DEFAULT_CONFIG } from "../utils/config";
 
-import { Hono } from "hono";
-import { cors as honoCors } from "hono/cors";
-import { serve } from "@hono/node-server";
+import { OpenAPIHono } from "@hono/zod-openapi";
+import { cors } from "hono/cors";
+import { compress } from "hono/compress";
+import { serve, ServerType } from "@hono/node-server";
 
 export class ProxyServer {
-  private fastify: FastifyInstance;
+  private app: OpenAPIHono;
   private controller: ExtensionController;
   private context?: vscode.ExtensionContext;
   private isRunning = false;
   private port: number;
-  private hono: Hono;
+  private server?: ServerType;
 
   constructor(
     controller: ExtensionController,
@@ -35,215 +32,96 @@ export class ProxyServer {
     this.controller = controller;
     this.context = context;
     this.port = port;
-    this.fastify = Fastify({
-      connectionTimeout: 10_000,
-      logger: false, // Use our custom logger instead
-    });
 
-    this.hono = new Hono();
-    this.hono.use(honoCors());
-    this.hono.get("/", (c) => c.text("Hono!"));
-    this.hono.post("/v1/messages", honoHandleMessages);
+    // Initialize OpenAPIHono app with basic middleware
+    this.app = new OpenAPIHono();
+    this.app.use(cors());
+    this.app.use(compress());
 
-    serve(
-      {
-        fetch: this.hono.fetch,
-        port: 3000,
+    // Register routes under the /api/v1 namespace
+    this.app.route("/api/v1", this.getApiV1Routes());
+
+    // Anthropic-compatible messages endpoint
+    this.app.post("/v1/messages", honoHandleMessages);
+
+    // GET /openapi.json - OpenAPI specification
+    this.app.doc("/openapi.json", this.getOpenApiDocTpl());
+  }
+
+  private getApiV1Routes(): OpenAPIHono {
+    const routes = new OpenAPIHono();
+    // TODO: Route registration will be updated after converting each route file
+    // For now, add a placeholder API group
+
+    // Register migrated routes
+    registerInfoRoutes(routes, this.controller);
+    registerLmRoutes(routes);
+    registerClineRoutes(routes, this.controller);
+    registerWorkspaceRoutes(routes);
+    registerFsRoutes(routes);
+
+    // TODO: Register other routes as they are migrated
+    // registerRooRoutes(routes, this.controller, this.context);
+
+    return routes;
+  }
+
+  private getOpenApiDocTpl() {
+    return {
+      openapi: "3.0.0",
+      info: {
+        title: "Agent Maestro API",
+        description: "API for managing extension tasks",
+        version: "1.0.0",
       },
-      (info) => {
-        console.log(`Server is running on http://localhost:${info.port}`);
-      },
-    );
-  }
-
-  /**
-   * Initializes the server by setting up CORS, Swagger, and routes.
-   */
-  private async initialize(): Promise<void> {
-    await this.setupCors();
-    await this.setupCompression();
-    await this.setupSwagger();
-    await this.setupRoutes();
-  }
-
-  private async setupCors(): Promise<void> {
-    await this.fastify.register(cors, {
-      origin: true, // Allow all origins, you can restrict this to specific domains if needed
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "Accept"],
-      credentials: true,
-    });
-  }
-
-  private async setupCompression(): Promise<void> {
-    await this.fastify.register(compress, {
-      global: true,
-      threshold: 1024, // Only compress responses larger than 1KB
-      encodings: ["gzip", "deflate", "br"], // Support multiple compression algorithms
-    });
-  }
-
-  private async setupSwagger(): Promise<void> {
-    await this.fastify.register(swagger, {
-      openapi: {
-        openapi: "3.0.0",
-        info: {
-          title: "Cline Maestro API",
-          description: "API for managing extension tasks",
-          version: "0.0.1",
+      servers: [
+        {
+          url: `http://127.0.0.1:${this.port}`,
+          description: "Development server",
         },
-        servers: [
-          {
-            url: `http://127.0.0.1:${this.port}/api/v1`,
-            description: "Development server",
-          },
-        ],
-        tags: [
-          {
-            name: "Tasks",
-            description: "Task management operations",
-          },
-          {
-            name: "FileSystem",
-            description: "File system operations",
-          },
-          {
-            name: "System",
-            description: "System information and status",
-          },
-          {
-            name: "Workspace",
-            description: "Workspace management and editor operations",
-          },
-          {
-            name: "Language Models",
-            description: "VSCode language model operations",
-          },
-          {
-            name: "Anthropic API",
-            description:
-              "Anthropic-compatible API endpoints using VSCode Language Models",
-          },
-          {
-            name: "MCP Configuration",
-            description: "MCP server configuration operations",
-          },
-          {
-            name: "Documentation",
-            description: "API documentation",
-          },
-        ],
-        components: {},
-      },
-      refResolver: {
-        buildLocalReference: (json, _baseUri, _fragment, i) =>
-          String(json.$id) || `id-${i}`,
-      },
-      prefix: "/api/v1",
-    });
-    this.fastify.addSchema({
-      $id: "MessageRequest",
-      type: "object",
-      required: ["text"],
-      properties: {
-        text: {
-          type: "string",
-          description: "The task query to execute",
+      ],
+      tags: [
+        {
+          name: "Tasks",
+          description: "Task management operations",
         },
-        images: {
-          type: "array",
-          items: { type: "string" },
-          description: "Optional array of base64-encoded images",
+        {
+          name: "FileSystem",
+          description: "File system operations",
         },
-        extensionId: {
-          type: "string",
+        {
+          name: "System",
+          description: "System information and status",
+        },
+        {
+          name: "Workspace",
+          description: "Workspace management and editor operations",
+        },
+        {
+          name: "Language Models",
+          description: "VSCode language model operations",
+        },
+        {
+          name: "Anthropic API",
           description:
-            "Optional, assign task to a specific Roo variant extension like Kilo Code, by default is RooCode extension",
+            "Anthropic-compatible API endpoints using VSCode Language Models",
         },
-      },
-    });
-    this.fastify.addSchema({
-      $id: "TaskResponse",
-      type: "object",
-      properties: {
-        id: {
-          type: "string",
-          description: "Unique task identifier",
+        {
+          name: "MCP Configuration",
+          description: "MCP server configuration operations",
         },
-        status: {
-          type: "string",
-          enum: ["created", "running", "completed", "failed"],
-          description: "Current task status",
+        {
+          name: "Documentation",
+          description: "API documentation",
         },
-        message: {
-          type: "string",
-          description: "Status message",
-        },
-      },
-    });
-    this.fastify.addSchema({
-      $id: "ErrorResponse",
-      type: "object",
-      properties: {
-        message: { type: "string" },
-      },
-    });
-  }
-
-  private async setupRoutes(): Promise<void> {
-    // Register API routes with prefix
-    await this.fastify.register(
-      async (fastify) => {
-        await registerClineRoutes(fastify, this.controller);
-        await registerRooRoutes(fastify, this.controller, this.context);
-        await registerFsRoutes(fastify);
-        await registerWorkspaceRoutes(fastify);
-        await registerLmRoutes(fastify);
-        await registerInfoRoutes(fastify, this.controller);
-
-        // GET /api/v1/openapi.json - OpenAPI specification
-        fastify.get(
-          "/openapi.json",
-          {
-            schema: {
-              tags: ["Documentation"],
-              summary: "Get OpenAPI specification",
-              description:
-                "Returns the complete OpenAPI v3 specification for this API",
-              response: {
-                200: {
-                  description: "OpenAPI specification",
-                  type: "object",
-                },
-              },
-            },
-          },
-          async (_request, reply) => {
-            const swaggerDoc = fastify.swagger();
-            return reply
-              .header("Content-Type", "application/json")
-              .send(JSON.stringify(swaggerDoc, null, 2));
-          },
-        );
-      },
-      { prefix: "/api/v1" },
-    );
+      ],
+    };
   }
 
   async start(): Promise<{ started: boolean; reason: string; port?: number }> {
     if (this.isRunning) {
       logger.warn("Server is already running");
       return { started: false, reason: "Server is already running" };
-    }
-
-    // Perform initialization first
-    try {
-      await this.initialize();
-    } catch (error) {
-      logger.error("Failed to initialize server:", error);
-      throw new Error(
-        `Server initialization failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
     }
 
     // Analyze the current port usage
@@ -254,14 +132,15 @@ export class ProxyServer {
       case "use":
         // Port is available, proceed normally
         try {
-          await this.fastify.listen({
+          this.server = serve({
+            fetch: this.app.fetch,
             port: this.port,
-            host: "127.0.0.1",
+            hostname: "127.0.0.1",
           });
           this.isRunning = true;
           logger.info(`Server started on http://127.0.0.1:${this.port}`);
           logger.info(
-            `API documentation: http://127.0.0.1:${this.port}/api/v1/openapi.json`,
+            `API documentation: http://127.0.0.1:${this.port}/openapi.json`,
           );
           return {
             started: true,
@@ -276,7 +155,7 @@ export class ProxyServer {
       case "skip":
         // Another instance of our server is already running, skip silently
         logger.info(
-          `${analysis.message}. API available at http://127.0.0.1:${this.port}/api/v1/openapi.json`,
+          `${analysis.message}. API available at http://127.0.0.1:${this.port}/openapi.json`,
         );
         return {
           started: false,
@@ -303,7 +182,10 @@ export class ProxyServer {
     }
 
     try {
-      await this.fastify.close();
+      if (this.server) {
+        this.server.close();
+        this.server = undefined;
+      }
       this.isRunning = false;
       logger.info("Server stopped");
     } catch (error) {
@@ -330,7 +212,7 @@ export class ProxyServer {
     };
   }
 
-  getOpenAPIUrl(): string {
-    return `http://localhost:${this.port}/api/v1/openapi.json`;
+  getOpenApiUrl(): string {
+    return `http://localhost:${this.port}/openapi.json`;
   }
 }

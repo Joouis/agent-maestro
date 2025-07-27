@@ -22,7 +22,7 @@ Agent Maestro is a VS Code extension that provides a unified API interface for m
 - **Real-time Event Streaming**: Server-Sent Events (SSE) support for live task monitoring and message streaming
 - **Task Management**: Comprehensive task lifecycle management including creation, execution, monitoring, and completion tracking
 - **Profile Management**: Advanced configuration management for different AI provider settings and profiles
-- **OpenAPI Documentation**: Auto-generated API documentation accessible via `/api/v1/openapi.json`
+- **OpenAPI Documentation**: Auto-generated API documentation accessible via `/openapi.json`
 - **Extension Auto-Discovery**: Automatic detection and activation of installed AI coding extensions
 
 **Note on Cline Support**: While Cline integration is included, its support is currently limited due to the extension's low extensibility and restricted API surface. RooCode offers significantly better integration capabilities and is the recommended primary agent.
@@ -72,7 +72,7 @@ Another workflow to introduce parallel Roo tasks execution will be added soon.
 
 Agent Maestro exposes a RESTful API that abstracts the complexity of different AI coding agents into a unified interface.
 
-_Note: For latest API documentation, always refer to `/api/v1/openapi.json`._
+_Note: For latest API documentation, always refer to `/openapi.json`._
 
 **Base URLs**:
 
@@ -99,7 +99,7 @@ The RooCode routes provide real-time streaming updates through Server-Sent Event
 
 **Documentation Routes:**
 
-- `GET /api/v1/openapi.json` - Complete OpenAPI v3 specification
+- `GET /openapi.json` - Complete OpenAPI v3 specification
 
 ## Roo Code API Documentation
 

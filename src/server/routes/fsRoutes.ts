@@ -1,16 +1,12 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { readConfiguration } from "../../utils/config";
-import {
-  FileReadRequest,
-  FileReadResponse,
-  FileWriteRequest,
-  FileWriteResponse,
-} from "../types";
 import { getMimeType } from "../utils/mimeTypes";
+import { ErrorResponseSchema } from "../schemas";
 
 // Validate that the path is within the workspace
 function validateWorkspacePath(requestedPath: string): {
@@ -77,315 +73,300 @@ function validateWorkspacePath(requestedPath: string): {
   }
 }
 
-const registerSchemas = (fastify: FastifyInstance) => {
-  fastify.addSchema({
-    $id: "FileReadRequest",
-    type: "object",
-    required: ["path"],
-    properties: {
-      path: {
-        type: "string",
-        description: "File path relative to VS Code workspace root",
-      },
-    },
-  });
-  fastify.addSchema({
-    $id: "FileReadResponse",
-    type: "object",
-    properties: {
-      path: {
-        type: "string",
-        description: "The file path that was read",
-      },
+// Zod schemas for validation and OpenAPI documentation
+const FileReadRequestSchema = z.object({
+  path: z
+    .string()
+    .min(1)
+    .describe("File path relative to VS Code workspace root"),
+});
+
+const FileReadResponseSchema = z.object({
+  path: z.string().describe("The file path that was read"),
+  content: z
+    .string()
+    .describe("File content (UTF-8 for text files, base64 for binary files)"),
+  encoding: z
+    .string()
+    .describe(
+      "Content encoding (utf8 for text files, base64 for binary files)",
+    ),
+  size: z.number().describe("File size in bytes"),
+  mimeType: z.string().describe("Detected MIME type"),
+});
+
+const FileWriteRequestSchema = z.object({
+  path: z
+    .string()
+    .min(1)
+    .describe("File path relative to VS Code workspace root"),
+  content: z
+    .string()
+    .describe("File content to write (UTF-8 text or base64-encoded binary)"),
+  encoding: z
+    .enum(["utf8", "base64"])
+    .describe("Content encoding (utf8 for text, base64 for binary)"),
+});
+
+const FileWriteResponseSchema = z.object({
+  path: z.string().describe("The file path that was written"),
+  size: z.number().describe("Size of the written file in bytes"),
+});
+
+// OpenAPI route definitions
+const readFileRoute = createRoute({
+  method: "post",
+  path: "/fs/read",
+  tags: ["FileSystem"],
+  summary: "Read file content",
+  description:
+    "Reads the content of a file within the VS Code workspace. Returns text files as UTF-8 and binary files as base64-encoded data",
+  request: {
+    body: {
       content: {
-        type: "string",
-        description:
-          "File content (UTF-8 for text files, base64 for binary files)",
-      },
-      encoding: {
-        type: "string",
-        description:
-          "Content encoding (utf8 for text files, base64 for binary files)",
-      },
-      size: {
-        type: "number",
-        description: "File size in bytes",
-      },
-      mimeType: {
-        type: "string",
-        description: "Detected MIME type",
+        "application/json": {
+          schema: FileReadRequestSchema,
+        },
       },
     },
-  });
-
-  fastify.addSchema({
-    $id: "FileWriteRequest",
-    type: "object",
-    required: ["path", "content", "encoding"],
-    properties: {
-      path: {
-        type: "string",
-        description: "File path relative to VS Code workspace root",
-      },
+  },
+  responses: {
+    200: {
       content: {
-        type: "string",
-        description:
-          "File content to write (UTF-8 text or base64-encoded binary)",
+        "application/json": {
+          schema: FileReadResponseSchema,
+        },
       },
-      encoding: {
-        type: "string",
-        enum: ["utf8", "base64"],
-        description: "Content encoding (utf8 for text, base64 for binary)",
+      description: "File content read successfully",
+    },
+    400: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Bad request - invalid path or access denied",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "File not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+const writeFileRoute = createRoute({
+  method: "post",
+  path: "/fs/write",
+  tags: ["FileSystem"],
+  summary: "Write file content",
+  description:
+    "Writes content to a file within the VS Code workspace. Supports both UTF-8 text and base64-encoded binary data",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: FileWriteRequestSchema,
+        },
       },
     },
-  });
-
-  fastify.addSchema({
-    $id: "FileWriteResponse",
-    type: "object",
-    properties: {
-      path: {
-        type: "string",
-        description: "The file path that was written",
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: FileWriteResponseSchema,
+        },
       },
-      size: {
-        type: "number",
-        description: "Size of the written file in bytes",
-      },
+      description: "File content written successfully",
     },
-  });
-};
+    400: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Bad request - invalid path or access denied",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
 
-export async function registerFsRoutes(fastify: FastifyInstance) {
-  registerSchemas(fastify);
-
+export function registerFsRoutes(app: OpenAPIHono) {
   // POST /api/v1/fs/read - Read file content
-  fastify.post(
-    "/fs/read",
-    {
-      schema: {
-        tags: ["FileSystem"],
-        summary: "Read file content",
-        description:
-          "Reads the content of a file within the VS Code workspace. Returns text files as UTF-8 and binary files as base64-encoded data",
-        body: { $ref: "FileReadRequest#" },
-        response: {
-          200: {
-            description: "File content read successfully",
-            $ref: "FileReadResponse#",
-          },
-          400: {
-            description: "Bad request - invalid path or access denied",
-            $ref: "ErrorResponse#",
-          },
-          404: {
-            description: "File not found",
-            $ref: "ErrorResponse#",
-          },
-          500: {
-            description: "Internal server error",
-            $ref: "ErrorResponse#",
-          },
-        },
-      },
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      try {
-        const { path: requestedPath } = request.body as FileReadRequest;
+  app.openapi(readFileRoute, async (c) => {
+    try {
+      const { path: requestedPath } = await c.req.json();
 
-        if (!requestedPath || requestedPath.trim() === "") {
-          return reply.status(400).send({
-            message: "File path is required",
-          });
-        }
-
-        // Validate workspace path
-        const validation = validateWorkspacePath(requestedPath);
-        if (!validation.isValid) {
-          return reply.status(400).send({
-            message: validation.error,
-          });
-        }
-
-        const resolvedPath = validation.resolvedPath!;
-
-        try {
-          // Check if file exists and get stats
-          const stats = await fs.stat(resolvedPath);
-
-          if (!stats.isFile()) {
-            return reply.status(400).send({
-              message: "Path does not point to a file",
-            });
-          }
-
-          // Read file content
-          const buffer = await fs.readFile(resolvedPath);
-          const mimeType = getMimeType(resolvedPath);
-
-          // Determine if file is text or binary based on MIME type
-          const isTextFile =
-            mimeType.startsWith("text/") ||
-            mimeType === "application/json" ||
-            mimeType === "application/javascript" ||
-            mimeType === "application/typescript" ||
-            mimeType === "application/xml" ||
-            mimeType === "application/yaml" ||
-            mimeType === "application/sql";
-
-          let content: string;
-          let encoding: string;
-
-          if (isTextFile) {
-            // For text files, return UTF-8 content directly
-            content = buffer.toString("utf8");
-            encoding = "utf8";
-          } else {
-            // For binary files, return base64-encoded content
-            content = buffer.toString("base64");
-            encoding = "base64";
-          }
-
-          const response: FileReadResponse = {
-            path: requestedPath,
-            content,
-            encoding,
-            size: stats.size,
-            mimeType,
-          };
-
-          logger.info(
-            `File read successfully: ${requestedPath} (${stats.size} bytes)`,
-          );
-          return reply.send(response);
-        } catch (fileError: any) {
-          if (fileError.code === "ENOENT") {
-            return reply.status(404).send({
-              message: "File not found",
-            });
-          } else if (fileError.code === "EACCES") {
-            return reply.status(400).send({
-              message: "Access denied: Insufficient permissions to read file",
-            });
-          } else {
-            throw fileError;
-          }
-        }
-      } catch (error) {
-        logger.error("Error reading file:", error);
-        return reply.status(500).send({
-          message:
-            error instanceof Error ? error.message : "Unknown error occurred",
-        });
+      if (!requestedPath || requestedPath.trim() === "") {
+        return c.json({ message: "File path is required" }, 400);
       }
-    },
-  );
 
-  // POST /api/v1/fs/write - Write file content
-  fastify.post(
-    "/fs/write",
-    {
-      schema: {
-        tags: ["FileSystem"],
-        summary: "Write file content",
-        description:
-          "Writes content to a file within the VS Code workspace. Supports both UTF-8 text and base64-encoded binary data",
-        body: { $ref: "FileWriteRequest#" },
-        response: {
-          200: {
-            description: "File content written successfully",
-            $ref: "FileWriteResponse#",
-          },
-          400: {
-            description: "Bad request - invalid path or access denied",
-            $ref: "ErrorResponse#",
-          },
-          500: {
-            description: "Internal server error",
-            $ref: "ErrorResponse#",
-          },
-        },
-      },
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
+      // Validate workspace path
+      const validation = validateWorkspacePath(requestedPath);
+      if (!validation.isValid) {
+        return c.json({ message: validation.error ?? "" }, 400);
+      }
+
+      const resolvedPath = validation.resolvedPath!;
+
       try {
-        const {
+        // Check if file exists and get stats
+        const stats = await fs.stat(resolvedPath);
+
+        if (!stats.isFile()) {
+          return c.json({ message: "Path does not point to a file" }, 400);
+        }
+
+        // Read file content
+        const buffer = await fs.readFile(resolvedPath);
+        const mimeType = getMimeType(resolvedPath);
+
+        // Determine if file is text or binary based on MIME type
+        const isTextFile =
+          mimeType.startsWith("text/") ||
+          mimeType === "application/json" ||
+          mimeType === "application/javascript" ||
+          mimeType === "application/typescript" ||
+          mimeType === "application/xml" ||
+          mimeType === "application/yaml" ||
+          mimeType === "application/sql";
+
+        let content: string;
+        let encoding: string;
+
+        if (isTextFile) {
+          // For text files, return UTF-8 content directly
+          content = buffer.toString("utf8");
+          encoding = "utf8";
+        } else {
+          // For binary files, return base64-encoded content
+          content = buffer.toString("base64");
+          encoding = "base64";
+        }
+
+        const response = {
           path: requestedPath,
           content,
           encoding,
-        } = request.body as FileWriteRequest;
+          size: stats.size,
+          mimeType,
+        };
 
-        if (!requestedPath || requestedPath.trim() === "") {
-          return reply.status(400).send({
-            message: "File path is required",
-          });
-        }
-
-        if (content === undefined) {
-          return reply.status(400).send({
-            message: "File content is required",
-          });
-        }
-
-        if (!encoding || (encoding !== "utf8" && encoding !== "base64")) {
-          return reply.status(400).send({
-            message: "Valid encoding (utf8 or base64) is required",
-          });
-        }
-
-        // Validate workspace path
-        const validation = validateWorkspacePath(requestedPath);
-        if (!validation.isValid) {
-          return reply.status(400).send({
-            message: validation.error,
-          });
-        }
-
-        const resolvedPath = validation.resolvedPath!;
-
-        try {
-          // Create parent directories if they don't exist
-          const parentDir = path.dirname(resolvedPath);
-          await fs.mkdir(parentDir, { recursive: true });
-
-          // Write file content with the specified encoding
-          let buffer: Buffer;
-          if (encoding === "base64") {
-            buffer = Buffer.from(content, "base64");
-          } else {
-            buffer = Buffer.from(content, "utf8");
-          }
-
-          await fs.writeFile(resolvedPath, buffer);
-
-          // Get file stats to return size
-          const stats = await fs.stat(resolvedPath);
-
-          const response: FileWriteResponse = {
-            path: requestedPath,
-            size: stats.size,
-          };
-
-          logger.info(
-            `File written successfully: ${requestedPath} (${stats.size} bytes)`,
+        logger.info(
+          `File read successfully: ${requestedPath} (${stats.size} bytes)`,
+        );
+        return c.json(response, 200);
+      } catch (fileError: any) {
+        if (fileError.code === "ENOENT") {
+          return c.json({ message: "File not found" }, 404);
+        } else if (fileError.code === "EACCES") {
+          return c.json(
+            { message: "Access denied: Insufficient permissions to read file" },
+            400,
           );
-          return reply.send(response);
-        } catch (fileError: any) {
-          if (fileError.code === "EACCES") {
-            return reply.status(400).send({
-              message: "Access denied: Insufficient permissions to write file",
-            });
-          } else {
-            throw fileError;
-          }
+        } else {
+          throw fileError;
         }
-      } catch (error) {
-        logger.error("Error writing file:", error);
-        return reply.status(500).send({
-          message:
-            error instanceof Error ? error.message : "Unknown error occurred",
-        });
       }
-    },
-  );
+    } catch (error) {
+      logger.error("Error reading file:", error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // POST /api/v1/fs/write - Write file content
+  app.openapi(writeFileRoute, async (c) => {
+    try {
+      const { path: requestedPath, content, encoding } = await c.req.json();
+
+      if (!requestedPath || requestedPath.trim() === "") {
+        return c.json({ message: "File path is required" }, 400);
+      }
+
+      if (content === undefined) {
+        return c.json({ message: "File content is required" }, 400);
+      }
+
+      if (!encoding || (encoding !== "utf8" && encoding !== "base64")) {
+        return c.json(
+          { message: "Valid encoding (utf8 or base64) is required" },
+          400,
+        );
+      }
+
+      // Validate workspace path
+      const validation = validateWorkspacePath(requestedPath);
+      if (!validation.isValid) {
+        return c.json({ message: validation.error ?? "" }, 400);
+      }
+
+      const resolvedPath = validation.resolvedPath!;
+
+      try {
+        // Create parent directories if they don't exist
+        const parentDir = path.dirname(resolvedPath);
+        await fs.mkdir(parentDir, { recursive: true });
+
+        // Write file content with the specified encoding
+        let buffer: Buffer;
+        if (encoding === "base64") {
+          buffer = Buffer.from(content, "base64");
+        } else {
+          buffer = Buffer.from(content, "utf8");
+        }
+
+        await fs.writeFile(resolvedPath, buffer);
+
+        // Get file stats to return size
+        const stats = await fs.stat(resolvedPath);
+
+        const response = {
+          path: requestedPath,
+          size: stats.size,
+        };
+
+        logger.info(
+          `File written successfully: ${requestedPath} (${stats.size} bytes)`,
+        );
+        return c.json(response, 200);
+      } catch (fileError: any) {
+        if (fileError.code === "EACCES") {
+          return c.json(
+            {
+              message: "Access denied: Insufficient permissions to write file",
+            },
+            400,
+          );
+        } else {
+          throw fileError;
+        }
+      }
+    } catch (error) {
+      logger.error("Error writing file:", error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
 }

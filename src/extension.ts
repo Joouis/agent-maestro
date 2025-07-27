@@ -80,7 +80,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
           if (result.started) {
             vscode.window.showInformationMessage(
-              `Agent Maestro proxy server started successfully. View API documentation at ${proxy.getOpenAPIUrl()}`,
+              `Agent Maestro proxy server started successfully. View API documentation at ${proxy.getOpenApiUrl()}`,
             );
           } else {
             // Don't show error message for "another instance running" case

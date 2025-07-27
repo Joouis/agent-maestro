@@ -1,158 +1,150 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { z } from "zod";
 import * as vscode from "vscode";
 import { LanguageModelToolInformation } from "vscode";
 import { logger } from "../../utils/logger";
+import { ErrorResponseSchema } from "../schemas";
 
-const registerSchemas = (fastify: FastifyInstance) => {
-  fastify.addSchema({
-    $id: "ChatModelsResponse",
-    type: "array",
-    items: {
-      type: "object",
-      properties: {
-        capabilities: {
-          type: "object",
-          properties: {
-            supportsImageToText: { type: "boolean" },
-            supportsToolCalling: { type: "boolean" },
-          },
-          additionalProperties: true,
+// Zod schemas for validation and OpenAPI documentation
+const ChatModelCapabilitiesSchema = z
+  .object({
+    supportsImageToText: z
+      .boolean()
+      .describe("Whether the model supports image-to-text conversion"),
+    supportsToolCalling: z
+      .boolean()
+      .describe("Whether the model supports tool calling"),
+  })
+  .loose(); // Allow additional properties
+
+const ChatModelSchema = z
+  .object({
+    capabilities: ChatModelCapabilitiesSchema.describe("Model capabilities"),
+    family: z.string().describe("Model family name"),
+    id: z.string().describe("Unique model identifier"),
+    maxInputTokens: z.number().describe("Maximum input tokens supported"),
+    name: z.string().describe("Human-readable model name"),
+    vendor: z.string().describe("Model vendor/provider"),
+    version: z.string().describe("Model version"),
+  })
+  .loose(); // Allow additional properties for VSCode interface compatibility
+
+const ChatModelsResponseSchema = z
+  .array(ChatModelSchema)
+  .describe("Array of available chat models");
+
+const LanguageModelToolSchema = z.object({
+  name: z.string().describe("A unique name for the tool"),
+  description: z
+    .string()
+    .describe(
+      "A description of this tool that may be passed to a language model",
+    ),
+  inputSchema: z
+    .record(z.string(), z.any())
+    .nullable()
+    .describe("A JSON schema for the input this tool accepts"),
+  tags: z
+    .array(z.string())
+    .describe("A set of tags that roughly describe the tool's capabilities"),
+});
+
+const ToolsResponseSchema = z
+  .array(LanguageModelToolSchema)
+  .describe("Array of available language model tools");
+
+// OpenAPI route definitions
+const chatModelsRoute = createRoute({
+  method: "get",
+  path: "/lm/chatModels",
+  tags: ["Language Models"],
+  summary: "List available chat models",
+  description:
+    "Retrieves all available language models from VSCode's language model API. Models may support various capabilities like image-to-text conversion and tool calling.",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: ChatModelsResponseSchema,
         },
-        family: { type: "string" },
-        id: { type: "string" },
-        maxInputTokens: { type: "number" },
-        name: { type: "string" },
-        vendor: { type: "string" },
-        version: { type: "string" },
       },
-      additionalProperties: true,
-      description: "vscode.LanguageModelChat interface without methods",
+      description: "Successfully retrieved chat models",
     },
-    description: "Array of available chat models",
-  });
-
-  fastify.addSchema({
-    $id: "ToolsResponse",
-    type: "array",
-    items: {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          description: "A unique name for the tool",
-        },
-        description: {
-          type: "string",
-          description:
-            "A description of this tool that may be passed to a language model",
-        },
-        inputSchema: {
-          type: ["object", "null"],
-          additionalProperties: true,
-          description: "A JSON schema for the input this tool accepts",
-        },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "A set of tags that roughly describe the tool's capabilities",
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
         },
       },
-      required: ["name", "description", "tags"],
-      additionalProperties: false,
-      description: "vscode.LanguageModelToolInformation interface",
+      description: "Internal server error",
     },
-    description: "Array of available language model tools",
-  });
-};
+  },
+});
 
-export async function registerLmRoutes(fastify: FastifyInstance) {
-  registerSchemas(fastify);
+const toolsRoute = createRoute({
+  method: "get",
+  path: "/lm/tools",
+  tags: ["Language Models"],
+  summary: "List available language model tools",
+  description:
+    "Retrieves all available language model tools registered by extensions using lm.registerTool. Tools provide specific capabilities that language models can invoke to perform tasks.",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: ToolsResponseSchema,
+        },
+      },
+      description: "Successfully retrieved language model tools",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
 
+export function registerLmRoutes(app: OpenAPIHono) {
   // GET /api/v1/lm/chatModels - List all available chat models
-  fastify.get(
-    "/lm/chatModels",
-    {
-      schema: {
-        tags: ["Language Models"],
-        summary: "List available chat models",
-        description:
-          "Retrieves all available language models from VSCode's language model API. Models may support various capabilities like image-to-text conversion and tool calling.",
-        response: {
-          200: {
-            description: "Successfully retrieved chat models",
-            $ref: "ChatModelsResponse#",
-          },
-          500: {
-            description: "Internal server error",
-            $ref: "ErrorResponse#",
-          },
-        },
-      },
-    },
-    async (_request: FastifyRequest, reply: FastifyReply) => {
-      try {
-        logger.info("Fetching available chat models from VSCode LM API");
+  app.openapi(chatModelsRoute, async (c) => {
+    try {
+      logger.info("Fetching available chat models from VSCode LM API");
 
-        // Get all available chat models from VSCode
-        const models = (await vscode.lm.selectChatModels({})) || [];
+      // Get all available chat models from VSCode
+      const models = (await vscode.lm.selectChatModels({})) || [];
 
-        logger.info(`Retrieved ${models.length} chat models`);
-        return reply.send(models);
-      } catch (error) {
-        logger.error("Error fetching chat models:", error);
-        return reply.status(500).send({
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to fetch chat models",
-        });
-      }
-    },
-  );
+      logger.info(`Retrieved ${models.length} chat models`);
+      return c.json(ChatModelsResponseSchema.parse(models), 200);
+    } catch (error) {
+      logger.error("Error fetching chat models:", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to fetch chat models";
+      return c.json({ message }, 500);
+    }
+  });
 
   // GET /api/v1/lm/tools - List all available language model tools
-  fastify.get(
-    "/lm/tools",
-    {
-      schema: {
-        tags: ["Language Models"],
-        summary: "List available language model tools",
-        description:
-          "Retrieves all available language model tools registered by extensions using lm.registerTool. Tools provide specific capabilities that language models can invoke to perform tasks.",
-        response: {
-          200: {
-            description: "Successfully retrieved language model tools",
-            $ref: "ToolsResponse#",
-          },
-          500: {
-            description: "Internal server error",
-            $ref: "ErrorResponse#",
-          },
-        },
-      },
-    },
-    async (_request: FastifyRequest, reply: FastifyReply) => {
-      try {
-        logger.info(
-          "Fetching available language model tools from VSCode LM API",
-        );
+  app.openapi(toolsRoute, async (c) => {
+    try {
+      logger.info("Fetching available language model tools from VSCode LM API");
 
-        // Get all available tools from VSCode
-        const tools: readonly LanguageModelToolInformation[] =
-          vscode.lm.tools || [];
+      // Get all available tools from VSCode
+      const tools: readonly LanguageModelToolInformation[] =
+        vscode.lm.tools || [];
 
-        logger.info(`Retrieved ${tools.length} language model tools`);
-        return reply.send(tools);
-      } catch (error) {
-        logger.error("Error fetching language model tools:", error);
-        return reply.status(500).send({
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to fetch language model tools",
-        });
-      }
-    },
-  );
+      logger.info(`Retrieved ${tools.length} language model tools`);
+      return c.json(tools, 200);
+    } catch (error) {
+      logger.error("Error fetching language model tools:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch language model tools";
+      return c.json({ message }, 500);
+    }
+  });
 }
