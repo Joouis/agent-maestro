@@ -1,5 +1,4 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import { z } from "zod";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";

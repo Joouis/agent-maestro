@@ -1,5 +1,4 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import { z } from "zod";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import * as vscode from "vscode";
 import { LanguageModelToolInformation } from "vscode";
 import { logger } from "../../utils/logger";

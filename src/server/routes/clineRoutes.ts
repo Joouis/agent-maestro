@@ -1,5 +1,4 @@
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
-import { z } from "zod";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { logger } from "../../utils/logger";
 import { ExtensionController } from "../../core/controller";
 import { ErrorResponseSchema } from "../schemas";

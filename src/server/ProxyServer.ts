@@ -8,7 +8,10 @@ import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
-import { honoHandleMessages } from "./routes/anthropicRoutes";
+import {
+  honoHandleMessages,
+  registerAnthropicRoutes,
+} from "./routes/anthropicRoutes";
 import { DEFAULT_CONFIG } from "../utils/config";
 
 import { OpenAPIHono } from "@hono/zod-openapi";
@@ -42,7 +45,7 @@ export class ProxyServer {
     this.app.route("/api/v1", this.getApiV1Routes());
 
     // Anthropic-compatible messages endpoint
-    this.app.post("/v1/messages", honoHandleMessages);
+    this.app.route("/api/anthropic", this.getApiAnthropicRoutes());
 
     // GET /openapi.json - OpenAPI specification
     this.app.doc("/openapi.json", this.getOpenApiDocTpl());
@@ -50,19 +53,20 @@ export class ProxyServer {
 
   private getApiV1Routes(): OpenAPIHono {
     const routes = new OpenAPIHono();
-    // TODO: Route registration will be updated after converting each route file
-    // For now, add a placeholder API group
 
-    // Register migrated routes
     registerInfoRoutes(routes, this.controller);
     registerLmRoutes(routes);
     registerClineRoutes(routes, this.controller);
     registerWorkspaceRoutes(routes);
     registerFsRoutes(routes);
+    registerRooRoutes(routes, this.controller, this.context);
 
-    // TODO: Register other routes as they are migrated
-    // registerRooRoutes(routes, this.controller, this.context);
+    return routes;
+  }
 
+  private getApiAnthropicRoutes(): OpenAPIHono {
+    const routes = new OpenAPIHono();
+    registerAnthropicRoutes(routes);
     return routes;
   }
 
