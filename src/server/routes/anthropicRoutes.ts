@@ -110,12 +110,6 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
 
     // 6. If streaming, pipe chunks as SSE
     logger.info("====================== STREAMING ======================");
-    // Set SSE headers
-    // c.header("Content-Type", "text/event-stream");
-    // c.header("Cache-Control", "no-cache, no-transform");
-    // c.header("Connection", "keep-alive");
-    // c.header("Access-Control-Allow-Origin", "*");
-
     return streamSSE(
       c,
       async (stream) => {
