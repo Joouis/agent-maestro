@@ -19,6 +19,9 @@ importers:
       "@fastify/swagger":
         specifier: ^9.5.1
         version: 9.5.1
+      "@hono/node-server":
+        specifier: ^1.17.1
+        version: 1.17.1(hono@4.8.9)
       axios:
         specifier: ^1.9.0
         version: 1.9.0
@@ -31,6 +34,9 @@ importers:
       fastmcp:
         specifier: ^3.5.0
         version: 3.5.0
+      hono:
+        specifier: ^4.8.9
+        version: 4.8.9
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
@@ -696,6 +702,15 @@ packages:
       {
         integrity: sha512-EGjYLA7vDmCPK7XViAYMF6y4+K3XUy5soVTVxsyXolNe/Svb4nFQxvtuQvvoQb2Gzc9pxiF3+ZQN/iZDHhKtTg==,
       }
+
+  "@hono/node-server@1.17.1":
+    resolution:
+      {
+        integrity: sha512-SY79W/C+2b1MyAzmIcV32Q47vO1b5XwLRwj8S9N6Jr5n1QCkIfAIH6umOSgqWZ4/v67hg6qq8Ha5vZonVidGsg==,
+      }
+    engines: { node: ">=18.14.1" }
+    peerDependencies:
+      hono: ^4
 
   "@humanfs/core@0.19.1":
     resolution:
@@ -3044,6 +3059,13 @@ packages:
         integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==,
       }
     hasBin: true
+
+  hono@4.8.9:
+    resolution:
+      {
+        integrity: sha512-ERIxkXMRhUxGV7nS/Af52+j2KL60B1eg+k6cPtgzrGughS+espS9KQ7QO0SMnevtmRlBfAcN0mf1jKtO6j/doA==,
+      }
+    engines: { node: ">=16.9.0" }
 
   hosted-git-info@2.8.9:
     resolution:
@@ -6525,6 +6547,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  "@hono/node-server@1.17.1(hono@4.8.9)":
+    dependencies:
+      hono: 4.8.9
+
   "@humanfs/core@0.19.1": {}
 
   "@humanfs/node@0.16.6":
@@ -8181,6 +8207,8 @@ snapshots:
       function-bind: 1.1.2
 
   he@1.2.0: {}
+
+  hono@4.8.9: {}
 
   hosted-git-info@2.8.9: {}
 

@@ -12,8 +12,12 @@ import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
-import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
+import { honoHandleMessages } from "./routes/anthropicRoutes";
 import { DEFAULT_CONFIG } from "../utils/config";
+
+import { Hono } from "hono";
+import { cors as honoCors } from "hono/cors";
+import { serve } from "@hono/node-server";
 
 export class ProxyServer {
   private fastify: FastifyInstance;
@@ -21,6 +25,7 @@ export class ProxyServer {
   private context?: vscode.ExtensionContext;
   private isRunning = false;
   private port: number;
+  private hono: Hono;
 
   constructor(
     controller: ExtensionController,
@@ -31,8 +36,24 @@ export class ProxyServer {
     this.context = context;
     this.port = port;
     this.fastify = Fastify({
+      connectionTimeout: 10_000,
       logger: false, // Use our custom logger instead
     });
+
+    this.hono = new Hono();
+    this.hono.use(honoCors());
+    this.hono.get("/", (c) => c.text("Hono!"));
+    this.hono.post("/v1/messages", honoHandleMessages);
+
+    serve(
+      {
+        fetch: this.hono.fetch,
+        port: 3000,
+      },
+      (info) => {
+        console.log(`Server is running on http://localhost:${info.port}`);
+      },
+    );
   }
 
   /**
@@ -207,11 +228,6 @@ export class ProxyServer {
       },
       { prefix: "/api/v1" },
     );
-
-    // No prefix to mock Anthropic API
-    await this.fastify.register(async (fastify) => {
-      await registerAnthropicRoutes(fastify);
-    });
   }
 
   async start(): Promise<{ started: boolean; reason: string; port?: number }> {
