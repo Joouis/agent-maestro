@@ -108,18 +108,6 @@ export abstract class ExtensionBaseAdapter<TApi = any> {
   }
 
   /**
-   * Send message to current task
-   */
-  async sendMessage(message?: string, images?: string[]): Promise<void> {
-    if (!this.api) {
-      throw new Error(`${this.getDisplayName()} API not available`);
-    }
-
-    logger.info(`Sending message to ${this.getDisplayName()}`);
-    await (this.api as any).sendMessage(message, images);
-  }
-
-  /**
    * Press primary button
    */
   async pressPrimaryButton(): Promise<void> {

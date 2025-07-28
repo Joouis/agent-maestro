@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import {
-  EVENT_TYPES,
+  RooCodeEventName,
   MESSAGE_TYPES,
   ASK_TYPES,
   STATUS_MESSAGES,
@@ -232,13 +232,13 @@ export const useMessageHandler = ({
   const handleEvent = useCallback(
     (event: string, data: any) => {
       switch (event) {
-        case EVENT_TYPES.TASK_CREATED:
+        case RooCodeEventName.TaskCreated:
           handleTaskCreated(data);
           break;
-        case EVENT_TYPES.TASK_RESUMED:
+        case RooCodeEventName.TaskUnpaused:
           handleTaskResumed(data);
           break;
-        case EVENT_TYPES.MESSAGE:
+        case RooCodeEventName.Message:
           if (data.message?.partial !== undefined) {
             if (data.message.type === MESSAGE_TYPES.SAY) {
               handleSayMessage(data);
@@ -251,11 +251,10 @@ export const useMessageHandler = ({
             }
           }
           break;
-        case EVENT_TYPES.TASK_COMPLETED:
+        case RooCodeEventName.TaskCompleted:
           handleTaskCompleted();
           break;
-        case EVENT_TYPES.TASK_ABORTED:
-        case EVENT_TYPES.ERROR:
+        case RooCodeEventName.TaskAborted:
           handleTaskError();
           break;
       }
