@@ -2,7 +2,8 @@ onlyBuiltDependencies:
   - "@vscode/vsce-sign"
   - esbuild
   - keytar
-# packageExtensions:
-#   "@roo-code/types@*":
-#     peerDependencies:
-#       "zod": "^3.25.61"
+
+packageExtensions:
+  "@roo-code/types":
+    dependencies:
+      "zod": "^3.25.61"
