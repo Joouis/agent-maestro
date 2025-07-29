@@ -8,27 +8,9 @@ import {
   addAgentMaestroMcpConfig,
   getAvailableExtensions,
 } from "../../utils/mcpConfig";
-import { isEqual, last, throttle } from "es-toolkit";
+import { isEqual } from "es-toolkit";
 
 const filteredSayTypes = ["api_req_started"];
-
-// Helper function to create event handlers for task streaming
-const taskEventHandler = (
-  event: TaskEvent,
-  sendSSE: (event: TaskEvent) => void,
-) => {
-  switch (event.name) {
-    case RooCodeEventName.Message: {
-      const { message } = (event as TaskEvent<RooCodeEventName.Message>).data;
-      if (filteredSayTypes.includes(message.say ?? "")) {
-        return;
-      }
-    }
-
-    default:
-      sendSSE(event);
-  }
-};
 
 // Helper function to process event stream with deduplication
 const processEventStream = async (
