@@ -236,10 +236,20 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
   ): AsyncGenerator<TaskEvent, void, unknown> {
     let done = false;
     let doneTimeout: NodeJS.Timeout | null = null;
+    let isTaskCreated = false;
 
     const terminalEventHandler = (event: TaskEvent) => {
+      if (!isTaskCreated && event.name === RooCodeEventName.TaskCreated) {
+        isTaskCreated = true;
+      }
+
       // Check if this is a terminal event
       if (this.isTerminalEvent(event)) {
+        // Ignore terminal events before TaskCreated, since taskAborted would be triggered at sendMessage scenario
+        if (!isTaskCreated) {
+          return true;
+        }
+
         if (doneTimeout) {
           clearTimeout(doneTimeout);
         }
@@ -267,8 +277,11 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
         const queue = this.taskEventQueues.get(taskId);
         if (queue && queue.length > 0) {
           const event = queue.shift()!;
+          const shouldIgnoreEvent = terminalEventHandler(event);
+          if (shouldIgnoreEvent) {
+            continue; // Skip this event
+          }
           yield event;
-          terminalEventHandler(event);
           continue;
         }
 
@@ -290,8 +303,11 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
           break;
         }
 
+        const shouldIgnoreEvent = terminalEventHandler(event);
+        if (shouldIgnoreEvent) {
+          continue; // Skip this event
+        }
         yield event;
-        terminalEventHandler(event);
       }
     } finally {
       if (doneTimeout) {
