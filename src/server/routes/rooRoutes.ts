@@ -62,8 +62,8 @@ const taskEventHandler = (
       return;
     }
 
-    // default:
-    //   sendSSE(event);
+    default:
+      sendSSE(event);
   }
 };
 
