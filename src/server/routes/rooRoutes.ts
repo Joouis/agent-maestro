@@ -1,4 +1,4 @@
-import { RooCodeEventName } from "@roo-code/types";
+import { ClineMessage, RooCodeEventName } from "@roo-code/types";
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
@@ -8,7 +8,7 @@ import {
   addAgentMaestroMcpConfig,
   getAvailableExtensions,
 } from "../../utils/mcpConfig";
-import { isEqual } from "es-toolkit";
+import { isEqual, last, throttle } from "es-toolkit";
 
 const filteredSayTypes = ["api_req_started"];
 
@@ -58,12 +58,31 @@ const processEventStream = async (
     reply.raw.write(sseData);
   };
 
-  let lastEvent: TaskEvent | undefined;
+  let lastMessage: ClineMessage | undefined;
   // Process events from async generator
   for await (const event of eventStream) {
-    if (!isEqual(event, lastEvent)) {
-      lastEvent = event;
-      taskEventHandler(event, sendSSE);
+    switch (event.name) {
+      case RooCodeEventName.Message: {
+        const { message } = (event as TaskEvent<RooCodeEventName.Message>).data;
+        if (filteredSayTypes.includes(message.say ?? "")) {
+          continue; // Skip filtered messages
+        }
+        if (
+          !message.partial &&
+          lastMessage &&
+          !lastMessage.partial &&
+          isEqual(lastMessage, message)
+        ) {
+          // Skip sending duplicate complete messages
+          continue;
+        }
+        if (!message.partial) {
+          lastMessage = message;
+        }
+      }
+
+      default:
+        sendSSE(event);
     }
   }
 
