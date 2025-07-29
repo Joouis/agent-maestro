@@ -353,7 +353,7 @@ export async function registerRooRoutes(
         } catch (error) {
           logger.error("Error processing RooCode task:", error);
           reply.raw.write(
-            `event: task_error\ndata: {"message":"${error instanceof Error ? error.message : "Unknown error occurred"}"}\n\n`,
+            `event: ${RooCodeEventName.TaskAborted}\ndata: {"message":"${error instanceof Error ? error.message : "Unknown error occurred"}"}\n\n`,
           );
         } finally {
           reply.raw.end();
