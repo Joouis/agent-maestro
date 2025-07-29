@@ -3,12 +3,11 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { ExtensionController } from "../../core/controller";
-import { MessageRequest, ActionRequest } from "../types";
+import { MessageRequest, ActionRequest, TaskEvent } from "../types";
 import {
   addAgentMaestroMcpConfig,
   getAvailableExtensions,
 } from "../../utils/mcpConfig";
-import { TaskEvent } from "../../core/RooCodeAdapter";
 import { isEqual } from "es-toolkit";
 
 const filteredSayTypes = ["api_req_started"];
@@ -41,8 +40,8 @@ const taskEventHandler = (event: TaskEvent, reply: FastifyReply) => {
   };
 
   switch (event.type) {
-    case RooCodeEventName.Message:
-      const message = event.data as ClineMessage;
+    case RooCodeEventName.Message: {
+      const { message } = (event as TaskEvent<RooCodeEventName.Message>).data;
       if (filteredSayTypes.includes(message.say ?? "")) {
         return;
       }
@@ -54,30 +53,35 @@ const taskEventHandler = (event: TaskEvent, reply: FastifyReply) => {
         reply.raw.end();
       }
       return;
+    }
 
-    case RooCodeEventName.TaskCompleted:
-      const { tokenUsage, toolUsage } = event.data;
-      logger.info(`Task completed: ${event.data.taskId}`, {
-        tokenUsage,
-        toolUsage,
+    case RooCodeEventName.TaskCompleted: {
+      const { data } = event as TaskEvent<RooCodeEventName.TaskCompleted>;
+      logger.info(`Task completed: ${data.taskId}`, {
+        tokenUsage: data.tokenUsage,
+        toolUsage: data.toolUsage,
       });
       sendSSE(event);
       // Will close the stream after task event stream is done
       return;
+    }
 
-    case RooCodeEventName.TaskAborted:
-      logger.warn(`Task aborted: ${event.data.taskId}`);
+    case RooCodeEventName.TaskAborted: {
+      const { data } = event as TaskEvent<RooCodeEventName.TaskAborted>;
+      logger.warn(`Task aborted: ${data.taskId}`);
       sendSSE(event);
       // Will close the stream after task event stream is done
       return;
+    }
 
-    case RooCodeEventName.TaskToolFailed:
-      const { tool, error } = event.data;
+    case RooCodeEventName.TaskToolFailed: {
+      const { data } = event as TaskEvent<RooCodeEventName.TaskToolFailed>;
       logger.error(
-        `Tool failed in task ${event.data.taskId}: ${tool} - ${error}`,
+        `Tool failed in task ${data.taskId}: ${data.tool} - ${data.error}`,
       );
       sendSSE(event);
       return;
+    }
 
     default:
       sendSSE(event);

@@ -9,14 +9,9 @@ import {
 } from "@roo-code/types";
 import { Anthropic } from "@anthropic-ai/sdk";
 import { ExtensionBaseAdapter } from "./ExtensionBaseAdapter";
+import { TaskEvent } from "../server/types";
 
 const CLOSE_SSE_STREAM_DELAY_MS = 1_000;
-
-export interface TaskEvent {
-  type: RooCodeEventName;
-  ts: number;
-  data: any;
-}
 
 export interface RooCodeMessageOptions {
   taskId?: string;
@@ -265,7 +260,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
               resolve({
                 type: "STREAM_END" as any,
                 ts: Date.now(),
-                data: null,
+                data: { taskId: "" } as any,
               }),
             );
             resolvers.length = 0;

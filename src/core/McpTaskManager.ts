@@ -1,9 +1,10 @@
-import { ClineMessage, RooCodeEventName } from "@roo-code/types";
+import { RooCodeEventName } from "@roo-code/types";
 import { isEqual, Semaphore } from "es-toolkit";
 // @ts-expect-error "TS1479: The current file is a CommonJS module"
 import type { Content } from "fastmcp";
 import { logger } from "../utils/logger";
-import { RooCodeAdapter, TaskEvent } from "./RooCodeAdapter";
+import { RooCodeAdapter } from "./RooCodeAdapter";
+import { TaskEvent } from "../server/types";
 import { v4 as uuidv4 } from "uuid";
 import { closeAllEmptyTabGroups } from "../utils/extension";
 
@@ -156,12 +157,12 @@ export class McpTaskManager {
         }
         // Handle Message events
         else if (event.type === RooCodeEventName.Message) {
-          const message = event.data as ClineMessage;
-
           if (!run[taskId]) {
             continue;
           }
 
+          const { message } = (event as TaskEvent<RooCodeEventName.Message>)
+            .data;
           if (message.say === "text" || message.say === "completion_result") {
             if (run[taskId].status === "created") {
               run[taskId].status = "running";
@@ -194,10 +195,11 @@ export class McpTaskManager {
         }
         // Handle TaskToolFailed event
         else if (event.type === RooCodeEventName.TaskToolFailed) {
-          const { tool, error } = event.data;
           if (run[taskId]) {
+            const { data } =
+              event as TaskEvent<RooCodeEventName.TaskToolFailed>;
             run[taskId].status = "failed";
-            run[taskId].result = `Tool ${tool} failed: ${error}`;
+            run[taskId].result = `Tool ${data.tool} failed: ${data.error}`;
             await updateRunAndStream(taskId);
           }
           return;
