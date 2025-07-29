@@ -343,9 +343,6 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
       // Start the task
       const taskId = await this.api.startNewTask(options);
 
-      // Create and yield from event stream
-      yield* this.createTaskEventStream(taskId);
-
       // Yield task created event
       yield {
         type: RooCodeEventName.TaskCreated,
@@ -354,6 +351,9 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
           taskId,
         },
       };
+
+      // Create and yield from event stream
+      yield* this.createTaskEventStream(taskId);
     } catch (error) {
       logger.error("Error starting new RooCode task:", error);
       throw error;

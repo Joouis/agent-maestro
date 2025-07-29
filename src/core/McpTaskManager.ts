@@ -140,8 +140,11 @@ export class McpTaskManager {
         if (isEqual(event, lastEvent)) {
           continue; // Skip duplicate events
         }
+        if (!taskId) {
+          taskId = event.data.taskId;
+        }
         lastEvent = event;
-        taskId = event.data.taskId;
+
         // Handle TaskCreated event to get the task ID
         if (event.type === RooCodeEventName.TaskCreated) {
           run[taskId] = {
