@@ -265,6 +265,30 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     taskId: string,
   ): AsyncGenerator<TaskEvent, void, unknown> {
     let done = false;
+    let doneTimeout: NodeJS.Timeout | null = null;
+
+    const terminalEventHandler = (event: TaskEvent) => {
+      // Check if this is a terminal event
+      if (this.isTerminalEvent(event.type)) {
+        // There will be few events after terminal event, so we delay closing the stream to allow them to be processed
+        doneTimeout = setTimeout(() => {
+          done = true;
+          // Resolve any pending promises with a special "done" signal
+          const resolvers = this.taskEventResolvers.get(taskId);
+          if (resolvers) {
+            resolvers.forEach((resolve) =>
+              resolve({
+                type: "STREAM_END" as any,
+                ts: Date.now(),
+                data: null,
+              }),
+            );
+            resolvers.length = 0;
+          }
+        }, CLOSE_SSE_STREAM_DELAY_MS);
+      }
+    };
+
     try {
       while (!done) {
         // Check if there are queued events
@@ -272,13 +296,13 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
         if (queue && queue.length > 0) {
           const event = queue.shift()!;
           yield event;
+          terminalEventHandler(event);
+          continue;
+        }
 
-          // Check if this is a terminal event
-          if (this.isTerminalEvent(event.type)) {
-            setTimeout(() => {
-              done = true;
-            }, CLOSE_SSE_STREAM_DELAY_MS);
-          }
+        // Exit if done (avoids creating unnecessary promises)
+        if (done) {
+          break;
         }
 
         // Wait for next event
@@ -289,16 +313,18 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
           this.taskEventResolvers.get(taskId)!.push(resolve);
         });
 
-        yield event;
-
-        // Check if this is a terminal event
-        if (this.isTerminalEvent(event.type)) {
-          setTimeout(() => {
-            done = true;
-          }, CLOSE_SSE_STREAM_DELAY_MS);
+        // Check for special "done" signal
+        if (event.type === ("STREAM_END" as any)) {
+          break;
         }
+
+        yield event;
+        terminalEventHandler(event);
       }
     } finally {
+      if (doneTimeout) {
+        clearTimeout(doneTimeout);
+      }
       this.cleanupTaskStream(taskId);
     }
   }
@@ -337,6 +363,9 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
       // Start the task
       const taskId = await this.api.startNewTask(options);
 
+      // Create and yield from event stream
+      yield* this.createTaskEventStream(taskId);
+
       // Yield task created event
       yield {
         type: RooCodeEventName.TaskCreated,
@@ -345,9 +374,6 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
           taskId,
         },
       };
-
-      // Create and yield from event stream
-      yield* this.createTaskEventStream(taskId);
     } catch (error) {
       logger.error("Error starting new RooCode task:", error);
       throw error;

@@ -1,4 +1,4 @@
-import { ClineMessage } from "@roo-code/types";
+import { ClineMessage, RooCodeEventName } from "@roo-code/types";
 import { isEqual, Semaphore } from "es-toolkit";
 // @ts-expect-error "TS1479: The current file is a CommonJS module"
 import type { Content } from "fastmcp";
@@ -142,7 +142,7 @@ export class McpTaskManager {
         lastEvent = event;
         taskId = event.data.taskId;
         // Handle TaskCreated event to get the task ID
-        if (event.type === "taskCreated") {
+        if (event.type === RooCodeEventName.TaskCreated) {
           run[taskId] = {
             task: taskQuery,
             status: "created",
