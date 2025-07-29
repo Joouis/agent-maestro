@@ -240,6 +240,9 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     const terminalEventHandler = (event: TaskEvent) => {
       // Check if this is a terminal event
       if (this.isTerminalEvent(event)) {
+        if (doneTimeout) {
+          clearTimeout(doneTimeout);
+        }
         // There will be few events after terminal event, so we delay closing the stream to allow them to be processed
         doneTimeout = setTimeout(() => {
           done = true;
