@@ -28,10 +28,7 @@ const taskEventHandler = (
       sendSSE(event);
 
       // Close SSE stream when followup question is asked
-      if (!message.partial && message.ask === "followup") {
-        return true; // Indicate to close the stream
-      }
-      return;
+      return !message.partial && message.ask === "followup";
     }
 
     case RooCodeEventName.TaskCompleted: {
