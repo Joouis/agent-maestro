@@ -13,11 +13,10 @@ import { isEqual } from "es-toolkit";
 const filteredSayTypes = ["api_req_started"];
 
 // Helper function to create event handlers for task streaming
-// Return true means to close the stream for specific events
 const taskEventHandler = (
   event: TaskEvent,
   sendSSE: (event: TaskEvent) => void,
-): boolean | undefined => {
+) => {
   switch (event.name) {
     case RooCodeEventName.Message: {
       const { message } = (event as TaskEvent<RooCodeEventName.Message>).data;
@@ -26,9 +25,7 @@ const taskEventHandler = (
       }
 
       sendSSE(event);
-
-      // Close SSE stream when followup question is asked
-      return !message.partial && message.ask === "followup";
+      return;
     }
 
     case RooCodeEventName.TaskCompleted: {
@@ -97,11 +94,7 @@ const processEventStream = async (
   for await (const event of eventStream) {
     if (!isEqual(event, lastEvent)) {
       lastEvent = event;
-      const shouldCloseStream = taskEventHandler(event, sendSSE);
-      if (shouldCloseStream) {
-        logger.info("Closing SSE stream after follow-up question");
-        break; // Close the stream if follow-up question is asked
-      }
+      taskEventHandler(event, sendSSE);
     }
   }
 

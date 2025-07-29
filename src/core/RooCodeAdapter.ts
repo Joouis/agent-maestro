@@ -212,18 +212,20 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
    * Enqueue event for async generators
    */
   private enqueueEvent(taskId: string, event: TaskEvent): void {
-    // Add to queue
+    // Check if there are waiting resolvers first
+    const resolvers = this.taskEventResolvers.get(taskId);
+    if (resolvers && resolvers.length > 0) {
+      // Immediately resolve to waiting resolver - don't queue
+      const resolver = resolvers.shift()!;
+      resolver(event);
+      return;
+    }
+
+    // Only add to queue if no resolvers are waiting
     if (!this.taskEventQueues.has(taskId)) {
       this.taskEventQueues.set(taskId, []);
     }
     this.taskEventQueues.get(taskId)!.push(event);
-
-    // Notify resolvers
-    const resolvers = this.taskEventResolvers.get(taskId);
-    if (resolvers && resolvers.length > 0) {
-      const resolver = resolvers.shift()!;
-      resolver(event);
-    }
   }
 
   /**
@@ -237,7 +239,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
 
     const terminalEventHandler = (event: TaskEvent) => {
       // Check if this is a terminal event
-      if (this.isTerminalEvent(event.name)) {
+      if (this.isTerminalEvent(event)) {
         // There will be few events after terminal event, so we delay closing the stream to allow them to be processed
         doneTimeout = setTimeout(() => {
           done = true;
@@ -299,11 +301,19 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
   /**
    * Check if event type is terminal (ends the stream)
    */
-  private isTerminalEvent(name: RooCodeEventName): boolean {
+  private isTerminalEvent(event: TaskEvent): boolean {
+    if (event.name === RooCodeEventName.Message) {
+      const { message } = (event as TaskEvent<RooCodeEventName.Message>).data;
+      if (!message.partial && message.ask === "followup") {
+        // Roo is waiting for a followup question, so close the stream
+        return true;
+      }
+    }
+
     return [
       RooCodeEventName.TaskCompleted,
       RooCodeEventName.TaskAborted,
-    ].includes(name);
+    ].includes(event.name);
   }
 
   /**
