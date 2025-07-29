@@ -18,7 +18,7 @@ const taskEventHandler = (
   event: TaskEvent,
   sendSSE: (event: TaskEvent) => void,
 ): boolean | undefined => {
-  switch (event.type) {
+  switch (event.name) {
     case RooCodeEventName.Message: {
       const { message } = (event as TaskEvent<RooCodeEventName.Message>).data;
       if (filteredSayTypes.includes(message.say ?? "")) {
@@ -88,7 +88,7 @@ const processEventStream = async (
 
   // Helper function to send SSE data
   const sendSSE = (event: TaskEvent) => {
-    const sseData = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
+    const sseData = `event: ${event.name}\ndata: ${JSON.stringify(event.data)}\n\n`;
     reply.raw.write(sseData);
   };
 

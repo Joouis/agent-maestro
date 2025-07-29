@@ -146,7 +146,7 @@ export class McpTaskManager {
         lastEvent = event;
 
         // Handle TaskCreated event to get the task ID
-        if (event.type === RooCodeEventName.TaskCreated) {
+        if (event.name === RooCodeEventName.TaskCreated) {
           run[taskId] = {
             task: taskQuery,
             status: "created",
@@ -159,7 +159,7 @@ export class McpTaskManager {
           await updateRunAndStream(taskId);
         }
         // Handle Message events
-        else if (event.type === RooCodeEventName.Message) {
+        else if (event.name === RooCodeEventName.Message) {
           if (!run[taskId]) {
             continue;
           }
@@ -180,7 +180,7 @@ export class McpTaskManager {
           }
         }
         // Handle TaskCompleted event
-        else if (event.type === RooCodeEventName.TaskCompleted) {
+        else if (event.name === RooCodeEventName.TaskCompleted) {
           if (run[taskId]) {
             run[taskId].status = "completed";
             await updateRunAndStream(taskId);
@@ -188,7 +188,7 @@ export class McpTaskManager {
           return;
         }
         // Handle TaskAborted event
-        else if (event.type === RooCodeEventName.TaskAborted) {
+        else if (event.name === RooCodeEventName.TaskAborted) {
           if (run[taskId]) {
             run[taskId].status = "cancelled";
             run[taskId].result = "Task was cancelled";
@@ -197,7 +197,7 @@ export class McpTaskManager {
           return;
         }
         // Handle TaskToolFailed event
-        else if (event.type === RooCodeEventName.TaskToolFailed) {
+        else if (event.name === RooCodeEventName.TaskToolFailed) {
           if (run[taskId]) {
             const { data } =
               event as TaskEvent<RooCodeEventName.TaskToolFailed>;

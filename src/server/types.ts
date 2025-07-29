@@ -65,8 +65,7 @@ export type TaskEventData<T extends RooCodeEventName = RooCodeEventName> =
                           : never;
 
 export interface TaskEvent<T extends RooCodeEventName = RooCodeEventName> {
-  type: T;
-  ts: number;
+  name: T;
   data: TaskEventData<T>;
 }
 

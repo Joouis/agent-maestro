@@ -76,8 +76,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.Message, (data) => {
       logger.info("RooCode Message Event:", JSON.stringify(data, null, 2));
       this.enqueueEvent(data.taskId, {
-        type: RooCodeEventName.Message,
-        ts: Date.now(),
+        name: RooCodeEventName.Message,
         data,
       });
     });
@@ -85,8 +84,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.TaskCreated, (taskId) => {
       logger.info(`RooCode Task Created: ${taskId}`);
       this.enqueueEvent(taskId, {
-        type: RooCodeEventName.TaskCreated,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskCreated,
         data: {
           taskId,
         },
@@ -96,8 +94,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.TaskStarted, (taskId) => {
       logger.info(`RooCode Task Started: ${taskId}`);
       this.enqueueEvent(taskId, {
-        type: RooCodeEventName.TaskStarted,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskStarted,
         data: {
           taskId,
         },
@@ -112,8 +109,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
           toolUsage,
         });
         this.enqueueEvent(taskId, {
-          type: RooCodeEventName.TaskCompleted,
-          ts: Date.now(),
+          name: RooCodeEventName.TaskCompleted,
           data: {
             taskId,
             tokenUsage,
@@ -126,8 +122,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.TaskAborted, (taskId) => {
       logger.info(`RooCode Task Aborted: ${taskId}`);
       this.enqueueEvent(taskId, {
-        type: RooCodeEventName.TaskAborted,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskAborted,
         data: {
           taskId,
         },
@@ -137,8 +132,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.TaskPaused, (taskId) => {
       logger.info(`RooCode Task Paused: ${taskId}`);
       this.enqueueEvent(taskId, {
-        type: RooCodeEventName.TaskPaused,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskPaused,
         data: {
           taskId,
         },
@@ -148,8 +142,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.TaskUnpaused, (taskId) => {
       logger.info(`RooCode Task Unpaused: ${taskId}`);
       this.enqueueEvent(taskId, {
-        type: RooCodeEventName.TaskUnpaused,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskUnpaused,
         data: {
           taskId,
         },
@@ -159,8 +152,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.TaskModeSwitched, (taskId, mode) => {
       logger.info(`RooCode Task Mode Switched: ${taskId} -> ${mode}`);
       this.enqueueEvent(taskId, {
-        type: RooCodeEventName.TaskModeSwitched,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskModeSwitched,
         data: {
           taskId,
           mode,
@@ -171,8 +163,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.TaskSpawned, (taskId, childTaskId) => {
       logger.info(`RooCode Task Spawned: ${taskId} -> ${childTaskId}`);
       this.enqueueEvent(taskId, {
-        type: RooCodeEventName.TaskSpawned,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskSpawned,
         data: {
           taskId,
           childTaskId,
@@ -183,8 +174,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.TaskAskResponded, (taskId) => {
       logger.info(`RooCode Task Ask Responded: ${taskId}`);
       this.enqueueEvent(taskId, {
-        type: RooCodeEventName.TaskAskResponded,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskAskResponded,
         data: {
           taskId,
         },
@@ -196,8 +186,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
       (taskId, tokenUsage) => {
         logger.info(`RooCode Task Token Usage Updated: ${taskId}`, tokenUsage);
         this.enqueueEvent(taskId, {
-          type: RooCodeEventName.TaskTokenUsageUpdated,
-          ts: Date.now(),
+          name: RooCodeEventName.TaskTokenUsageUpdated,
           data: {
             taskId,
             tokenUsage,
@@ -209,8 +198,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(RooCodeEventName.TaskToolFailed, (taskId, tool, error) => {
       logger.error(`RooCode Task Tool Failed: ${taskId} - ${tool}`, error);
       this.enqueueEvent(taskId, {
-        type: RooCodeEventName.TaskToolFailed,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskToolFailed,
         data: {
           taskId,
           tool,
@@ -249,7 +237,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
 
     const terminalEventHandler = (event: TaskEvent) => {
       // Check if this is a terminal event
-      if (this.isTerminalEvent(event.type)) {
+      if (this.isTerminalEvent(event.name)) {
         // There will be few events after terminal event, so we delay closing the stream to allow them to be processed
         doneTimeout = setTimeout(() => {
           done = true;
@@ -258,8 +246,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
           if (resolvers) {
             resolvers.forEach((resolve) =>
               resolve({
-                type: "STREAM_END" as any,
-                ts: Date.now(),
+                name: "STREAM_END" as any,
                 data: { taskId: "" } as any,
               }),
             );
@@ -294,7 +281,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
         });
 
         // Check for special "done" signal
-        if (event.type === ("STREAM_END" as any)) {
+        if (event.name === ("STREAM_END" as any)) {
           break;
         }
 
@@ -312,11 +299,11 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
   /**
    * Check if event type is terminal (ends the stream)
    */
-  private isTerminalEvent(eventType: RooCodeEventName): boolean {
+  private isTerminalEvent(name: RooCodeEventName): boolean {
     return [
       RooCodeEventName.TaskCompleted,
       RooCodeEventName.TaskAborted,
-    ].includes(eventType);
+    ].includes(name);
   }
 
   /**
@@ -345,8 +332,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
 
       // Yield task created event
       yield {
-        type: RooCodeEventName.TaskCreated,
-        ts: Date.now(),
+        name: RooCodeEventName.TaskCreated,
         data: {
           taskId,
         },
