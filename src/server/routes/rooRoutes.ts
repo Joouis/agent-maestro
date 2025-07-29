@@ -23,37 +23,6 @@ const taskEventHandler = (
       if (filteredSayTypes.includes(message.say ?? "")) {
         return;
       }
-
-      sendSSE(event);
-      return;
-    }
-
-    case RooCodeEventName.TaskCompleted: {
-      const { data } = event as TaskEvent<RooCodeEventName.TaskCompleted>;
-      logger.info(`Task completed: ${data.taskId}`, {
-        tokenUsage: data.tokenUsage,
-        toolUsage: data.toolUsage,
-      });
-      sendSSE(event);
-      // Will close the stream after task event stream is done
-      return;
-    }
-
-    case RooCodeEventName.TaskAborted: {
-      const { data } = event as TaskEvent<RooCodeEventName.TaskAborted>;
-      logger.warn(`Task aborted: ${data.taskId}`);
-      sendSSE(event);
-      // Will close the stream after task event stream is done
-      return;
-    }
-
-    case RooCodeEventName.TaskToolFailed: {
-      const { data } = event as TaskEvent<RooCodeEventName.TaskToolFailed>;
-      logger.error(
-        `Tool failed in task ${data.taskId}: ${data.tool} - ${data.error}`,
-      );
-      sendSSE(event);
-      return;
     }
 
     default:
