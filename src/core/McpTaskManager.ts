@@ -155,8 +155,8 @@ export class McpTaskManager {
           await updateRunAndStream(taskId);
         }
         // Handle Message events
-        else if (event.type === "message" && event.data) {
-          const message = event.data;
+        else if (event.type === RooCodeEventName.Message) {
+          const message = event.data as ClineMessage;
 
           if (!run[taskId]) {
             continue;
@@ -166,7 +166,7 @@ export class McpTaskManager {
             if (run[taskId].status === "created") {
               run[taskId].status = "running";
             }
-            run[taskId].result = message.text;
+            run[taskId].result = message.text ?? "";
             await updateRunAndStream(taskId);
 
             if (message.say === "completion_result" && !message.partial) {
@@ -176,7 +176,7 @@ export class McpTaskManager {
           }
         }
         // Handle TaskCompleted event
-        else if (event.type === "taskCompleted") {
+        else if (event.type === RooCodeEventName.TaskCompleted) {
           if (run[taskId]) {
             run[taskId].status = "completed";
             await updateRunAndStream(taskId);
@@ -184,7 +184,7 @@ export class McpTaskManager {
           return;
         }
         // Handle TaskAborted event
-        else if (event.type === "taskAborted") {
+        else if (event.type === RooCodeEventName.TaskAborted) {
           if (run[taskId]) {
             run[taskId].status = "cancelled";
             run[taskId].result = "Task was cancelled";
@@ -193,8 +193,8 @@ export class McpTaskManager {
           return;
         }
         // Handle TaskToolFailed event
-        else if (event.type === "taskToolFailed" && event.data) {
-          const [tool, error] = event.data;
+        else if (event.type === RooCodeEventName.TaskToolFailed) {
+          const { tool, error } = event.data;
           if (run[taskId]) {
             run[taskId].status = "failed";
             run[taskId].result = `Tool ${tool} failed: ${error}`;

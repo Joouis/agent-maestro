@@ -18,21 +18,6 @@ export interface TaskEvent {
   data: any;
 }
 
-export interface TaskEventHandlers {
-  onMessage?: (taskId: string, message: any) => void;
-  onTaskCreated?: (taskId: string) => void;
-  onTaskStarted?: (taskId: string) => void;
-  onTaskCompleted?: (taskId: string, tokenUsage: any, toolUsage: any) => void;
-  onTaskAborted?: (taskId: string) => void;
-  onTaskPaused?: (taskId: string) => void;
-  onTaskUnpaused?: (taskId: string) => void;
-  onTaskModeSwitched?: (taskId: string, mode: string) => void;
-  onTaskSpawned?: (parentTaskId: string, childTaskId: string) => void;
-  onTaskAskResponded?: (taskId: string) => void;
-  onTaskTokenUsageUpdated?: (taskId: string, tokenUsage: any) => void;
-  onTaskToolFailed?: (taskId: string, tool: string, error: string) => void;
-}
-
 export interface RooCodeMessageOptions {
   taskId?: string;
   text?: string;
