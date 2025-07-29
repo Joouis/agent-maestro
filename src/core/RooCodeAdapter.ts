@@ -277,6 +277,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
       }
     }
 
+    // Ignore TaskCompleted event by design since "completion_result" messages are not finished yet
     return event.name === RooCodeEventName.TaskAborted;
   }
 
