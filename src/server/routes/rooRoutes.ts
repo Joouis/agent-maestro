@@ -1,155 +1,69 @@
-import { ClineMessage } from "@roo-code/types";
+import { ClineMessage, RooCodeEventName } from "@roo-code/types";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { streamSSE } from "hono/streaming";
-import { v4 as uuidv4 } from "uuid";
 import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { ExtensionController } from "../../core/controller";
-import {
-  isMessageCompleted,
-  areCompletedMessagesEqual,
-} from "../utils/rooUtils";
+import { TaskEvent } from "../types";
 import {
   addAgentMaestroMcpConfig,
   getAvailableExtensions,
 } from "../../utils/mcpConfig";
-import { ErrorResponseSchema } from "../schemas";
-
-// Zod schemas for validation and OpenAPI documentation
-const MessageRequestSchema = z.object({
-  text: z.string().min(1).describe("The task query text"),
-  images: z
-    .array(z.string())
-    .optional()
-    .describe("Optional array of image URLs or base64 encoded images"),
-  configuration: z
-    .record(z.string(), z.any())
-    .optional()
-    .describe("RooCode configuration settings"),
-  newTab: z
-    .boolean()
-    .optional()
-    .describe("Whether to open the task in a new tab"),
-  extensionId: z
-    .string()
-    .optional()
-    .describe("Assign task to the Roo variant extension like Kilo Code"),
-});
-
-const ActionRequestSchema = z.object({
-  action: z
-    .enum(["pressPrimaryButton", "pressSecondaryButton", "cancel", "resume"])
-    .describe("The action to perform on the task"),
-  extensionId: z
-    .string()
-    .optional()
-    .describe("Assign task to the Roo variant extension like Kilo Code"),
-});
-
-const HistoryItemSchema = z.object({
-  id: z.string().describe("Task ID"),
-  number: z.number().optional().describe("Task number"),
-  ts: z.number().describe("Timestamp"),
-  task: z.string().describe("Task description"),
-  tokensIn: z.number().describe("Input tokens used"),
-  tokensOut: z.number().describe("Output tokens used"),
-  cacheWrites: z.number().optional().describe("Cache writes"),
-  cacheReads: z.number().optional().describe("Cache reads"),
-  totalCost: z.number().describe("Total cost"),
-  size: z.number().optional().describe("Task size"),
-  workspace: z.string().optional().describe("Workspace path"),
-});
-
-const TaskResponseSchema = z.object({
-  id: z.string().describe("Task identifier"),
-  status: z
-    .enum(["created", "running", "completed", "failed"])
-    .describe("Task status"),
-  message: z.string().describe("Status message"),
-});
-
-export enum SSEEventType {
-  STREAM_CLOSED = "stream_closed",
-  MESSAGE = "message",
-  TASK_COMPLETED = "task_completed",
-  TASK_ABORTED = "task_aborted",
-  TOOL_FAILED = "tool_failed",
-  TASK_CREATED = "task_created",
-  ERROR = "error",
-  TASK_RESUMED = "task_resumed",
-}
+import {
+  ErrorResponseSchema,
+  RooMessageRequestSchema,
+  RooActionRequestSchema,
+  HistoryItemSchema,
+  RooTaskResponseSchema,
+} from "../schemas";
+import { isEqual } from "es-toolkit";
 
 const filteredSayTypes = ["api_req_started"];
-const CLOSE_SSE_STREAM_DELAY_MS = 1_000;
 
-// Helper function to create event handlers for task streaming
-function createTaskEventHandlers(
-  sendSSE: (eventType: string, data: any) => void,
-  closeSSEStream: (message: string) => void,
-) {
+// Helper function to process event stream with deduplication
+const processEventStream = async (
+  eventStream: AsyncGenerator<TaskEvent, void, unknown>,
+  stream: any, // Hono SSE stream
+): Promise<void> => {
+  // Helper function to send SSE data
+  const sendSSE = (event: TaskEvent) => {
+    stream.writeSSE({
+      event: event.name,
+      data: JSON.stringify(event.data),
+    });
+  };
+
   let lastMessage: ClineMessage | undefined;
 
-  return {
-    onMessage: (handlerTaskId: string, message: ClineMessage) => {
-      if (filteredSayTypes.includes(message.say ?? "")) {
-        return;
+  // Process events from async generator
+  for await (const event of eventStream) {
+    switch (event.name) {
+      case RooCodeEventName.Message: {
+        const { message } = (event as TaskEvent<RooCodeEventName.Message>).data;
+        if (filteredSayTypes.includes(message.say ?? "")) {
+          continue; // Skip filtered messages
+        }
+        if (
+          !message.partial &&
+          lastMessage &&
+          !lastMessage.partial &&
+          isEqual(lastMessage, message)
+        ) {
+          // Skip sending duplicate complete messages
+          continue;
+        }
+        if (!message.partial) {
+          lastMessage = message;
+        }
       }
 
-      if (areCompletedMessagesEqual(message, lastMessage)) {
-        // Skip duplicate message
-        return;
-      }
+      default:
+        sendSSE(event);
+    }
+  }
 
-      // Store current message for next comparison
-      if (isMessageCompleted(message)) {
-        lastMessage = message;
-      }
-
-      sendSSE(SSEEventType.MESSAGE, {
-        taskId: handlerTaskId,
-        message,
-      });
-
-      // Close SSE stream when followup question is asked
-      if (isMessageCompleted(message) && message.ask === "followup") {
-        closeSSEStream("followup_question");
-      }
-    },
-    onTaskCompleted: (
-      handlerTaskId: string,
-      tokenUsage: any,
-      toolUsage: any,
-    ) => {
-      logger.info(`Task completed: ${handlerTaskId}`, {
-        tokenUsage,
-        toolUsage,
-      });
-      sendSSE(SSEEventType.TASK_COMPLETED, {
-        taskId: handlerTaskId,
-        tokenUsage,
-        toolUsage,
-      });
-
-      closeSSEStream("task_completed");
-    },
-    onTaskAborted: (handlerTaskId: string) => {
-      logger.warn(`Task aborted: ${handlerTaskId}`);
-      sendSSE(SSEEventType.TASK_ABORTED, {
-        taskId: handlerTaskId,
-      });
-
-      closeSSEStream("task_aborted");
-    },
-    onTaskToolFailed: (handlerTaskId: string, tool: string, error: string) => {
-      logger.error(`Tool failed in task ${handlerTaskId}: ${tool} - ${error}`);
-      sendSSE(SSEEventType.TOOL_FAILED, {
-        taskId: handlerTaskId,
-        tool,
-        error,
-      });
-    },
-  };
-}
+  logger.info(`Completed RooCode task stream`);
+};
 
 // OpenAPI route definitions
 const createRooTaskRoute = createRoute({
@@ -163,7 +77,7 @@ const createRooTaskRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: MessageRequestSchema,
+          schema: RooMessageRequestSchema,
         },
       },
     },
@@ -216,7 +130,7 @@ const sendMessageRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: MessageRequestSchema,
+          schema: RooMessageRequestSchema,
         },
       },
     },
@@ -277,7 +191,7 @@ const taskActionRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: ActionRequestSchema,
+          schema: RooActionRequestSchema,
         },
       },
     },
@@ -286,7 +200,7 @@ const taskActionRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: TaskResponseSchema,
+          schema: RooTaskResponseSchema,
         },
       },
       description: "Action performed successfully",
@@ -509,65 +423,31 @@ export function registerRooRoutes(
         return c.json({ message: "RooCode extension is not available" }, 500);
       }
 
-      let currentTaskId: string | undefined;
-
       return streamSSE(c, async (stream) => {
-        const onDisconnect = () => {
-          if (currentTaskId) {
-            adapter.removeTaskHandlers(currentTaskId);
-          }
-        };
-
-        // Helper function to send SSE data
-        const sendSSE = (eventType: string, data: any) => {
-          stream.writeSSE({
-            event: eventType,
-            data: JSON.stringify(data),
-          });
-        };
-
-        // Helper function to close SSE stream with event notification
-        const closeSSEStream = (message: string) => {
-          sendSSE(SSEEventType.STREAM_CLOSED, { message });
-          setTimeout(() => {
-            stream.close();
-            onDisconnect?.();
-          }, CLOSE_SSE_STREAM_DELAY_MS);
-        };
-
-        const eventHandlers = createTaskEventHandlers(sendSSE, closeSSEStream);
-
         try {
-          // Create new task logic
-          logger.info("Creating new RooCode task");
+          // Create new task using async generator
+          logger.info("Creating new RooCode task with async generator");
 
-          const newTaskId = await adapter.startNewTask({
+          const eventStream = adapter.startNewTask({
             text,
             images,
             configuration,
             newTab,
-            eventHandlers,
           });
 
-          // Store the task ID for cleanup on disconnect
-          currentTaskId = newTaskId;
-
-          // Send initial task created event
-          sendSSE(SSEEventType.TASK_CREATED, {
-            taskId: newTaskId || uuidv4(),
-            status: "created",
-            message: "Task created successfully",
+          await processEventStream(eventStream, stream);
+        } catch (error) {
+          logger.error("Error processing RooCode task:", error);
+          stream.writeSSE({
+            event: RooCodeEventName.TaskAborted,
+            data: JSON.stringify({
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Unknown error occurred",
+            }),
           });
-
-          logger.info(`Created new RooCode task with SSE: ${newTaskId}`);
-        } catch (taskError) {
-          logger.error("Error processing RooCode task:", taskError);
-          sendSSE(SSEEventType.ERROR, {
-            error:
-              taskError instanceof Error
-                ? taskError.message
-                : "Unknown error occurred",
-          });
+        } finally {
           stream.close();
         }
       });
@@ -603,31 +483,8 @@ export function registerRooRoutes(
       }
 
       return streamSSE(c, async (stream) => {
-        const onDisconnect = () => {
-          adapter.removeTaskHandlers(taskId);
-        };
-
-        // Helper function to send SSE data
-        const sendSSE = (eventType: string, data: any) => {
-          stream.writeSSE({
-            event: eventType,
-            data: JSON.stringify(data),
-          });
-        };
-
-        // Helper function to close SSE stream with event notification
-        const closeSSEStream = (message: string) => {
-          sendSSE(SSEEventType.STREAM_CLOSED, { message });
-          setTimeout(() => {
-            stream.close();
-            onDisconnect?.();
-          }, CLOSE_SSE_STREAM_DELAY_MS);
-        };
-
-        const eventHandlers = createTaskEventHandlers(sendSSE, closeSSEStream);
-
         try {
-          // Send message to existing task logic
+          // Send message to existing task using async generator
           logger.info(`Sending message to existing task: ${taskId}`);
 
           // If task is in history, resume it first
@@ -635,26 +492,26 @@ export function registerRooRoutes(
             await adapter.resumeTask(taskId);
           }
 
-          // Send initial task resumed event
-          sendSSE(SSEEventType.TASK_RESUMED, {
+          // Send the message and process events from async generator
+          const eventStream = adapter.sendMessage(text, images, {
             taskId,
-            status: "resumed",
-            message: "Task resumed successfully",
           });
 
-          // Send the message
-          await adapter.sendMessage(text, images, {
-            taskId,
-            eventHandlers,
+          await processEventStream(eventStream, stream);
+
+          logger.info(`Completed message processing for task: ${taskId}`);
+        } catch (error) {
+          logger.error("Error processing RooCode task:", error);
+          stream.writeSSE({
+            event: RooCodeEventName.TaskAborted,
+            data: JSON.stringify({
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Unknown error occurred",
+            }),
           });
-        } catch (taskError) {
-          logger.error("Error processing RooCode task message:", taskError);
-          sendSSE(SSEEventType.ERROR, {
-            error:
-              taskError instanceof Error
-                ? taskError.message
-                : "Unknown error occurred",
-          });
+        } finally {
           stream.close();
         }
       });

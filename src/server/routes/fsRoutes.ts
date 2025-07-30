@@ -5,7 +5,13 @@ import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { readConfiguration } from "../../utils/config";
 import { getMimeType } from "../utils/mimeTypes";
-import { ErrorResponseSchema } from "../schemas";
+import {
+  ErrorResponseSchema,
+  FileReadRequestSchema,
+  FileReadResponseSchema,
+  FileWriteRequestSchema,
+  FileWriteResponseSchema,
+} from "../schemas";
 
 // Validate that the path is within the workspace
 function validateWorkspacePath(requestedPath: string): {
@@ -71,46 +77,6 @@ function validateWorkspacePath(requestedPath: string): {
     };
   }
 }
-
-// Zod schemas for validation and OpenAPI documentation
-const FileReadRequestSchema = z.object({
-  path: z
-    .string()
-    .min(1)
-    .describe("File path relative to VS Code workspace root"),
-});
-
-const FileReadResponseSchema = z.object({
-  path: z.string().describe("The file path that was read"),
-  content: z
-    .string()
-    .describe("File content (UTF-8 for text files, base64 for binary files)"),
-  encoding: z
-    .string()
-    .describe(
-      "Content encoding (utf8 for text files, base64 for binary files)",
-    ),
-  size: z.number().describe("File size in bytes"),
-  mimeType: z.string().describe("Detected MIME type"),
-});
-
-const FileWriteRequestSchema = z.object({
-  path: z
-    .string()
-    .min(1)
-    .describe("File path relative to VS Code workspace root"),
-  content: z
-    .string()
-    .describe("File content to write (UTF-8 text or base64-encoded binary)"),
-  encoding: z
-    .enum(["utf8", "base64"])
-    .describe("Content encoding (utf8 for text, base64 for binary)"),
-});
-
-const FileWriteResponseSchema = z.object({
-  path: z.string().describe("The file path that was written"),
-  size: z.number().describe("Size of the written file in bytes"),
-});
 
 // OpenAPI route definitions
 const readFileRoute = createRoute({

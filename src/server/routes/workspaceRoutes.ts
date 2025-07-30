@@ -2,32 +2,12 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import * as vscode from "vscode";
 import * as fs from "fs/promises";
 import { logger } from "../../utils/logger";
-import { ErrorResponseSchema } from "../schemas";
-
-// Zod schemas for validation and OpenAPI documentation
-const WorkspaceFolderSchema = z.object({
-  uri: z.string().describe("Workspace folder URI"),
-  name: z.string().describe("Workspace folder name"),
-  index: z.number().describe("Index in workspace folders list"),
-});
-
-const WorkspaceUpdateRequestSchema = z.object({
-  folders: z
-    .array(z.string())
-    .min(1)
-    .describe("Array of absolute paths for workspace folders to add"),
-});
-
-const WorkspaceUpdateResponseSchema = z.object({
-  message: z.string().describe("Status message"),
-  workspaceFolders: z
-    .array(WorkspaceFolderSchema)
-    .describe("Current workspace folders after update"),
-});
-
-const CloseWorkspacesResponseSchema = z.object({
-  message: z.string().describe("Status message"),
-});
+import {
+  ErrorResponseSchema,
+  WorkspaceUpdateRequestSchema,
+  WorkspaceUpdateResponseSchema,
+  CloseWorkspacesResponseSchema,
+} from "../schemas";
 
 // OpenAPI route definitions
 const updateWorkspaceFoldersRoute = createRoute({

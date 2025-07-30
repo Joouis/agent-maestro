@@ -1,24 +1,11 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { logger } from "../../utils/logger";
 import { ExtensionController } from "../../core/controller";
-import { ErrorResponseSchema } from "../schemas";
-
-// Zod schemas for validation and OpenAPI documentation
-const MessageRequestSchema = z.object({
-  text: z.string().min(1).describe("The task description to execute"),
-  images: z
-    .array(z.string())
-    .optional()
-    .describe("Optional array of base64-encoded images"),
-});
-
-const TaskResponseSchema = z.object({
-  id: z.string().describe("Unique task identifier"),
-  status: z
-    .enum(["created", "running", "completed", "failed"])
-    .describe("Current task status"),
-  message: z.string().describe("Status message"),
-});
+import {
+  ErrorResponseSchema,
+  ClineMessageRequestSchema,
+  ClineTaskResponseSchema,
+} from "../schemas";
 
 // OpenAPI route definition
 const clineTaskRoute = createRoute({
@@ -31,7 +18,7 @@ const clineTaskRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: MessageRequestSchema,
+          schema: ClineMessageRequestSchema,
         },
       },
     },
@@ -40,7 +27,7 @@ const clineTaskRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: TaskResponseSchema,
+          schema: ClineTaskResponseSchema,
         },
       },
       description: "Task created successfully",
