@@ -1,14 +1,11 @@
-import { ClineMessage } from "@roo-code/types";
-import { Semaphore } from "es-toolkit";
+import { RooCodeEventName } from "@roo-code/types";
+import { isEqual, Semaphore } from "es-toolkit";
 // @ts-expect-error "TS1479: The current file is a CommonJS module"
 import type { Content } from "fastmcp";
 import { logger } from "../utils/logger";
-import { RooCodeAdapter, TaskEventHandlers } from "./RooCodeAdapter";
+import { RooCodeAdapter } from "./RooCodeAdapter";
+import { TaskEvent } from "../server/types";
 import { v4 as uuidv4 } from "uuid";
-import {
-  areCompletedMessagesEqual,
-  isMessageCompleted,
-} from "../server/utils/rooUtils";
 import { closeAllEmptyTabGroups } from "../utils/extension";
 
 export interface TaskRun {
@@ -20,7 +17,6 @@ export interface TaskRun {
 export interface ExecuteRooTasksOptions {
   maxConcurrency?: number;
   streamContent?: (content: Content | Content[]) => Promise<void>;
-  timeout?: number;
 }
 
 /**
@@ -63,11 +59,7 @@ export class McpTaskManager {
       throw new Error("McpTaskManager is not initialized");
     }
 
-    const {
-      maxConcurrency = 3,
-      streamContent,
-      timeout = 300000, // 5 minutes default timeout
-    } = options;
+    const { maxConcurrency = 3, streamContent } = options;
 
     logger.info(
       `Starting execution of ${taskQueries.length} RooCode tasks with concurrency ${maxConcurrency}`,
@@ -103,13 +95,7 @@ export class McpTaskManager {
                   await closeAllEmptyTabGroups();
                 }
               : undefined;
-          await this.executeTask(
-            taskQuery,
-            run,
-            streamContent,
-            timeout,
-            onTaskCreated,
-          );
+          await this.executeTask(taskQuery, run, streamContent, onTaskCreated);
         } finally {
           semaphore.release();
         }
@@ -128,12 +114,9 @@ export class McpTaskManager {
     taskQuery: string,
     run: { [taskId: string]: TaskRun },
     streamContent?: (content: Content | Content[]) => Promise<void>,
-    timeout = 300000,
     onTaskCreated?: (taskId: string) => void,
   ): Promise<void> {
     let taskId = "";
-    let lastMessage: ClineMessage | undefined;
-    let timeoutId: NodeJS.Timeout;
 
     const updateRunAndStream = async (id: string) => {
       if (streamContent) {
@@ -144,93 +127,26 @@ export class McpTaskManager {
       }
     };
 
-    // Promise that resolves when task completes or fails
-    const taskCompletionPromise = new Promise<void>((resolve, reject) => {
-      // Set up timeout
-      timeoutId = setTimeout(() => {
-        if (run[taskId]) {
-          run[taskId].status = "failed";
-          run[taskId].result = "Task timed out after 5 minutes";
-          updateRunAndStream(taskId);
+    try {
+      // Start the task and get the async generator
+      const taskEventStream = this.rooAdapter.startNewTask({
+        text: `${taskQuery}\n\nThis is an automation task, do not ask any follow-up question.`,
+        newTab: true,
+      });
+
+      let lastEvent: TaskEvent | undefined;
+      // Process events from the async generator
+      for await (const event of taskEventStream) {
+        if (isEqual(event, lastEvent)) {
+          continue; // Skip duplicate events
         }
-        reject(new Error("Task timeout"));
-      }, timeout);
+        if (!taskId) {
+          taskId = event.data.taskId;
+        }
+        lastEvent = event;
 
-      // Create event handlers for this task
-      const eventHandlers: TaskEventHandlers = {
-        onMessage: async (id: string, message: any) => {
-          if (!run[id]) {
-            return;
-          }
-
-          if (areCompletedMessagesEqual(message, lastMessage)) {
-            return; // Skip duplicate messages
-          }
-
-          if (isMessageCompleted(message)) {
-            lastMessage = message;
-          }
-
-          if (message.say === "text" || message.say === "completion_result") {
-            if (run[id].status === "created") {
-              run[id].status = "running";
-            }
-            run[id].result = message.text;
-            await updateRunAndStream(id);
-
-            if (
-              message.say === "completion_result" &&
-              isMessageCompleted(message)
-            ) {
-              run[id].status = "completed";
-              resolve();
-            }
-          }
-        },
-
-        onTaskCompleted: async (
-          id: string,
-          // tokenUsage: any,
-          // toolUsage: any,
-        ) => {
-          clearTimeout(timeoutId);
-          if (run[id]) {
-            run[id].status = "completed";
-            await updateRunAndStream(id);
-          }
-          resolve();
-        },
-
-        onTaskAborted: async (id: string) => {
-          clearTimeout(timeoutId);
-          if (run[id]) {
-            run[id].status = "cancelled";
-            run[id].result = "Task was cancelled";
-            await updateRunAndStream(id);
-          }
-          resolve();
-        },
-
-        onTaskToolFailed: async (id: string, tool: string, error: string) => {
-          clearTimeout(timeoutId);
-          if (run[id]) {
-            run[id].status = "failed";
-            run[id].result = `Tool ${tool} failed: ${error}`;
-            await updateRunAndStream(id);
-          }
-          resolve();
-        },
-      };
-
-      // Start the task
-      this.rooAdapter
-        .startNewTask({
-          text: `${taskQuery}\n\nThis is an automation task, do not ask any follow-up question.`,
-          newTab: true,
-          eventHandlers,
-        })
-        .then((id) => {
-          taskId = id;
+        // Handle TaskCreated event to get the task ID
+        if (event.name === RooCodeEventName.TaskCreated) {
           run[taskId] = {
             task: taskQuery,
             status: "created",
@@ -240,24 +156,71 @@ export class McpTaskManager {
           if (onTaskCreated) {
             onTaskCreated(taskId);
           }
-        })
-        .catch((error) => {
-          clearTimeout(timeoutId);
-          logger.error(`Failed to start RooCode task: ${taskQuery}`, error);
+          await updateRunAndStream(taskId);
+        }
+        // Handle Message events
+        else if (event.name === RooCodeEventName.Message) {
+          if (!run[taskId]) {
+            continue;
+          }
 
-          const fallbackId = uuidv4();
-          run[fallbackId] = {
-            task: taskQuery,
-            status: "failed",
-            result: `Failed to start task: ${error.message}`,
-          };
+          const { message } = (event as TaskEvent<RooCodeEventName.Message>)
+            .data;
+          if (message.say === "text" || message.say === "completion_result") {
+            if (run[taskId].status === "created") {
+              run[taskId].status = "running";
+            }
+            run[taskId].result = message.text ?? "";
+            await updateRunAndStream(taskId);
 
-          updateRunAndStream(fallbackId);
-          reject(error);
-        });
-    });
+            if (message.say === "completion_result" && !message.partial) {
+              run[taskId].status = "completed";
+              return;
+            }
+          }
+        }
+        // Handle TaskCompleted event
+        else if (event.name === RooCodeEventName.TaskCompleted) {
+          if (run[taskId]) {
+            run[taskId].status = "completed";
+            await updateRunAndStream(taskId);
+          }
+          return;
+        }
+        // Handle TaskAborted event
+        else if (event.name === RooCodeEventName.TaskAborted) {
+          if (run[taskId]) {
+            run[taskId].status = "cancelled";
+            run[taskId].result = "Task was cancelled";
+            await updateRunAndStream(taskId);
+          }
+          return;
+        }
+        // Handle TaskToolFailed event
+        else if (event.name === RooCodeEventName.TaskToolFailed) {
+          if (run[taskId]) {
+            const { data } =
+              event as TaskEvent<RooCodeEventName.TaskToolFailed>;
+            run[taskId].status = "failed";
+            run[taskId].result = `Tool ${data.tool} failed: ${data.error}`;
+            await updateRunAndStream(taskId);
+          }
+          return;
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to start RooCode task: ${taskQuery}`, error);
 
-    return taskCompletionPromise;
+      const fallbackId = taskId || uuidv4();
+      run[fallbackId] = {
+        task: taskQuery,
+        status: "failed",
+        result: `Failed to start task: ${(error as Error).message}`,
+      };
+
+      await updateRunAndStream(fallbackId);
+      throw error;
+    }
   }
 
   /**

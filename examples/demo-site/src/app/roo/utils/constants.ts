@@ -53,14 +53,22 @@ export const ASK_TYPES = {
   USE_MCP_SERVER: "use_mcp_server",
 } as const;
 
-export const EVENT_TYPES = {
-  TASK_CREATED: "task_created",
-  TASK_RESUMED: "task_resumed",
-  MESSAGE: "message",
-  TASK_COMPLETED: "task_completed",
-  TASK_ABORTED: "task_aborted",
-  ERROR: "error",
-} as const;
+export enum RooCodeEventName {
+  Message = "message",
+  TaskCreated = "taskCreated",
+  TaskStarted = "taskStarted",
+  TaskModeSwitched = "taskModeSwitched",
+  TaskPaused = "taskPaused",
+  TaskUnpaused = "taskUnpaused",
+  TaskAskResponded = "taskAskResponded",
+  TaskAborted = "taskAborted",
+  TaskSpawned = "taskSpawned",
+  TaskCompleted = "taskCompleted",
+  TaskTokenUsageUpdated = "taskTokenUsageUpdated",
+  TaskToolFailed = "taskToolFailed",
+  EvalPass = "evalPass",
+  EvalFail = "evalFail",
+}
 
 export const UI_CONFIG = {
   STATUS_DISPLAY_DURATION: 3000,
