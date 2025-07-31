@@ -128,7 +128,7 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
                 id: `msg_${Date.now()}`,
                 type: "message",
                 role: "assistant",
-                model: "claude-opus-4-20250514",
+                model: modelId,
                 content: [],
                 stop_reason: null,
                 stop_sequence: null,
