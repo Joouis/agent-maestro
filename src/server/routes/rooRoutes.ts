@@ -61,8 +61,6 @@ const processEventStream = async (
         sendSSE(event);
     }
   }
-
-  logger.info(`Completed RooCode task stream`);
 };
 
 // OpenAPI route definitions
@@ -95,14 +93,6 @@ const createRooTaskRoute = createRoute({
         "Cache-Control": z.string().openapi({ example: "no-cache" }),
         Connection: z.string().openapi({ example: "keep-alive" }),
       }),
-    },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorResponseSchema,
-        },
-      },
-      description: "Bad request - invalid input",
     },
     500: {
       content: {
@@ -148,14 +138,6 @@ const sendMessageRoute = createRoute({
         "Cache-Control": z.string().openapi({ example: "no-cache" }),
         Connection: z.string().openapi({ example: "keep-alive" }),
       }),
-    },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorResponseSchema,
-        },
-      },
-      description: "Bad request - invalid input",
     },
     404: {
       content: {
@@ -312,14 +294,6 @@ const getTaskByIdRoute = createRoute({
       },
       description: "Task details with history and conversation data",
     },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorResponseSchema,
-        },
-      },
-      description: "Bad request - invalid taskId",
-    },
     404: {
       content: {
         "application/json": {
@@ -414,10 +388,6 @@ export function registerRooRoutes(
       const { text, images, configuration, newTab, extensionId } =
         await c.req.json();
 
-      if (!text || text.trim() === "") {
-        return c.json({ message: "Task query is required" }, 400);
-      }
-
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
         return c.json({ message: "RooCode extension is not available" }, 500);
@@ -436,6 +406,7 @@ export function registerRooRoutes(
           });
 
           await processEventStream(eventStream, stream);
+          logger.info(`Completed RooCode task stream`);
         } catch (error) {
           logger.error("Error processing RooCode task:", error);
           stream.writeSSE({
@@ -465,10 +436,6 @@ export function registerRooRoutes(
       const { taskId } = c.req.param();
       const { text, images, extensionId } = await c.req.json();
 
-      if (!text || text.trim() === "") {
-        return c.json({ message: "Message text is required" }, 400);
-      }
-
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
         return c.json({ message: "RooCode extension is not available" }, 500);
@@ -482,15 +449,15 @@ export function registerRooRoutes(
         return c.json({ message: `Task with ID ${taskId} not found` }, 404);
       }
 
+      // If task is in history, resume it first
+      if (!activeTaskIds.includes(taskId) && isTaskInHistory) {
+        await adapter.resumeTask(taskId);
+      }
+
       return streamSSE(c, async (stream) => {
         try {
           // Send message to existing task using async generator
           logger.info(`Sending message to existing task: ${taskId}`);
-
-          // If task is in history, resume it first
-          if (!activeTaskIds.includes(taskId) && isTaskInHistory) {
-            await adapter.resumeTask(taskId);
-          }
 
           // Send the message and process events from async generator
           const eventStream = adapter.sendMessage(text, images, {
@@ -498,7 +465,6 @@ export function registerRooRoutes(
           });
 
           await processEventStream(eventStream, stream);
-
           logger.info(`Completed message processing for task: ${taskId}`);
         } catch (error) {
           logger.error("Error processing RooCode task:", error);
@@ -634,16 +600,6 @@ export function registerRooRoutes(
     try {
       const { taskId } = c.req.param();
       const { extensionId } = c.req.query();
-
-      // Validate taskId
-      if (!taskId || typeof taskId !== "string") {
-        return c.json(
-          {
-            message: "taskId must be a non-empty string",
-          },
-          400,
-        );
-      }
 
       // Get the appropriate adapter
       const adapter = controller.getRooAdapter(extensionId);
