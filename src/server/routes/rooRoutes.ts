@@ -335,6 +335,7 @@ const installMcpConfigRoute = createRoute({
           }),
         },
       },
+      required: false,
     },
   },
   responses: {
@@ -626,7 +627,8 @@ export function registerRooRoutes(
         return c.json({ message: "Extension context not available" }, 500);
       }
 
-      const { extensionId } = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
+      const { extensionId } = body;
 
       // Get available extensions (now returns ExtensionInfo[] with id and displayName)
       const availableExtensions = getAvailableExtensions();
