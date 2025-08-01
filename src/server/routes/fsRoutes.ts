@@ -181,10 +181,6 @@ export function registerFsRoutes(app: OpenAPIHono) {
     try {
       const { path: requestedPath } = await c.req.json();
 
-      if (!requestedPath || requestedPath.trim() === "") {
-        return c.json({ message: "File path is required" }, 400);
-      }
-
       // Validate workspace path
       const validation = validateWorkspacePath(requestedPath);
       if (!validation.isValid) {
@@ -264,14 +260,6 @@ export function registerFsRoutes(app: OpenAPIHono) {
   app.openapi(writeFileRoute, async (c) => {
     try {
       const { path: requestedPath, content, encoding } = await c.req.json();
-
-      if (!requestedPath || requestedPath.trim() === "") {
-        return c.json({ message: "File path is required" }, 400);
-      }
-
-      if (content === undefined) {
-        return c.json({ message: "File content is required" }, 400);
-      }
 
       if (!encoding || (encoding !== "utf8" && encoding !== "base64")) {
         return c.json(

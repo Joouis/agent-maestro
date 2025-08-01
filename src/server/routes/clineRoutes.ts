@@ -60,10 +60,6 @@ export function registerClineRoutes(
     try {
       const { text, images } = await c.req.json();
 
-      if (!text || text.trim() === "") {
-        return c.json({ message: "Task description is required" }, 400);
-      }
-
       if (!controller.clineAdapter.isActive) {
         return c.json({ message: "Cline extension is not available" }, 500);
       }
