@@ -129,6 +129,7 @@ export const useChat = () => {
             messageHandler.handleEvent(event, data);
           }
         }
+        messageHandler.handleMessageStreamEnd();
       } catch (error) {
         console.error("Chat error:", error);
         chatState.setShowTyping(false);

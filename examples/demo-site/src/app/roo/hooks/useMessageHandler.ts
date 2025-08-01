@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { use, useCallback, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import {
   RooCodeEventName,
@@ -132,9 +132,7 @@ export const useMessageHandler = ({
             addMessage(newAgentMessage);
           }
 
-          setTimeout(() => {
-            resetMessageState();
-          }, UI_CONFIG.MESSAGE_UPDATE_DELAY);
+          resetMessageState();
           setIsWaitingForResponse(false);
           focusTextarea();
         }
@@ -189,9 +187,7 @@ export const useMessageHandler = ({
             addMessage(newAgentMessage);
           }
 
-          setTimeout(() => {
-            resetMessageState();
-          }, UI_CONFIG.MESSAGE_UPDATE_DELAY);
+          resetMessageState();
           setIsWaitingForResponse(false);
           focusTextarea();
         }
@@ -208,12 +204,7 @@ export const useMessageHandler = ({
 
   const handleTaskCompleted = useCallback(() => {
     showStatusMessage(STATUS_MESSAGES.FINALIZING);
-    setTimeout(() => {
-      setIsWaitingForResponse(false);
-      focusTextarea();
-      showStatusMessage(STATUS_MESSAGES.TASK_COMPLETED);
-    }, UI_CONFIG.TASK_COMPLETION_DELAY);
-  }, [setIsWaitingForResponse, focusTextarea, showStatusMessage]);
+  }, [showStatusMessage]);
 
   const handleTaskError = useCallback(() => {
     showStatusMessage(STATUS_MESSAGES.TASK_ERROR);
@@ -270,8 +261,15 @@ export const useMessageHandler = ({
     ],
   );
 
+  const handleMessageStreamEnd = useCallback(() => {
+    setIsWaitingForResponse(false);
+    focusTextarea();
+    showStatusMessage(STATUS_MESSAGES.TASK_COMPLETED);
+  }, []);
+
   return {
     handleEvent,
     resetMessageState,
+    handleMessageStreamEnd,
   };
 };
