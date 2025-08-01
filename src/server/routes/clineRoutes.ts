@@ -32,14 +32,6 @@ const clineTaskRoute = createRoute({
       },
       description: "Task created successfully",
     },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorResponseSchema,
-        },
-      },
-      description: "Bad request - invalid input",
-    },
     500: {
       content: {
         "application/json": {
