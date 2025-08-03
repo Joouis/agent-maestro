@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
   LanguageModelChatMessage,
+  LanguageModelChatTool,
+  LanguageModelChatToolMode,
   LanguageModelTextPart,
   LanguageModelToolCallPart,
   LanguageModelToolResultPart,
@@ -65,13 +67,13 @@ const webSearchToolResultBlockParamToVSCodePart = (
 /**
  * Convert Anthropic MessageParam content to VSCode LanguageModel content parts
  */
-function convertContentToVSCodeParts(
+const convertContentToVSCodeParts = (
   content: string | Array<Anthropic.Messages.ContentBlockParam>,
 ): Array<
   | LanguageModelTextPart
   | LanguageModelToolResultPart
   | LanguageModelToolCallPart
-> {
+> => {
   if (typeof content === "string") {
     return [new LanguageModelTextPart(content)];
   }
@@ -101,18 +103,15 @@ function convertContentToVSCodeParts(
         parts.push(redactedThinkingBlockParamToVSCodePart(block));
         break;
       case "tool_use":
-        console.log(block);
         parts.push(toolUseBlockParamToVSCodePart(block));
         break;
       case "tool_result":
         parts.push(toolResultBlockParamToVSCodePart(block));
         break;
       case "server_tool_use":
-        console.log(block);
         parts.push(serverToolUseBlockParamToVSCodePart(block));
         break;
       case "web_search_tool_result":
-        console.log(block);
         parts.push(webSearchToolResultBlockParamToVSCodePart(block));
         break;
       default:
@@ -122,7 +121,7 @@ function convertContentToVSCodeParts(
   }
 
   return parts.length > 0 ? parts : [new LanguageModelTextPart("")];
-}
+};
 
 /**
  * Convert a single Anthropic MessageParam to VS Code LanguageModelChatMessage(s)
@@ -130,9 +129,9 @@ function convertContentToVSCodeParts(
  * @param message - Anthropic MessageParam with role and content
  * @returns Single message or array of messages based on content type
  */
-export function convertAnthropicMessageToVSCode(
+export const convertAnthropicMessageToVSCode = (
   message: Anthropic.Messages.MessageParam,
-): LanguageModelChatMessage | LanguageModelChatMessage[] {
+): LanguageModelChatMessage | LanguageModelChatMessage[] => {
   // Handle string content - always returns single message
   if (typeof message.content === "string") {
     return message.role === "user"
@@ -158,7 +157,7 @@ export function convertAnthropicMessageToVSCode(
         );
 
   return vsCodeMessage;
-}
+};
 
 /**
  * Convert an array of Anthropic MessageParams to VS Code LanguageModelChatMessages
@@ -167,9 +166,9 @@ export function convertAnthropicMessageToVSCode(
  * @param messages - Array of Anthropic MessageParam
  * @returns Flat array of VS Code LanguageModelChatMessage
  */
-export function convertAnthropicMessagesToVSCode(
+export const convertAnthropicMessagesToVSCode = (
   messages: Array<Anthropic.Messages.MessageParam>,
-): LanguageModelChatMessage[] {
+): LanguageModelChatMessage[] => {
   const results: LanguageModelChatMessage[] = [];
 
   for (const message of messages) {
@@ -182,7 +181,7 @@ export function convertAnthropicMessagesToVSCode(
   }
 
   return results;
-}
+};
 
 /**
  * Convert Anthropic system prompt to VS Code LanguageModelChatMessage array
@@ -191,9 +190,9 @@ export function convertAnthropicMessagesToVSCode(
  * @param system - Anthropic system prompt (string or array of TextBlockParam)
  * @returns Array of VS Code LanguageModelChatMessage for system content
  */
-export function convertAnthropicSystemToVSCode(
+export const convertAnthropicSystemToVSCode = (
   system?: string | Array<Anthropic.Messages.TextBlockParam>,
-): LanguageModelChatMessage[] {
+): LanguageModelChatMessage[] => {
   if (!system) {
     return [];
   }
@@ -204,4 +203,71 @@ export function convertAnthropicSystemToVSCode(
 
   // Handle array of TextBlockParam
   return system.map((block) => LanguageModelChatMessage.Assistant(block.text));
-}
+};
+
+export const convertAnthropicToolToVSCode = (
+  tools?: Anthropic.Messages.ToolUnion[],
+): LanguageModelChatTool[] | undefined =>
+  tools
+    ? tools.map((tool) => {
+        if (tool.name === "bash") {
+          return {
+            name: tool.name,
+            description: "ToolBash20250124",
+            inputSchema: tool,
+          };
+        } else if (tool.name === "str_replace_editor") {
+          return {
+            name: tool.name,
+            description: "ToolTextEditor20250124",
+            inputSchema: tool,
+          };
+        } else if (tool.name === "str_replace_based_edit_tool") {
+          return {
+            name: tool.name,
+            description: "TextEditor20250429",
+            inputSchema: tool,
+          };
+        } else if (tool.name === "web_search") {
+          // Github Copilot API does not support built-in web search tool
+          return {
+            name: tool.name,
+            description: "WebSearchTool20250305",
+            inputSchema: {
+              ...tool,
+              type: "object",
+            },
+          };
+        }
+
+        const t = tool as Anthropic.Messages.Tool;
+        return {
+          name: t.name,
+          description: t.description || "",
+          inputSchema: t.input_schema,
+        };
+      })
+    : undefined;
+
+export const convertAnthropicToolChoiceToVSCode = (
+  toolChoice?: Anthropic.Messages.ToolChoice,
+): LanguageModelChatToolMode | undefined => {
+  if (!toolChoice) {
+    return undefined;
+  }
+
+  switch (toolChoice.type) {
+    case "auto":
+      return LanguageModelChatToolMode.Auto;
+
+    case "any":
+      return LanguageModelChatToolMode.Required;
+
+    case "tool":
+      return LanguageModelChatToolMode.Required;
+
+    case "none":
+    default:
+      return undefined;
+  }
+};

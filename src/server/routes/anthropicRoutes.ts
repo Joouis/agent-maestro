@@ -12,6 +12,8 @@ import {
 import {
   convertAnthropicMessagesToVSCode,
   convertAnthropicSystemToVSCode,
+  convertAnthropicToolChoiceToVSCode,
+  convertAnthropicToolToVSCode,
 } from "../utils/anthropic";
 
 interface ContentBlock {
@@ -67,18 +69,8 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
       justification:
         "Anthropic-compatible /v1/messages endpoint with streaming support using VS Code Language Model API",
       modelOptions: msgCreateParams,
-      // TODO: handle ToolUnion
-      tools: (tools as Anthropic.Messages.Tool[] | undefined)?.map((t) => ({
-        name: t.name,
-        description: t.description ?? "",
-        inputSchema: t.input_schema,
-      })),
-      toolMode:
-        tool_choice?.type === "auto"
-          ? vscode.LanguageModelChatToolMode.Auto
-          : tool_choice?.type === "any"
-            ? vscode.LanguageModelChatToolMode.Required
-            : undefined,
+      tools: convertAnthropicToolToVSCode(tools),
+      toolMode: convertAnthropicToolChoiceToVSCode(tool_choice),
     };
 
     // 4. Send request to the VS Code LM API
