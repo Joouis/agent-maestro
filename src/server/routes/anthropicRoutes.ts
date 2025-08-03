@@ -14,6 +14,12 @@ import {
   convertAnthropicSystemToVSCode,
 } from "../utils/anthropic";
 
+interface ContentBlock {
+  type: "text" | "tool_use" | string;
+  text?: string;
+  toolUse?: vscode.LanguageModelToolCallPart;
+}
+
 export const honoHandleMessages = async (c: Context): Promise<Response> => {
   try {
     // Parse request body
@@ -28,8 +34,7 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
       ...msgCreateParams
     } = requestBody;
 
-    logger.info(JSON.stringify(c.req.header(), null, 2));
-    logger.info(JSON.stringify(requestBody, null, 2));
+    // logger.info(JSON.stringify(requestBody, null, 2));
 
     logger.info(`Processing Anthropic API request for model: ${modelId}`);
 
@@ -55,7 +60,7 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
       ...convertAnthropicSystemToVSCode(system),
       ...convertAnthropicMessagesToVSCode(messages),
     ];
-    // const vsCodeLmMessages: vscode.LanguageModelChatMessage[] = [];
+    logger.info(JSON.stringify(vsCodeLmMessages, null, 2));
 
     // 3. Build VS Code Language Model request options
     const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
@@ -115,110 +120,131 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
     }
 
     // 6. If streaming, pipe chunks as SSE
-    logger.info("====================== STREAMING ======================");
     return streamSSE(
       c,
       async (stream) => {
-        try {
+        const writeSSE = async (
+          message: Anthropic.Messages.RawMessageStreamEvent,
+        ) => {
           await stream.writeSSE({
-            event: "message_start",
-            data: JSON.stringify({
-              type: "message_start",
-              message: {
-                id: `msg_${Date.now()}`,
-                type: "message",
-                role: "assistant",
-                model: modelId,
-                content: [],
-                stop_reason: null,
-                stop_sequence: null,
-                usage: {
-                  input_tokens: 1,
-                  cache_creation_input_tokens: 0,
-                  cache_read_input_tokens: 0,
-                  output_tokens: 1,
-                  service_tier: "standard",
-                },
+            event: message.type,
+            data: JSON.stringify(message),
+          });
+        };
+
+        try {
+          await writeSSE({
+            type: "message_start",
+            message: {
+              id: `msg_${Date.now()}`,
+              type: "message",
+              role: "assistant",
+              model: modelId,
+              content: [],
+              stop_reason: null,
+              stop_sequence: null,
+              usage: {
+                // TODO: calculate actual usage
+                input_tokens: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                output_tokens: 1,
+                server_tool_use: null,
+                service_tier: "standard",
               },
-            }),
+            },
           });
 
-          let isTextBlockStarted = false;
-          let isToolCallBlockStarted = false;
+          const contentBlocks: ContentBlock[] = [];
 
           for await (const chunk of response.stream) {
+            const lastBlock = contentBlocks.at(-1);
             if (chunk instanceof vscode.LanguageModelTextPart) {
-              logger.info(`Text: `, chunk);
-              if (!isTextBlockStarted) {
-                isTextBlockStarted = true;
-                await stream.writeSSE({
-                  event: "content_block_start",
-                  data: JSON.stringify({
-                    type: "content_block_start",
-                    index: 0,
-                    content_block: { type: "text", text: "" },
-                  }),
-                });
-              } else {
-                await stream.writeSSE({
-                  event: "content_block_delta",
-                  data: JSON.stringify({
-                    type: "content_block_delta",
-                    index: 0,
-                    delta: { type: "text_delta", text: chunk.value },
-                  }),
+              // Stop last non-text block if it exists
+              if (lastBlock && lastBlock.type !== "text") {
+                await writeSSE({
+                  type: "content_block_stop",
+                  index: contentBlocks.length - 1,
                 });
               }
+
+              // Start a new text block
+              if (!lastBlock || lastBlock.type !== "text") {
+                contentBlocks.push({ type: "text", text: "" });
+                await writeSSE({
+                  type: "content_block_start",
+                  index: contentBlocks.length - 1,
+                  content_block: { type: "text", text: "", citations: null },
+                });
+              }
+
+              // Append text to the current text block
+              contentBlocks.at(-1)!.text += chunk.value;
+              await writeSSE({
+                type: "content_block_delta",
+                index: contentBlocks.length - 1,
+                delta: { type: "text_delta", text: chunk.value },
+              });
             } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-              logger.info(`Tool call: `, chunk);
-              if (!isToolCallBlockStarted) {
-                isToolCallBlockStarted = true;
-                await stream.writeSSE({
-                  event: "content_block_start",
-                  data: JSON.stringify({
-                    type: "content_block_start",
-                    index: 0,
-                    content_block: {
-                      type: "tool_use",
-                      id: chunk.callId,
-                      name: chunk.name,
-                      input: chunk.input,
-                    },
-                  }),
+              // Every tool call is a new content block
+              if (lastBlock) {
+                await writeSSE({
+                  type: "content_block_stop",
+                  index: contentBlocks.length - 1,
                 });
               }
-              // await stream.writeSSE({
-              //   event: "content_block_delta",
-              //   data: JSON.stringify({
-              //     type: "content_block_delta",
-              //     index: 0,
-              //     delta: { type: "input_json_delta", partial_json: chunk.input },
-              //   }),
-              // });
+
+              contentBlocks.push({ type: "tool_use", toolUse: chunk });
+              await writeSSE({
+                type: "content_block_start",
+                index: contentBlocks.length - 1,
+                content_block: {
+                  type: "tool_use",
+                  id: chunk.callId,
+                  name: chunk.name,
+                  input: {},
+                },
+              });
+
+              await writeSSE({
+                type: "content_block_delta",
+                index: contentBlocks.length - 1,
+                delta: {
+                  type: "input_json_delta",
+                  partial_json: JSON.stringify(chunk.input),
+                },
+              });
             }
           }
 
-          await stream.writeSSE({
-            event: "content_block_stop",
-            data: JSON.stringify({ type: "content_block_stop", index: 0 }),
-          });
-          await stream.writeSSE({
-            event: "message_delta",
-            data: JSON.stringify({
-              type: "message_delta",
-              delta: {
-                stop_reason: isToolCallBlockStarted ? "tool_use" : "end_turn",
-                stop_sequence: null,
-              },
-              usage: { output_tokens: 1 },
-            }),
-          });
-          await stream.writeSSE({
-            event: "message_stop",
-            data: JSON.stringify({ type: "message_stop" }),
+          logger.info(JSON.stringify(contentBlocks, null, 2));
+
+          // Finalize last content block if it exists
+          await writeSSE({
+            type: "content_block_stop",
+            index: contentBlocks.length - 1,
           });
 
-          // Signal end of stream
+          await writeSSE({
+            type: "message_delta",
+            delta: {
+              stop_reason:
+                contentBlocks.at(-1)?.type === "tool_use"
+                  ? "tool_use"
+                  : "end_turn",
+              stop_sequence: null,
+            },
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+              server_tool_use: null,
+            },
+          });
+
+          await writeSSE({ type: "message_stop" });
+
           logger.info("Streaming response completed");
         } catch (streamError) {
           logger.error("Error in streaming:", streamError);
