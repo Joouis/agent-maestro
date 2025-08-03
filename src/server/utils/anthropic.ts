@@ -1,60 +1,127 @@
 import Anthropic from "@anthropic-ai/sdk";
-import * as vscode from "vscode";
+import {
+  LanguageModelChatMessage,
+  LanguageModelTextPart,
+  LanguageModelToolCallPart,
+  LanguageModelToolResultPart,
+} from "vscode";
 
-/**
- * Extract text content from a single Anthropic content block
- */
-function extractTextFromContentBlock(
-  block: Anthropic.Messages.ContentBlockParam,
-): string {
-  switch (block.type) {
-    case "text":
-      return block.text;
-    case "thinking":
-      return block.thinking;
-    case "redacted_thinking":
-      return block.data;
-    case "image":
-      return JSON.stringify(block);
-    case "document":
-      return ""; // Ignore document blocks as specified
-    case "tool_use":
-    case "tool_result":
-    case "server_tool_use":
-    case "web_search_tool_result":
-      return JSON.stringify(block);
-    default:
-      // Handle any future block types
-      return JSON.stringify(block);
+const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
+  new LanguageModelTextPart(param.text);
+
+const imageBlockParamToVSCodePart = (
+  param: Anthropic.Messages.ImageBlockParam,
+) => new LanguageModelTextPart(JSON.stringify(param));
+
+const thinkingBlockParamToVSCodePart = (
+  param: Anthropic.Messages.ThinkingBlockParam,
+) => new LanguageModelTextPart(param.thinking);
+
+const redactedThinkingBlockParamToVSCodePart = (
+  param: Anthropic.Messages.RedactedThinkingBlockParam,
+) => new LanguageModelTextPart(param.data);
+
+const toolUseBlockParamToVSCodePart = (
+  param: Anthropic.Messages.ToolUseBlockParam,
+) => new LanguageModelToolCallPart(param.id, param.name, param.input as object);
+
+const toolResultBlockParamToVSCodePart = (
+  param: Anthropic.Messages.ToolResultBlockParam,
+) => {
+  if (!param.content) {
+    return new LanguageModelToolResultPart(param.tool_use_id, []); // Handle empty content gracefully
   }
-}
 
-/**
- * Check if content array contains media blocks (image or document)
- */
-function hasMediaBlocks(
-  content: Array<Anthropic.Messages.ContentBlockParam>,
-): boolean {
-  return content.some(
-    (block) => block.type === "image" || block.type === "document",
+  const content =
+    typeof param.content === "string"
+      ? [new LanguageModelTextPart(param.content)]
+      : param.content.map((c) =>
+          c.type === "text"
+            ? textBlockParamToVSCodePart(c)
+            : new LanguageModelTextPart(JSON.stringify(c)),
+        );
+  return new LanguageModelToolResultPart(param.tool_use_id, content);
+};
+
+const serverToolUseBlockParamToVSCodePart = (
+  param: Anthropic.Messages.ServerToolUseBlockParam,
+) => {
+  return new LanguageModelToolCallPart(
+    param.id,
+    param.name,
+    param.input as object,
   );
-}
+};
+
+const webSearchToolResultBlockParamToVSCodePart = (
+  param: Anthropic.Messages.WebSearchToolResultBlockParam,
+) => {
+  const content = Array.isArray(param.content)
+    ? param.content.map((c) => new LanguageModelTextPart(JSON.stringify(c)))
+    : [new LanguageModelTextPart(JSON.stringify(param.content))];
+  return new LanguageModelToolResultPart(param.tool_use_id, content);
+};
 
 /**
- * Convert Anthropic MessageParam content to text string
+ * Convert Anthropic MessageParam content to VSCode LanguageModel content parts
  */
-function convertContentToText(
+function convertContentToVSCodeParts(
   content: string | Array<Anthropic.Messages.ContentBlockParam>,
-): string {
+): Array<
+  | LanguageModelTextPart
+  | LanguageModelToolResultPart
+  | LanguageModelToolCallPart
+> {
   if (typeof content === "string") {
-    return content;
+    return [new LanguageModelTextPart(content)];
   }
 
-  const textParts = content
-    .map((block) => extractTextFromContentBlock(block))
-    .filter((text) => text.length > 0); // Remove empty strings (e.g., from ignored documents)
+  const parts: Array<
+    | LanguageModelTextPart
+    | LanguageModelToolResultPart
+    | LanguageModelToolCallPart
+  > = [];
 
-  return textParts.join("\n\n");
+  for (const block of content) {
+    switch (block.type) {
+      case "text":
+        parts.push(textBlockParamToVSCodePart(block));
+        break;
+      case "image":
+        // Images are represented as text in VSCode LM API
+        parts.push(imageBlockParamToVSCodePart(block));
+        break;
+      case "document":
+        // Skip document blocks as specified in original implementation
+        break;
+      case "thinking":
+        parts.push(thinkingBlockParamToVSCodePart(block));
+        break;
+      case "redacted_thinking":
+        parts.push(redactedThinkingBlockParamToVSCodePart(block));
+        break;
+      case "tool_use":
+        console.log(block);
+        parts.push(toolUseBlockParamToVSCodePart(block));
+        break;
+      case "tool_result":
+        parts.push(toolResultBlockParamToVSCodePart(block));
+        break;
+      case "server_tool_use":
+        console.log(block);
+        parts.push(serverToolUseBlockParamToVSCodePart(block));
+        break;
+      case "web_search_tool_result":
+        console.log(block);
+        parts.push(webSearchToolResultBlockParamToVSCodePart(block));
+        break;
+      default:
+        // Handle any other block types as text
+        parts.push(new LanguageModelTextPart(JSON.stringify(block)));
+    }
+  }
+
+  return parts.length > 0 ? parts : [new LanguageModelTextPart("")];
 }
 
 /**
@@ -65,26 +132,32 @@ function convertContentToText(
  */
 export function convertAnthropicMessageToVSCode(
   message: Anthropic.Messages.MessageParam,
-): vscode.LanguageModelChatMessage | vscode.LanguageModelChatMessage[] {
+): LanguageModelChatMessage | LanguageModelChatMessage[] {
   // Handle string content - always returns single message
   if (typeof message.content === "string") {
     return message.role === "user"
-      ? vscode.LanguageModelChatMessage.User(message.content)
-      : vscode.LanguageModelChatMessage.Assistant(message.content);
+      ? LanguageModelChatMessage.User(message.content)
+      : LanguageModelChatMessage.Assistant(message.content);
   }
 
   // Handle array content
-  const hasMedia = hasMediaBlocks(message.content);
-  const textContent = convertContentToText(message.content);
+  const contentParts = convertContentToVSCodeParts(message.content);
 
   // Create the message
   const vsCodeMessage =
     message.role === "user"
-      ? vscode.LanguageModelChatMessage.User(textContent)
-      : vscode.LanguageModelChatMessage.Assistant(textContent);
+      ? LanguageModelChatMessage.User(
+          contentParts as Array<
+            LanguageModelTextPart | LanguageModelToolResultPart
+          >,
+        )
+      : LanguageModelChatMessage.Assistant(
+          contentParts as Array<
+            LanguageModelTextPart | LanguageModelToolCallPart
+          >,
+        );
 
-  // Return single message if no media, array if has media
-  return hasMedia ? [vsCodeMessage] : vsCodeMessage;
+  return vsCodeMessage;
 }
 
 /**
@@ -96,8 +169,8 @@ export function convertAnthropicMessageToVSCode(
  */
 export function convertAnthropicMessagesToVSCode(
   messages: Array<Anthropic.Messages.MessageParam>,
-): vscode.LanguageModelChatMessage[] {
-  const results: vscode.LanguageModelChatMessage[] = [];
+): LanguageModelChatMessage[] {
+  const results: LanguageModelChatMessage[] = [];
 
   for (const message of messages) {
     const converted = convertAnthropicMessageToVSCode(message);
@@ -120,17 +193,15 @@ export function convertAnthropicMessagesToVSCode(
  */
 export function convertAnthropicSystemToVSCode(
   system?: string | Array<Anthropic.Messages.TextBlockParam>,
-): vscode.LanguageModelChatMessage[] {
+): LanguageModelChatMessage[] {
   if (!system) {
     return [];
   }
 
   if (typeof system === "string") {
-    return [vscode.LanguageModelChatMessage.Assistant(system)];
+    return [LanguageModelChatMessage.Assistant(system)];
   }
 
   // Handle array of TextBlockParam
-  return system.map((block) =>
-    vscode.LanguageModelChatMessage.Assistant(block.text),
-  );
+  return system.map((block) => LanguageModelChatMessage.Assistant(block.text));
 }

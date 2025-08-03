@@ -67,6 +67,7 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
       justification:
         "Anthropic-compatible /v1/messages endpoint with streaming support using VS Code Language Model API",
       modelOptions: msgCreateParams,
+      // TODO: handle ToolUnion
       tools: (tools as Anthropic.Messages.Tool[] | undefined)?.map((t) => ({
         name: t.name,
         description: t.description ?? "",
@@ -217,7 +218,10 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
             }
           }
 
-          logger.info(JSON.stringify(contentBlocks, null, 2));
+          logger.info(
+            "Content blocks: ",
+            JSON.stringify(contentBlocks, null, 2),
+          );
 
           // Finalize last content block if it exists
           await writeSSE({
