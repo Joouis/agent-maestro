@@ -72,20 +72,30 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
       tools: convertAnthropicToolToVSCode(tools),
       toolMode: convertAnthropicToolChoiceToVSCode(tool_choice),
     };
+    const cancellationToken = new vscode.CancellationTokenSource().token;
 
-    // 4. Send request to the VS Code LM API
+    // 4. Count input tokens
+    let inputTokenCount = 0;
+    for (const msg of vsCodeLmMessages) {
+      inputTokenCount += await client.countTokens(msg, cancellationToken);
+    }
+
+    // 5. Send request to the VS Code LM API
     const response = await client.sendRequest(
       vsCodeLmMessages,
       lmRequestOptions,
-      new vscode.CancellationTokenSource().token,
+      cancellationToken,
     );
 
-    // 5. Non-streaming response: collect full text
+    // 6. Non-streaming response: collect full text
     if (!msgCreateParams.stream) {
       let fullText = "";
       for await (const fragment of response.text) {
         fullText += fragment;
       }
+
+      // Count output tokens
+      const outputTokenCount = await client.countTokens(fullText);
 
       // https://docs.anthropic.com/en/api/messages#response-id
       const resp: Anthropic.Messages.Message = {
@@ -101,8 +111,8 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
           // cache_creation: null,
           cache_creation_input_tokens: null,
           cache_read_input_tokens: null,
-          input_tokens: 1,
-          output_tokens: 1,
+          input_tokens: inputTokenCount,
+          output_tokens: outputTokenCount,
           server_tool_use: null,
           service_tier: null,
         },
@@ -137,11 +147,10 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
               stop_reason: null,
               stop_sequence: null,
               usage: {
-                // TODO: calculate actual usage
-                input_tokens: 1,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
+                input_tokens: inputTokenCount,
                 output_tokens: 1,
+                cache_creation_input_tokens: null,
+                cache_read_input_tokens: null,
                 server_tool_use: null,
                 service_tier: "standard",
               },
@@ -149,6 +158,7 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
           });
 
           const contentBlocks: ContentBlock[] = [];
+          let accumulatedText = "";
 
           for await (const chunk of response.stream) {
             const lastBlock = contentBlocks.at(-1);
@@ -173,6 +183,7 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
 
               // Append text to the current text block
               contentBlocks.at(-1)!.text += chunk.value;
+              accumulatedText += chunk.value;
               await writeSSE({
                 type: "content_block_delta",
                 index: contentBlocks.length - 1,
@@ -221,6 +232,11 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
             index: contentBlocks.length - 1,
           });
 
+          // Count output tokens for the complete response
+          const outputTokenCount = accumulatedText
+            ? await client.countTokens(accumulatedText)
+            : 1;
+
           await writeSSE({
             type: "message_delta",
             delta: {
@@ -231,8 +247,8 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
               stop_sequence: null,
             },
             usage: {
-              input_tokens: 1,
-              output_tokens: 1,
+              input_tokens: inputTokenCount,
+              output_tokens: outputTokenCount,
               cache_creation_input_tokens: 0,
               cache_read_input_tokens: 0,
               server_tool_use: null,
@@ -246,7 +262,7 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
           logger.error("Error in streaming:", streamError);
         }
       },
-      async (error, stream) => {
+      async (error, _stream) => {
         logger.error(JSON.stringify(error, null, 2));
       },
     );
