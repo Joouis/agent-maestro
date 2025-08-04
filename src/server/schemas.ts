@@ -114,6 +114,7 @@ export const AnthropicMessageCreateParamsSchema = z.looseObject({
           .describe("Description of what the tool does"),
         input_schema: z
           .record(z.string(), z.any())
+          // "web_search" tool does not meet the schema, so we make it optional
           .optional()
           .describe("JSON schema for the tool input"),
         cache_control: z
