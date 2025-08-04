@@ -56,7 +56,7 @@ export const getChatModelsQuickPickItems = async () => {
       label: "Gemini",
       modelId: "",
     },
-    ...gemimiModels.map(chatModelToQuickPickItem),
+    ...geminiModels.map(chatModelToQuickPickItem),
   ];
 
   return modelOptions;
