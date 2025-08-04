@@ -5,9 +5,10 @@ import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import {
-  ErrorResponseSchema,
+  AnthropicErrorResponseSchema,
   AnthropicMessageCreateParamsSchema,
   AnthropicMessageResponseSchema,
+  AnthropicCountTokensResponseSchema,
 } from "../schemas";
 import {
   convertAnthropicMessagesToVSCode,
@@ -22,7 +23,71 @@ interface ContentBlock {
   toolUse?: vscode.LanguageModelToolCallPart;
 }
 
-export const honoHandleMessages = async (c: Context): Promise<Response> => {
+const v1MessagesTokenCountController = async (c: Context) => {
+  try {
+    const requestBody =
+      (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
+    const { model: modelId, system, messages } = requestBody;
+
+    logger.info(`Processing token count request for model: ${modelId}`);
+
+    const models = await vscode.lm.selectChatModels({});
+    const client = models.find((m) => m.id === modelId);
+
+    if (!client) {
+      logger.error("No VS Code LM model available");
+      return c.json(
+        {
+          error: {
+            message: `Model '${modelId}' not found. Use /api/v1/lm/chatModels to list available models and pass a valid model ID.`,
+            type: "invalid_request_error",
+          },
+          type: "error",
+        },
+        404,
+      );
+    }
+
+    const vsCodeLmMessages: vscode.LanguageModelChatMessage[] = [
+      ...convertAnthropicSystemToVSCode(system),
+      ...convertAnthropicMessagesToVSCode(messages),
+    ];
+
+    let inputTokenCount = 0;
+    const cancellationToken = new vscode.CancellationTokenSource().token;
+    for (const msg of vsCodeLmMessages) {
+      inputTokenCount += await client.countTokens(msg, cancellationToken);
+    }
+
+    return c.json(
+      {
+        input_tokens: inputTokenCount,
+      },
+      200,
+    );
+  } catch (error) {
+    logger.error(
+      JSON.stringify({
+        message: (error as Error).message,
+        stack: (error as Error).stack,
+        name: (error as Error).name,
+      }),
+    );
+    return c.json(
+      {
+        error: {
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+          type: "internal_error",
+        },
+        type: "error",
+      },
+      500,
+    );
+  }
+};
+
+const v1MessagesController = async (c: Context): Promise<Response> => {
   try {
     // Parse request body
     const requestBody =
@@ -48,7 +113,11 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
       logger.error("No VS Code LM model available");
       return c.json(
         {
-          error: `Model '${modelId}' not found. Use /api/v1/lm/chatModels to list available models and pass a valid model ID.`,
+          error: {
+            message: `Model '${modelId}' not found. Use /api/v1/lm/chatModels to list available models and pass a valid model ID.`,
+            type: "invalid_request_error",
+          },
+          type: "error",
         },
         404,
       );
@@ -276,7 +345,12 @@ export const honoHandleMessages = async (c: Context): Promise<Response> => {
     );
     return c.json(
       {
-        error: error instanceof Error ? error.message : "Internal server error",
+        error: {
+          message:
+            error instanceof Error ? error.message : "Internal server error",
+          type: "internal_error",
+        },
+        type: "error",
       },
       500,
     );
@@ -318,7 +392,7 @@ const messagesRoute = createRoute({
     400: {
       content: {
         "application/json": {
-          schema: ErrorResponseSchema,
+          schema: AnthropicErrorResponseSchema,
         },
       },
       description: "Bad request - invalid parameters",
@@ -326,7 +400,7 @@ const messagesRoute = createRoute({
     404: {
       content: {
         "application/json": {
-          schema: ErrorResponseSchema,
+          schema: AnthropicErrorResponseSchema,
         },
       },
       description: "Model not found",
@@ -334,7 +408,60 @@ const messagesRoute = createRoute({
     500: {
       content: {
         "application/json": {
-          schema: ErrorResponseSchema,
+          schema: AnthropicErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+const countTokensRoute = createRoute({
+  method: "post",
+  path: "/v1/messages/count_tokens",
+  tags: ["Anthropic API"],
+  summary: "Count input tokens for Anthropic-compatible messages",
+  description:
+    "Count the input tokens for messages using the Anthropic-compatible API interface, powered by VSCode Language Models.",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: AnthropicMessageCreateParamsSchema,
+        },
+      },
+    },
+    description: "Message parameters for token counting",
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: AnthropicCountTokensResponseSchema,
+        },
+      },
+      description: "Successfully counted input tokens",
+    },
+    400: {
+      content: {
+        "application/json": {
+          schema: AnthropicErrorResponseSchema,
+        },
+      },
+      description: "Bad request - invalid parameters",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: AnthropicErrorResponseSchema,
+        },
+      },
+      description: "Model not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: AnthropicErrorResponseSchema,
         },
       },
       description: "Internal server error",
@@ -344,5 +471,8 @@ const messagesRoute = createRoute({
 
 export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages - Anthropic-compatible messages endpoint
-  app.openapi(messagesRoute, honoHandleMessages);
+  app.openapi(messagesRoute, v1MessagesController);
+
+  // POST /v1/messages/count_tokens - Count input tokens
+  app.openapi(countTokensRoute, v1MessagesTokenCountController);
 }

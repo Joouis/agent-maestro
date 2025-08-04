@@ -10,6 +10,16 @@ export const ErrorResponseSchema = z
   })
   .openapi("ErrorResponse");
 
+export const AnthropicErrorResponseSchema = z
+  .object({
+    error: z.object({
+      message: z.string().describe("Error message"),
+      type: z.string().describe("Error type"),
+    }),
+    type: z.string().describe("Error type"),
+  })
+  .openapi("AnthropicErrorResponse");
+
 // ============================================================================
 // ANTHROPIC API SCHEMAS
 // ============================================================================
@@ -159,6 +169,10 @@ export const AnthropicMessageResponseSchema = z.looseObject({
     server_tool_use: z.any().nullable(),
     service_tier: z.string().nullable(),
   }),
+});
+
+export const AnthropicCountTokensResponseSchema = z.object({
+  input_tokens: z.number().describe("Number of input tokens"),
 });
 
 // ============================================================================
