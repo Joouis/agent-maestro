@@ -76,9 +76,10 @@ const v1MessagesTokenCountController = async (c: Context) => {
   try {
     const requestBody =
       (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
-    const { model: modelId, system, messages } = requestBody;
 
-    const { client, error: clientError } = await getChatModelClient(modelId);
+    const { client, error: clientError } = await getChatModelClient(
+      requestBody.model,
+    );
 
     if (clientError) {
       return c.json(clientError, 404);
