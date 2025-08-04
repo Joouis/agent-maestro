@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.0.0 - 2025.08.05
+
+### Breaking changes
+
+- **Roo task SSE events renamed** to follow [RooCodeEventName](https://github.com/RooCodeInc/Roo-Code/blob/main/packages/types/src/events.ts) enum.
+  - The most commonly used `message` event remains unchanged.
+  - Removed events: `stream_closed`, `task_completed`, `task_aborted`, `tool_failed`, `task_created`, `error`, `task_resumed`.
+- **OpenAPI path changed** from `/api/v1/openapi.json` to `/openapi.json`.
+
+### New features
+
+- **Anthropic-compatible endpoints** for GitHub Copilot API:
+  - `POST /api/anthropic/v1/messages`
+  - `POST /api/anthropic/v1/messages/count_tokens`
+- **"Configure Claude Code Settings" command** for one-click setup, making Claude Code instantly usable
+- `GET /api/v1/lm/tools` - lists all tools registered via `lm.registerTool()`.
+- `GET /api/v1/lm/chatModels` - lists available VS Code Language Model API chat models.
+- All Roo events now exposed in the Roo task/message SSE stream.
+
+### Infrastructure
+
+- Switched to Hono Framework for improved stability and performance.
+
 ## v1.3.1 - 2025.07.23
 
 - Fix send message does not work for the inactive chat issue
