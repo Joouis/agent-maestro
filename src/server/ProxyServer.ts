@@ -8,10 +8,7 @@ import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
-import {
-  honoHandleMessages,
-  registerAnthropicRoutes,
-} from "./routes/anthropicRoutes";
+import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
 import { DEFAULT_CONFIG } from "../utils/config";
 
 import { OpenAPIHono } from "@hono/zod-openapi";
