@@ -132,6 +132,11 @@
         "command": "agent-maestro.installMcpConfig",
         "title": "Install MCP Configuration",
         "category": "Agent Maestro"
+      },
+      {
+        "command": "agent-maestro.configureClaudeCode",
+        "title": "Configure Claude Code Settings",
+        "category": "Agent Maestro"
       }
     ]
   },
