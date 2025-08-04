@@ -25,13 +25,13 @@ export const getChatModelsQuickPickItems = async () => {
   }
 
   const claudeModels = [];
-  const gemimiModels = [];
+  const geminiModels = [];
   const restModels = [];
   for (const m of allModels) {
     if (m.id.toLocaleLowerCase().includes("claude")) {
       claudeModels.push(m);
     } else if (m.id.toLocaleLowerCase().includes("gemini")) {
-      gemimiModels.push(m);
+      geminiModels.push(m);
     } else {
       restModels.push(m);
     }
