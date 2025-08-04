@@ -31,7 +31,8 @@ const toolResultBlockParamToVSCodePart = (
   param: Anthropic.Messages.ToolResultBlockParam,
 ) => {
   if (!param.content) {
-    return new LanguageModelToolResultPart(param.tool_use_id, []); // Handle empty content gracefully
+    // If the tool result has no content, return an empty array of parts to indicate no output was produced.
+    return new LanguageModelToolResultPart(param.tool_use_id, []);
   }
 
   const content =
