@@ -64,7 +64,7 @@ This automatically creates `.claude/settings.json` with Agent Maestro endpoint a
 
 ### Usage
 
-1. **Explore API Capabilities**: Access the complete OpenAPI specification at [http://localhost:23333/openapi.json](http://localhost:23333/openapi.json).
+1. **Explore API Capabilities**: Access the complete OpenAPI specification at [`http://localhost:23333/openapi.json`](http://localhost:23333/openapi.json).
 
 2. **VS Code Commands**: Access functionality through the Command Palette:
 
