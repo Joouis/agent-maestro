@@ -5,9 +5,7 @@
 [![Rating](https://img.shields.io/visual-studio-marketplace/r/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
 [![License](https://img.shields.io/github/license/Joouis/agent-maestro)](./LICENSE) -->
 
-**Unlock the full potential of best-in-class AI agents in VS Code with zero external API keys required.**
-
-Transform your development workflow with VS Code's built-in AI capabilities through one unified RESTful API. Designed for developers who need programmatic control, enabling seamless agent integration into custom workflows, CI/CD pipelines, and external applications—all powered by VS Code's native language models.
+Headless VS Code AI integrates best-in-class AI agents into any workflow, assisting, automating tasks, and generating solutions seamlessly. Now supporting Claude Code via Anthropic-compatible endpoints.
 
 Built entirely by AI agents — yes, they coded themselves.
 
