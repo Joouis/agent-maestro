@@ -393,7 +393,7 @@ export async function activate(context: vscode.ExtensionContext) {
           const currentToken = existingSettings?.env?.ANTHROPIC_AUTH_TOKEN;
           const authToken = currentToken
             ? currentToken
-            : "Powered by Agent Maestro ❤️";
+            : "Powered by Agent Maestro";
 
           // Create new settings
           const newSettings = {
