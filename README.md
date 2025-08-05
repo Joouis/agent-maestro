@@ -7,8 +7,6 @@
 
 Headless VS Code AI integrates best-in-class AI agents into any workflow, assisting, automating tasks, and generating solutions seamlessly. Now supporting Claude Code via Anthropic-compatible endpoints.
 
-Built entirely by AI agents — yes, they coded themselves.
-
 ![Claude Code Support](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/claude-code-support.jpg)
 
 ![Agent Maestro Demo](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/agent-maestro-demo.gif)
