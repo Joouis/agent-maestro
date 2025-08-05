@@ -1,9 +1,9 @@
 # Agent Maestro
 
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
+<!-- [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
 [![Downloads](https://img.shields.io/visual-studio-marketplace/d/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
 [![Rating](https://img.shields.io/visual-studio-marketplace/r/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
-[![License](https://img.shields.io/github/license/Joouis/agent-maestro)](./LICENSE)
+[![License](https://img.shields.io/github/license/Joouis/agent-maestro)](./LICENSE) -->
 
 **Unlock the full potential of best-in-class AI agents in VS Code with zero external API keys required.**
 
@@ -11,11 +11,13 @@ Transform your development workflow with VS Code's built-in AI capabilities thro
 
 Built entirely by AI agents — yes, they coded themselves.
 
+![Claude Code Support](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/claude-code-support.jpg)
+
 ![Agent Maestro Demo](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/agent-maestro-demo.gif)
 
 ---
 
-## What's New in v2.0.0
+## 🎉 What's New in v2.0.0
 
 ### **GitHub Copilot + Claude Code Integration**
 
