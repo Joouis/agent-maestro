@@ -15,8 +15,6 @@ Built entirely by AI agents — yes, they coded themselves.
 
 ![Agent Maestro Demo](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/agent-maestro-demo.gif)
 
----
-
 ## 🎉 What's New in v2.0.0
 
 ### **GitHub Copilot + Claude Code Integration**
@@ -30,15 +28,11 @@ Built entirely by AI agents — yes, they coded themselves.
 - **VS Code Language Model API**: Direct access to VS Code's native LM ecosystem
 - **Streamlined Architecture**: Smaller memory footprint and faster response times
 
----
-
 ## Why Agent Maestro
 
 AI Agents represent a transformative shift—from simple LLM calls to autonomous collaborators that function as employees, partners, or entire development teams at your command. While open-source agent frameworks offer flexibility, they often require significant setup and configuration.
 
 VS Code extensions like GitHub Copilot Chat, Cline, and Roo Code have collectively surpassed tens of millions of downloads, offering battle‑tested, out‑of‑the‑box agent experiences. Agent Maestro taps into this maturity as among the first headless bridges to VS Code’s best‑in‑class AI agents: no custom framework setup, no GUI dependencies. Leverage VS Code’s unified APIs and rich model catalog (including free tiers) to assist tasks, automate workflows, and generate solutions across any environment—from CI pipelines and scripts to your terminal—effortlessly.
-
----
 
 ## Key Features
 
@@ -53,8 +47,6 @@ VS Code extensions like GitHub Copilot Chat, Cline, and Roo Code have collectiv
 - **Extension Auto-Discovery**: Automatic detection and activation of installed AI coding extensions
 
 **Note on Agent Support**: While Cline integration is included, RooCode offers the most comprehensive integration capabilities and is recommended for production use. GitHub Copilot integration via Anthropic endpoints provides the best balance of features and reliability.
-
----
 
 ## Quick Start
 
@@ -107,8 +99,6 @@ This automatically creates `.claude/settings.json` with Agent Maestro endpoint a
    - **Type Definitions**: [`@roo-code/types`](https://www.npmjs.com/package/@roo-code/types) package
    - **Examples**: Reference implementation in `examples/demo-site` (testing purposes)
 
----
-
 ## API Overview
 
 Agent Maestro v2.0.0 provides multiple API interfaces for different integration needs.
@@ -153,8 +143,6 @@ Basic integration support:
 
 - **`GET /openapi.json`** - Complete OpenAPI v3 specification
 
----
-
 ## Migration from v1.x
 
 ⚠️ **Important changes when upgrading from v1.x:**
@@ -169,8 +157,6 @@ Basic integration support:
    - **Old**: `/api/v1/openapi.json`
    - **New**: `/openapi.json`
 
----
-
 ## Roadmap
 
 Our development roadmap includes several exciting enhancements:
@@ -180,8 +166,6 @@ Our development roadmap includes several exciting enhancements:
 - **GitHub Copilot Integration**: Support for GitHub Copilot and GitHub Copilot Chat
 
 **Contributions Welcome**: We encourage community contributions to help expand Agent Maestro's capabilities and support for additional AI coding agents. We recommend using AI coding agents themselves to accelerate your development workflow when contributing to this project.
-
----
 
 ## License
 
