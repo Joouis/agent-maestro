@@ -12,6 +12,7 @@ import {
 import {
   ErrorResponseSchema,
   ImagesDataUriSchema,
+  imagesDataUriErrorMessage,
   RooMessageRequestSchema,
   RooActionRequestSchema,
   HistoryItemSchema,
@@ -392,7 +393,7 @@ export function registerRooRoutes(
 
       const imagesResult = ImagesDataUriSchema.safeParse(images);
       if (!imagesResult.success) {
-        return c.json({ message: imagesResult.error.message }, 400);
+        return c.json({ message: imagesDataUriErrorMessage }, 400);
       }
 
       const adapter = controller.getRooAdapter(extensionId);
@@ -445,7 +446,7 @@ export function registerRooRoutes(
 
       const imagesResult = ImagesDataUriSchema.safeParse(images);
       if (!imagesResult.success) {
-        return c.json({ message: imagesResult.error.message }, 400);
+        return c.json({ message: imagesDataUriErrorMessage }, 400);
       }
 
       const adapter = controller.getRooAdapter(extensionId);

@@ -178,6 +178,8 @@ export const AnthropicCountTokensResponseSchema = z.object({
 // ============================================================================
 // CLINE API SCHEMAS
 // ============================================================================
+export const imagesDataUriErrorMessage =
+  "Each image must be a valid data URI in format 'data:image/{fileType};base64,...'";
 export const ImagesDataUriSchema = z
   .array(
     z
@@ -186,8 +188,7 @@ export const ImagesDataUriSchema = z
         (value) =>
           value.startsWith("data:image/") && value.includes(";base64,"),
         {
-          error:
-            "Each image must be a valid data URI in format 'data:image/{fileType};base64,...'",
+          error: imagesDataUriErrorMessage,
         },
       ),
   )

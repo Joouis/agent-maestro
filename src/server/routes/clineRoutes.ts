@@ -4,6 +4,7 @@ import { ExtensionController } from "../../core/controller";
 import {
   ErrorResponseSchema,
   ImagesDataUriSchema,
+  imagesDataUriErrorMessage,
   ClineMessageRequestSchema,
   ClineTaskResponseSchema,
 } from "../schemas";
@@ -63,7 +64,7 @@ export function registerClineRoutes(
 
       const imagesResult = ImagesDataUriSchema.safeParse(images);
       if (!imagesResult.success) {
-        return c.json({ message: imagesResult.error.message }, 400);
+        return c.json({ message: imagesDataUriErrorMessage }, 400);
       }
 
       if (!controller.clineAdapter.isActive) {
