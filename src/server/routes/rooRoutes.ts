@@ -11,6 +11,7 @@ import {
 } from "../../utils/mcpConfig";
 import {
   ErrorResponseSchema,
+  ImagesDataUriSchema,
   RooMessageRequestSchema,
   RooActionRequestSchema,
   HistoryItemSchema,
@@ -389,6 +390,11 @@ export function registerRooRoutes(
       const { text, images, configuration, newTab, extensionId } =
         await c.req.json();
 
+      const imagesResult = ImagesDataUriSchema.safeParse(images);
+      if (!imagesResult.success) {
+        return c.json({ message: imagesResult.error.message }, 400);
+      }
+
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
         return c.json({ message: "RooCode extension is not available" }, 500);
@@ -401,7 +407,7 @@ export function registerRooRoutes(
 
           const eventStream = adapter.startNewTask({
             text,
-            images,
+            images: imagesResult.data,
             configuration,
             newTab,
           });
@@ -437,6 +443,11 @@ export function registerRooRoutes(
       const { taskId } = c.req.param();
       const { text, images, extensionId } = await c.req.json();
 
+      const imagesResult = ImagesDataUriSchema.safeParse(images);
+      if (!imagesResult.success) {
+        return c.json({ message: imagesResult.error.message }, 400);
+      }
+
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
         return c.json({ message: "RooCode extension is not available" }, 500);
@@ -461,7 +472,7 @@ export function registerRooRoutes(
           logger.info(`Sending message to existing task: ${taskId}`);
 
           // Send the message and process events from async generator
-          const eventStream = adapter.sendMessage(text, images, {
+          const eventStream = adapter.sendMessage(text, imagesResult.data, {
             taskId,
           });
 

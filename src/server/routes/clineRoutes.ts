@@ -3,6 +3,7 @@ import { logger } from "../../utils/logger";
 import { ExtensionController } from "../../core/controller";
 import {
   ErrorResponseSchema,
+  ImagesDataUriSchema,
   ClineMessageRequestSchema,
   ClineTaskResponseSchema,
 } from "../schemas";
@@ -32,6 +33,14 @@ const clineTaskRoute = createRoute({
       },
       description: "Task created successfully",
     },
+    400: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Bad request - invalid input data",
+    },
     500: {
       content: {
         "application/json": {
@@ -52,11 +61,19 @@ export function registerClineRoutes(
     try {
       const { text, images } = await c.req.json();
 
+      const imagesResult = ImagesDataUriSchema.safeParse(images);
+      if (!imagesResult.success) {
+        return c.json({ message: imagesResult.error.message }, 400);
+      }
+
       if (!controller.clineAdapter.isActive) {
         return c.json({ message: "Cline extension is not available" }, 500);
       }
 
-      await controller.clineAdapter.startNewTask({ task: text, images });
+      await controller.clineAdapter.startNewTask({
+        task: text,
+        images: imagesResult.data,
+      });
 
       const response = {
         id: "Cline does not support returning task ID",
