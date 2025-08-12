@@ -183,7 +183,9 @@ export const ClineMessageRequestSchema = z.object({
   images: z
     .array(z.string())
     .optional()
-    .describe("Optional array of base64-encoded images"),
+    .describe(
+      'Optional array of image data URIs (e.g., "data:image/webp;base64,...").',
+    ),
 });
 
 export const ClineTaskResponseSchema = z.object({
@@ -345,7 +347,9 @@ export const RooMessageRequestSchema = z.object({
   images: z
     .array(z.string())
     .optional()
-    .describe("Optional array of image URLs or base64 encoded images"),
+    .describe(
+      'Optional array of image data URIs (e.g., "data:image/webp;base64,...").',
+    ),
   configuration: z
     .record(z.string(), z.any())
     .optional()
