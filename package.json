@@ -157,7 +157,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.4",
-    "@roo-code/types": "^1.36.0",
+    "@roo-code/types": "^1.45.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
     "@types/vscode": "^1.100.0",
