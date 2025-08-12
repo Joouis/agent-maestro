@@ -391,8 +391,8 @@ export function registerRooRoutes(
       const { text, images, configuration, newTab, extensionId } =
         await c.req.json();
 
-      const imagesResult = ImagesDataUriSchema.safeParse(images);
-      if (!imagesResult.success) {
+      const parsedImages = ImagesDataUriSchema.safeParse(images);
+      if (!parsedImages.success) {
         return c.json({ message: imagesDataUriErrorMessage }, 400);
       }
 
@@ -408,7 +408,7 @@ export function registerRooRoutes(
 
           const eventStream = adapter.startNewTask({
             text,
-            images: imagesResult.data,
+            images,
             configuration,
             newTab,
           });
@@ -444,8 +444,8 @@ export function registerRooRoutes(
       const { taskId } = c.req.param();
       const { text, images, extensionId } = await c.req.json();
 
-      const imagesResult = ImagesDataUriSchema.safeParse(images);
-      if (!imagesResult.success) {
+      const parsedImages = ImagesDataUriSchema.safeParse(images);
+      if (!parsedImages.success) {
         return c.json({ message: imagesDataUriErrorMessage }, 400);
       }
 
@@ -473,7 +473,7 @@ export function registerRooRoutes(
           logger.info(`Sending message to existing task: ${taskId}`);
 
           // Send the message and process events from async generator
-          const eventStream = adapter.sendMessage(text, imagesResult.data, {
+          const eventStream = adapter.sendMessage(text, images, {
             taskId,
           });
 

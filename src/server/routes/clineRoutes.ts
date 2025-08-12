@@ -62,8 +62,8 @@ export function registerClineRoutes(
     try {
       const { text, images } = await c.req.json();
 
-      const imagesResult = ImagesDataUriSchema.safeParse(images);
-      if (!imagesResult.success) {
+      const parsedImages = ImagesDataUriSchema.safeParse(images);
+      if (!parsedImages.success) {
         return c.json({ message: imagesDataUriErrorMessage }, 400);
       }
 
@@ -73,7 +73,7 @@ export function registerClineRoutes(
 
       await controller.clineAdapter.startNewTask({
         task: text,
-        images: imagesResult.data,
+        images,
       });
 
       const response = {
