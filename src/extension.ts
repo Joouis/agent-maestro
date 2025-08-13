@@ -37,14 +37,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // Get configuration
   const config = readConfiguration();
 
-  try {
-    mcpServer = new McpServer({
-      controller,
-      port: isDevMode ? 33334 : config.mcpServerPort,
-    });
-  } catch (error) {
-    logger.error("Failed to initialize MCP server:", error);
-  }
+  mcpServer = new McpServer({
+    controller,
+    port: isDevMode ? 33334 : config.mcpServerPort,
+  });
 
   proxy = new ProxyServer(
     controller,
@@ -172,11 +168,6 @@ export async function activate(context: vscode.ExtensionContext) {
       "agent-maestro.startMcpServer",
       async () => {
         try {
-          if (!mcpServer) {
-            vscode.window.showErrorMessage("MCP server not initialized");
-            return;
-          }
-
           const result = await mcpServer.start();
 
           if (result.started) {
@@ -184,9 +175,10 @@ export async function activate(context: vscode.ExtensionContext) {
               `Agent Maestro MCP Server started successfully on port ${result.port}`,
             );
           } else {
-            vscode.window.showInformationMessage(
-              `MCP Server startup: ${result.reason}`,
-            );
+            // vscode.window.showInformationMessage(
+            //   `MCP Server startup: ${result.reason}`,
+            // );
+            logger.error(`MCP Server startup failed: ${result.reason}`);
           }
         } catch (error) {
           logger.error("Failed to start MCP server:", error);

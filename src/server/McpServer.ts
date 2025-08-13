@@ -31,7 +31,7 @@ export interface McpServerConfig {
 }
 
 export class McpServer {
-  private taskManager: McpTaskManager;
+  private taskManager?: McpTaskManager;
   private controller: ExtensionController;
   private port: number;
   private server: FastMCP;
@@ -50,9 +50,7 @@ export class McpServer {
 
     const rooAdapter = this.controller.getRooAdapter();
     if (!rooAdapter) {
-      throw new Error(
-        "MCP Server will not start because RooCode adapter is not available",
-      );
+      return;
     }
     this.taskManager = new McpTaskManager(rooAdapter);
   }
@@ -62,8 +60,19 @@ export class McpServer {
    */
   async start(): Promise<{ started: boolean; reason: string; port?: number }> {
     if (this.isRunning) {
-      logger.warn("MCP Server is already running");
       return { started: false, reason: "MCP Server is already running" };
+    }
+
+    if (!this.taskManager) {
+      const rooAdapter = this.controller.getRooAdapter();
+      if (!rooAdapter) {
+        return {
+          started: false,
+          reason:
+            "MCP Server will not start because task manager is not available, this could be no Roo extension is installed nor active.",
+        };
+      }
+      this.taskManager = new McpTaskManager(rooAdapter);
     }
 
     // Analyze the current port usage
@@ -120,7 +129,7 @@ export class McpServer {
 
           try {
             // Execute tasks through task manager with streaming
-            const taskResults = await this.taskManager.executeRooTasks(tasks, {
+            const taskResults = await this.taskManager!.executeRooTasks(tasks, {
               maxConcurrency,
               streamContent,
             });
@@ -169,8 +178,7 @@ export class McpServer {
    * Stop the MCP server
    */
   async stop(): Promise<void> {
-    if (!this.isRunning) {
-      logger.warn("MCP Server is not running");
+    if (!this.isRunning || !this.taskManager) {
       return;
     }
 
@@ -210,19 +218,5 @@ export class McpServer {
       port: this.port,
       url: `http://127.0.0.1:${this.port}`,
     };
-  }
-
-  /**
-   * Get task manager for direct access
-   */
-  getTaskManager(): McpTaskManager {
-    return this.taskManager;
-  }
-
-  /**
-   * Cleanup resources
-   */
-  async dispose(): Promise<void> {
-    await this.stop();
   }
 }
