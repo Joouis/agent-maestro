@@ -98,7 +98,7 @@ const v1MessagesTokenCountController = async (c: Context) => {
       200,
     );
   } catch (error) {
-    logger.error("Anthropic API models request failed:", error);
+    logger.error("Anthropic API token count request failed:", error);
     return c.json(
       {
         error: {
