@@ -74,4 +74,4 @@ export class Logger {
   }
 }
 
-export const logger = new Logger(packageJson.displayName || "Cline Maestro");
+export const logger = new Logger(packageJson.displayName || "Agent Maestro");
