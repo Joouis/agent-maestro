@@ -72,7 +72,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     }
 
     this.api.on(RooCodeEventName.Message, (data) => {
-      logger.info("RooCode Message Event:", JSON.stringify(data, null, 2));
+      logger.debug("RooCode Message Event:", JSON.stringify(data, null, 2));
       this.enqueueEvent(data.taskId, {
         name: RooCodeEventName.Message,
         data,
@@ -102,7 +102,8 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(
       RooCodeEventName.TaskCompleted,
       (taskId, tokenUsage, toolUsage) => {
-        logger.info(`RooCode Task Completed: ${taskId}`, {
+        logger.info(`RooCode Task Completed: ${taskId}`);
+        logger.debug(`RooCode Task Completed Details: ${taskId}`, {
           tokenUsage,
           toolUsage,
         });
@@ -182,7 +183,7 @@ export class RooCodeAdapter extends ExtensionBaseAdapter<RooCodeAPI> {
     this.api.on(
       RooCodeEventName.TaskTokenUsageUpdated,
       (taskId, tokenUsage) => {
-        logger.info(`RooCode Task Token Usage Updated: ${taskId}`, tokenUsage);
+        logger.debug(`RooCode Task Token Usage Updated: ${taskId}`, tokenUsage);
         this.enqueueEvent(taskId, {
           name: RooCodeEventName.TaskTokenUsageUpdated,
           data: {

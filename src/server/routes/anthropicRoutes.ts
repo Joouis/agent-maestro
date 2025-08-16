@@ -98,13 +98,7 @@ const v1MessagesTokenCountController = async (c: Context) => {
       200,
     );
   } catch (error) {
-    logger.error(
-      JSON.stringify({
-        message: (error as Error).message,
-        stack: (error as Error).stack,
-        name: (error as Error).name,
-      }),
-    );
+    logger.error("Anthropic API models request failed:", error);
     return c.json(
       {
         error: {
@@ -133,7 +127,10 @@ const v1MessagesController = async (c: Context): Promise<Response> => {
       ...msgCreateParams
     } = requestBody;
 
-    // logger.info(JSON.stringify(requestBody, null, 2));
+    logger.debug(
+      "/v1/messages payload: ",
+      JSON.stringify(requestBody, null, 2),
+    );
 
     // 1. Check if selected model is available in VS Code LM API
     const { client, error: clientError } = await getChatModelClient(modelId);
@@ -143,7 +140,7 @@ const v1MessagesController = async (c: Context): Promise<Response> => {
     }
 
     logger.info(
-      `Selected model: ${client.name} (${client.vendor}/${client.family})`,
+      `Received /v1/messages call with selected model: ${client.name} (${client.vendor}/${client.family})`,
     );
 
     // 2. Map Anthropic messages to VS Code LM API messages and count input tokens
@@ -201,6 +198,8 @@ const v1MessagesController = async (c: Context): Promise<Response> => {
         },
         // container: null,
       };
+
+      logger.debug("/v1/messages response: ", JSON.stringify(resp, null, 2));
 
       return c.json(resp);
     }
@@ -304,8 +303,8 @@ const v1MessagesController = async (c: Context): Promise<Response> => {
             }
           }
 
-          logger.info(
-            "Content blocks: ",
+          logger.debug(
+            "/v1/messages streamed content block responses: ",
             JSON.stringify(contentBlocks, null, 2),
           );
 
@@ -346,17 +345,11 @@ const v1MessagesController = async (c: Context): Promise<Response> => {
         }
       },
       async (error, _stream) => {
-        logger.error(JSON.stringify(error, null, 2));
+        logger.error("Stream error occurred:", error);
       },
     );
   } catch (error) {
-    logger.error(
-      JSON.stringify({
-        message: (error as Error).message,
-        stack: (error as Error).stack,
-        name: (error as Error).name,
-      }),
-    );
+    logger.error("Anthropic API messages request failed:", error);
     return c.json(
       {
         error: {
