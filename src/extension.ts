@@ -359,7 +359,7 @@ export async function activate(context: vscode.ExtensionContext) {
           const selectedMainModel = await vscode.window.showQuickPick(
             modelOptions,
             {
-              title: "Select main model (for ANTHROPIC_MODEL)",
+              title: "Select main model (ANTHROPIC_MODEL)",
               placeHolder: "Name of custom model to use",
             },
           );
@@ -371,7 +371,7 @@ export async function activate(context: vscode.ExtensionContext) {
           const selectedFastModel = await vscode.window.showQuickPick(
             modelOptions,
             {
-              title: "Select small fast model (for ANTHROPIC_SMALL_FAST_MODEL)",
+              title: "Select small fast model (ANTHROPIC_SMALL_FAST_MODEL)",
               placeHolder: "Name of Haiku-class model for background tasks",
             },
           );

@@ -25,7 +25,10 @@ interface ContentBlock {
 
 const getChatModelClient = async (modelId: string) => {
   const models = await vscode.lm.selectChatModels({});
-  const client = models.find((m) => m.id === modelId);
+  const client = models
+    // Exclude Claude 3.7 models due to model_not_supported error
+    .filter((m) => !m.id.includes("claude-3.7"))
+    .find((m) => m.id === modelId);
 
   if (!client) {
     logger.error(`No VS Code LM model available for model ID: ${modelId}`);
