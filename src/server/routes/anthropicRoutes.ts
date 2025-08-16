@@ -349,7 +349,7 @@ const v1MessagesController = async (c: Context): Promise<Response> => {
       },
     );
   } catch (error) {
-    logger.error("Anthropic API messages request failed:", error);
+    logger.error("Anthropic API /v1/messages request failed:", error);
     return c.json(
       {
         error: {
