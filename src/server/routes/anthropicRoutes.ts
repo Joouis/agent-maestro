@@ -23,15 +23,51 @@ interface ContentBlock {
   toolUse?: vscode.LanguageModelToolCallPart;
 }
 
+const convertAnthropicModelToVSCodeModel = (modelId: string): string => {
+  // Remove date suffix (pattern: -YYYYMMDD at the end) for accurate pattern matching
+  const withoutDate = modelId.replace(/-\d{8}$/, "");
+
+  // Handle different model patterns
+  if (withoutDate === "claude-opus-4-1") {
+    return "claude-opus-41";
+  }
+
+  if (withoutDate === "claude-opus-4") {
+    return "claude-opus-4";
+  }
+
+  if (withoutDate === "claude-sonnet-4") {
+    return "claude-sonnet-4";
+  }
+
+  // Handle claude-3-5-haiku -> claude-3.5-sonnet
+  if (withoutDate === "claude-3-5-haiku") {
+    return "claude-3.5-sonnet";
+  }
+
+  // Handle claude-3-haiku -> claude-3.5-sonnet
+  if (withoutDate === "claude-3-haiku") {
+    return "claude-3.5-sonnet";
+  }
+
+  // If no pattern matches or claude-3-7 models, return a default model ID as fallback
+  return "claude-3.5-sonnet";
+};
+
 const getChatModelClient = async (modelId: string) => {
+  // Convert official Anthropic API model ID to VSCode LM API model ID
+  const vsCodeModelId = convertAnthropicModelToVSCodeModel(modelId);
+
   const models = await vscode.lm.selectChatModels({});
   const client = models
     // Exclude Claude 3.7 models due to model_not_supported error
     .filter((m) => !m.id.includes("claude-3.7"))
-    .find((m) => m.id === modelId);
+    .find((m) => m.id === vsCodeModelId);
 
   if (!client) {
-    logger.error(`No VS Code LM model available for model ID: ${modelId}`);
+    logger.error(
+      `No VS Code LM model available for model ID: ${modelId} (converted to: ${vsCodeModelId})`,
+    );
     return {
       error: {
         error: {
