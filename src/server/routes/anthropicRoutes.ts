@@ -51,6 +51,9 @@ const convertAnthropicModelToVSCodeModel = (modelId: string): string => {
   }
 
   // If no pattern matches or claude-3-7 models, return a default model ID as fallback
+  logger.warn(
+    `No matching model found for ID: ${modelId}. Falling back to default model ID "claude-3.5-sonnet".`,
+  );
   return "claude-3.5-sonnet";
 };
 
