@@ -100,7 +100,8 @@ export class ExtensionController extends EventEmitter {
       );
 
     if (!hasActiveAdapter) {
-      throw new Error(
+      // throw new Error(
+      logger.error(
         "No active extension found. This may be due to missing installations or activation issues.",
       );
     }

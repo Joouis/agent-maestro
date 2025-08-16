@@ -28,9 +28,8 @@ export async function activate(context: vscode.ExtensionContext) {
   try {
     await controller.initialize();
   } catch (error) {
-    logger.error("Failed to initialize extension controller:", error);
     vscode.window.showErrorMessage(
-      `Agent Maestro: Failed to initialize - ${(error as Error).message}`,
+      `Failed to initialize extension controller: ${(error as Error).message}`,
     );
   }
 
