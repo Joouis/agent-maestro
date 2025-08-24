@@ -77,7 +77,7 @@ export class ProxyServer {
       },
       servers: [
         {
-          url: `http://127.0.0.1:${this.port}`,
+          url: `http://0.0.0.0:${this.port}`,
           description: "Development server",
         },
       ],
@@ -136,12 +136,11 @@ export class ProxyServer {
           this.server = serve({
             fetch: this.app.fetch,
             port: this.port,
-            hostname: "127.0.0.1",
           });
           this.isRunning = true;
-          logger.info(`Server started on http://127.0.0.1:${this.port}`);
+          logger.info(`Server started on http://0.0.0.0:${this.port}`);
           logger.info(
-            `API documentation: http://127.0.0.1:${this.port}/openapi.json`,
+            `API documentation: http://0.0.0.0:${this.port}/openapi.json`,
           );
           return {
             started: true,
@@ -156,7 +155,7 @@ export class ProxyServer {
       case "skip":
         // Another instance of our server is already running, skip silently
         logger.info(
-          `${analysis.message}. API available at http://127.0.0.1:${this.port}/openapi.json`,
+          `${analysis.message}. API available at http://0.0.0.0:${this.port}/openapi.json`,
         );
         return {
           started: false,
@@ -209,11 +208,11 @@ export class ProxyServer {
     return {
       isRunning: this.isRunning,
       port: this.port,
-      url: `http://localhost:${this.port}`,
+      url: `http://0.0.0.0:${this.port}`,
     };
   }
 
   getOpenApiUrl(): string {
-    return `http://localhost:${this.port}/openapi.json`;
+    return `http://0.0.0.0:${this.port}/openapi.json`;
   }
 }

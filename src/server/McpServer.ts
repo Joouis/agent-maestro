@@ -158,7 +158,7 @@ export class McpServer {
       this.port = actualPort;
       this.isRunning = true;
 
-      logger.info(`MCP Server started on http://127.0.0.1:${this.port}`);
+      logger.info(`MCP Server started on http://0.0.0.0:${this.port}`);
       logger.info(`MCP Server is ready to accept tool calls`);
 
       // TODO: Add MCP server info to global state
@@ -216,7 +216,7 @@ export class McpServer {
     return {
       isRunning: this.isRunning,
       port: this.port,
-      url: `http://127.0.0.1:${this.port}`,
+      url: `http://0.0.0.0:${this.port}`,
     };
   }
 }

@@ -8,8 +8,8 @@ const getPort = () => {
 };
 
 const PORT = getPort();
-export const API_BASE_URL = `http://127.0.0.1:${PORT}/api/v1/roo`;
-const INFO_API_BASE_URL = `http://127.0.0.1:${PORT}/api/v1`;
+export const API_BASE_URL = `http://localhost:${PORT}/api/v1/roo`;
+const INFO_API_BASE_URL = `http://localhost:${PORT}/api/v1`;
 
 export const API_ENDPOINTS = {
   TASK: `${API_BASE_URL}/task`,
