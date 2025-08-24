@@ -5,7 +5,7 @@ import { logger } from "./logger";
 class ChatModelsCache {
   private static instance: ChatModelsCache;
   private cachedModels: vscode.LanguageModelChat[] = [];
-  private isInitializing = false;
+  private initializationPromise: Promise<void> | null = null;
 
   private constructor() {}
 
@@ -17,21 +17,28 @@ class ChatModelsCache {
   }
 
   async initialize(): Promise<void> {
-    if (this.cachedModels.length > 0 || this.isInitializing) {
+    if (this.cachedModels.length > 0) {
       return;
     }
 
-    this.isInitializing = true;
-    try {
-      logger.info("Initializing chat models cache...");
-      this.cachedModels = await vscode.lm.selectChatModels({});
-      logger.info(`Cached ${this.cachedModels.length} chat models`);
-    } catch (error) {
-      logger.error("Failed to initialize chat models cache:", error);
-      this.cachedModels = [];
-    } finally {
-      this.isInitializing = false;
+    if (this.initializationPromise) {
+      return this.initializationPromise;
     }
+
+    this.initializationPromise = (async () => {
+      try {
+        logger.info("Initializing chat models cache...");
+        this.cachedModels = await vscode.lm.selectChatModels({});
+        logger.info(`Cached ${this.cachedModels.length} chat models`);
+      } catch (error) {
+        logger.error("Failed to initialize chat models cache:", error);
+        this.cachedModels = [];
+      } finally {
+        this.initializationPromise = null;
+      }
+    })();
+
+    return this.initializationPromise;
   }
 
   async getChatModels(): Promise<vscode.LanguageModelChat[]> {
@@ -39,23 +46,13 @@ class ChatModelsCache {
       return this.cachedModels;
     }
 
-    if (this.isInitializing) {
-      logger.debug("Chat models cache is initializing, waiting...");
-      // Wait for initialization to complete
-      while (this.isInitializing) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      logger.debug("Chat models cache initialization complete");
-      return this.cachedModels;
-    }
-
-    // No cached models and not initializing, fetch them now
     await this.initialize();
     return this.cachedModels;
   }
 
   async refresh(): Promise<void> {
     this.cachedModels = [];
+    this.initializationPromise = null;
     await this.initialize();
   }
 
