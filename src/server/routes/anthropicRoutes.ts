@@ -1,8 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { Context } from "hono";
-import { streamSSE } from "hono/streaming";
-import * as vscode from "vscode";
+import { chatModelsCache } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import {
   AnthropicErrorResponseSchema,
@@ -16,6 +12,11 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
 } from "../utils/anthropic";
+import Anthropic from "@anthropic-ai/sdk";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { Context } from "hono";
+import { streamSSE } from "hono/streaming";
+import * as vscode from "vscode";
 
 interface ContentBlock {
   type: "text" | "tool_use" | string;
@@ -61,7 +62,7 @@ const getChatModelClient = async (modelId: string) => {
   // Convert official Anthropic API model ID to VSCode LM API model ID
   const vsCodeModelId = convertAnthropicModelToVSCodeModel(modelId);
 
-  const models = await vscode.lm.selectChatModels({});
+  const models = await chatModelsCache.getChatModels();
   const client = models
     // Exclude Claude 3.7 models due to model_not_supported error
     .filter((m) => !m.id.includes("claude-3.7"))

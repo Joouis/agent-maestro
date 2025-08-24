@@ -1,15 +1,18 @@
-import * as vscode from "vscode";
-import { logger } from "./utils/logger";
 import { ExtensionController } from "./core/controller";
-import { ProxyServer } from "./server/ProxyServer";
 import { McpServer } from "./server/McpServer";
-import { getSystemInfo } from "./utils/systemInfo";
+import { ProxyServer } from "./server/ProxyServer";
+import {
+  getChatModelsQuickPickItems,
+  chatModelsCache,
+} from "./utils/chatModels";
 import { readConfiguration } from "./utils/config";
+import { logger } from "./utils/logger";
 import {
   getAvailableExtensions,
   addAgentMaestroMcpConfig,
 } from "./utils/mcpConfig";
-import { getChatModelsQuickPickItems } from "./utils/chatModels";
+import { getSystemInfo } from "./utils/systemInfo";
+import * as vscode from "vscode";
 
 let controller: ExtensionController;
 let proxy: ProxyServer;
@@ -31,6 +34,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Initialize the extension controller
   controller = new ExtensionController();
+
+  // Initialize chat models cache
+  await chatModelsCache.initialize();
 
   try {
     await controller.initialize();
@@ -360,6 +366,9 @@ export async function activate(context: vscode.ExtensionContext) {
           const modelOptions = await getChatModelsQuickPickItems();
 
           if (!modelOptions) {
+            vscode.window.showErrorMessage(
+              "No available chat model provided by VS Code LM API.",
+            );
             return;
           }
 

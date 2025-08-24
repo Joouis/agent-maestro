@@ -1,5 +1,67 @@
+import { logger } from "./logger";
 import * as vscode from "vscode";
-import { waitFor } from "./waitFor";
+
+class ChatModelsCache {
+  private static instance: ChatModelsCache;
+  private cachedModels: vscode.LanguageModelChat[] | null = null;
+  private isInitializing = false;
+
+  private constructor() {}
+
+  static getInstance(): ChatModelsCache {
+    if (!ChatModelsCache.instance) {
+      ChatModelsCache.instance = new ChatModelsCache();
+    }
+    return ChatModelsCache.instance;
+  }
+
+  async initialize(): Promise<void> {
+    if (this.cachedModels || this.isInitializing) {
+      return;
+    }
+
+    this.isInitializing = true;
+    try {
+      logger.info("Initializing chat models cache...");
+      this.cachedModels = await vscode.lm.selectChatModels({});
+      logger.info(`Cached ${this.cachedModels.length} chat models`);
+    } catch (error) {
+      logger.error("Failed to initialize chat models cache:", error);
+      this.cachedModels = [];
+    } finally {
+      this.isInitializing = false;
+    }
+  }
+
+  async getChatModels(): Promise<vscode.LanguageModelChat[]> {
+    if (this.cachedModels) {
+      return this.cachedModels;
+    }
+
+    if (this.isInitializing) {
+      // Wait for initialization to complete
+      while (this.isInitializing) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return this.cachedModels || [];
+    }
+
+    // No cached models and not initializing, fetch them now
+    await this.initialize();
+    return this.cachedModels || [];
+  }
+
+  refresh(): void {
+    this.cachedModels = null;
+    this.initialize();
+  }
+
+  getCachedModels(): vscode.LanguageModelChat[] | null {
+    return this.cachedModels;
+  }
+}
+
+export const chatModelsCache = ChatModelsCache.getInstance();
 
 const chatModelToQuickPickItem = (model: vscode.LanguageModelChat) => ({
   label: model.name,
@@ -8,20 +70,10 @@ const chatModelToQuickPickItem = (model: vscode.LanguageModelChat) => ({
 });
 
 export const getChatModelsQuickPickItems = async () => {
-  // Get available models from VS Code LM API
-  let allModels = await vscode.lm.selectChatModels({});
+  // Get available models from cache first, fallback to direct API call
+  let allModels = await chatModelsCache.getChatModels();
   if (allModels.length === 0) {
-    try {
-      await waitFor(async () => {
-        allModels = await vscode.lm.selectChatModels({});
-        return allModels.length > 0;
-      });
-    } catch {
-      vscode.window.showErrorMessage(
-        "No available model provided by VS Code LM API.",
-      );
-      return;
-    }
+    return;
   }
 
   const claudeModels = [];
