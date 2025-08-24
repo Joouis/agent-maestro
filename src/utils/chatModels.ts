@@ -1,9 +1,10 @@
-import { logger } from "./logger";
 import * as vscode from "vscode";
+
+import { logger } from "./logger";
 
 class ChatModelsCache {
   private static instance: ChatModelsCache;
-  private cachedModels: vscode.LanguageModelChat[] | null = null;
+  private cachedModels: vscode.LanguageModelChat[] = [];
   private isInitializing = false;
 
   private constructor() {}
@@ -16,7 +17,7 @@ class ChatModelsCache {
   }
 
   async initialize(): Promise<void> {
-    if (this.cachedModels || this.isInitializing) {
+    if (this.cachedModels.length > 0 || this.isInitializing) {
       return;
     }
 
@@ -34,7 +35,7 @@ class ChatModelsCache {
   }
 
   async getChatModels(): Promise<vscode.LanguageModelChat[]> {
-    if (this.cachedModels) {
+    if (this.cachedModels.length > 0) {
       return this.cachedModels;
     }
 
@@ -43,20 +44,20 @@ class ChatModelsCache {
       while (this.isInitializing) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
-      return this.cachedModels || [];
+      return this.cachedModels;
     }
 
     // No cached models and not initializing, fetch them now
     await this.initialize();
-    return this.cachedModels || [];
+    return this.cachedModels;
   }
 
   refresh(): void {
-    this.cachedModels = null;
+    this.cachedModels = [];
     this.initialize();
   }
 
-  getCachedModels(): vscode.LanguageModelChat[] | null {
+  getCachedModels(): vscode.LanguageModelChat[] {
     return this.cachedModels;
   }
 }
