@@ -25,8 +25,11 @@ export const CONFIG_KEYS = {
 export const DEFAULT_CONFIG: AgentMaestroConfiguration = {
   rooVariantIdentifiers: ["kilocode.kilo-code"],
   defaultRooIdentifier: "rooveterinaryinc.roo-cline",
-  proxyServerPort: 23333,
-  mcpServerPort: 23334,
+  proxyServerPort: parseInt(
+    process.env.AGENT_MAESTRO_PROXY_PORT || "23333",
+    10,
+  ),
+  mcpServerPort: parseInt(process.env.AGENT_MAESTRO_MCP_PORT || "23334", 10),
   allowOutsideWorkspaceAccess: false,
 };
 
