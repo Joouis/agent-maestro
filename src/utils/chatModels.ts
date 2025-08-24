@@ -54,9 +54,9 @@ class ChatModelsCache {
     return this.cachedModels;
   }
 
-  refresh(): void {
+  async refresh(): Promise<void> {
     this.cachedModels = [];
-    this.initialize();
+    await this.initialize();
   }
 
   getCachedModels(): vscode.LanguageModelChat[] {
