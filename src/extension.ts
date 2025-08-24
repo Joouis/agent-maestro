@@ -363,7 +363,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
           const modelOptions = await getChatModelsQuickPickItems();
 
-          if (!modelOptions) {
+          if (modelOptions.length === 0) {
             vscode.window.showErrorMessage(
               "No available chat model provided by VS Code LM API.",
             );

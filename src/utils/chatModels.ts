@@ -76,7 +76,7 @@ export const getChatModelsQuickPickItems = async () => {
   // Get available models from cache first, fallback to direct API call
   let allModels = await chatModelsCache.getChatModels();
   if (allModels.length === 0) {
-    return;
+    return [];
   }
 
   const claudeModels = [];
