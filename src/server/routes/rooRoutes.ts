@@ -14,7 +14,6 @@ import {
   ErrorResponseSchema,
   HistoryItemSchema,
   ImagesDataUriSchema,
-  ProfileListResponseSchema,
   ProfileResponseSchema,
   ProviderSettingsEntrySchema,
   RooActionRequestSchema,
@@ -393,29 +392,25 @@ const listProfilesRoute = createRoute({
   method: "get",
   path: "/roo/profiles",
   tags: ["Configuration"],
-  summary: "List configuration profiles or get active profile",
+  summary: "List configuration profiles",
   description:
-    "Retrieves configuration profiles. Use state=all for all profiles, state=active for active profile only",
+    "Retrieves all configuration profiles with active profile information",
   request: {
     query: z.object({
       extensionId: z.string().optional(),
-      state: z.enum(["all", "active"]).optional().default("all"),
     }),
   },
   responses: {
     200: {
       content: {
         "application/json": {
-          schema: z.union([
-            ProfileListResponseSchema,
-            z.object({
-              name: z.string().optional(),
-              profile: ProviderSettingsEntrySchema.optional(),
-            }),
-          ]),
+          schema: z.object({
+            profiles: z.array(ProviderSettingsEntrySchema),
+            activeProfile: ProviderSettingsEntrySchema.optional(),
+          }),
         },
       },
-      description: "Profiles or active profile retrieved successfully",
+      description: "Profiles retrieved successfully",
     },
     500: {
       content: {
@@ -1018,7 +1013,7 @@ export function registerRooRoutes(
   // GET /api/v1/roo/profiles - List all profiles or get active profile
   app.openapi(listProfilesRoute, async (c) => {
     try {
-      const { extensionId, state } = c.req.query();
+      const { extensionId } = c.req.query();
 
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
@@ -1029,31 +1024,6 @@ export function registerRooRoutes(
       }
 
       const activeProfileName = adapter.getActiveProfile();
-
-      // Handle state=active - return only active profile
-      if (state === "active") {
-        if (!activeProfileName) {
-          return c.json(
-            {
-              name: undefined,
-              profile: undefined,
-            },
-            200,
-          );
-        }
-
-        const profileEntry = adapter.getProfileEntry(activeProfileName);
-
-        return c.json(
-          {
-            name: activeProfileName,
-            profile: profileEntry,
-          },
-          200,
-        );
-      }
-
-      // Handle state=all (default) - return all profiles
       const profileNames = adapter.getProfiles();
 
       // Get full profile details for each profile
@@ -1073,10 +1043,15 @@ export function registerRooRoutes(
         };
       });
 
+      // Find the active profile object
+      const activeProfile = activeProfileName
+        ? profiles.find((profile) => profile.name === activeProfileName)
+        : undefined;
+
       return c.json(
         {
           profiles,
-          activeProfile: activeProfileName,
+          activeProfile,
         },
         200,
       );

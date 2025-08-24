@@ -347,13 +347,6 @@ export const ProfileResponseSchema = z
   })
   .openapi("ProfileResponse");
 
-export const ProfileListResponseSchema = z
-  .object({
-    profiles: z.array(ProviderSettingsEntrySchema),
-    activeProfile: z.string().optional(),
-  })
-  .openapi("ProfileListResponse");
-
 // ============================================================================
 // SYSTEM INFORMATION SCHEMAS
 // ============================================================================
