@@ -1,12 +1,12 @@
+import { logger } from "../../utils/logger";
+import {
+  ChatModelsResponseSchema,
+  ErrorResponseSchema,
+  ToolsResponseSchema,
+} from "../schemas";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import * as vscode from "vscode";
 import { LanguageModelToolInformation } from "vscode";
-import { logger } from "../../utils/logger";
-import {
-  ErrorResponseSchema,
-  ChatModelsResponseSchema,
-  ToolsResponseSchema,
-} from "../schemas";
 
 // OpenAPI route definitions
 const chatModelsRoute = createRoute({
@@ -70,7 +70,7 @@ export function registerLmRoutes(app: OpenAPIHono) {
       logger.info("Fetching available chat models from VSCode LM API");
 
       // Get all available chat models from VSCode
-      const models = (await vscode.lm.selectChatModels({})) || [];
+      const models = await vscode.lm.selectChatModels({});
 
       logger.info(`Retrieved ${models.length} chat models`);
       return c.json(ChatModelsResponseSchema.parse(models), 200);
