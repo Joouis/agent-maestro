@@ -19,7 +19,7 @@ import { cors } from "hono/cors";
 export class ProxyServer {
   private app: OpenAPIHono;
   private controller: ExtensionController;
-  private context?: vscode.ExtensionContext;
+  private context: vscode.ExtensionContext;
   private isRunning = false;
   private port: number;
   private server?: ServerType;
@@ -27,7 +27,7 @@ export class ProxyServer {
   constructor(
     controller: ExtensionController,
     port = DEFAULT_CONFIG.proxyServerPort,
-    context?: vscode.ExtensionContext,
+    context: vscode.ExtensionContext,
   ) {
     this.controller = controller;
     this.context = context;

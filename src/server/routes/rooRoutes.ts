@@ -673,7 +673,7 @@ const setActiveProfileRoute = createRoute({
 export function registerRooRoutes(
   app: OpenAPIHono,
   controller: ExtensionController,
-  context?: vscode.ExtensionContext,
+  context: vscode.ExtensionContext,
 ) {
   // POST /api/v1/roo/task - Create new RooCode task with SSE stream
   app.openapi(createRooTaskRoute, async (c) => {
@@ -940,10 +940,6 @@ export function registerRooRoutes(
   // POST /api/v1/roo/install-mcp-config - Auto install Agent Maestro MCP config to the extension
   app.openapi(installMcpConfigRoute, async (c) => {
     try {
-      if (!context) {
-        return c.json({ message: "Extension context not available" }, 500);
-      }
-
       const body = await c.req.json().catch(() => ({}));
       const { extensionId } = body;
 
