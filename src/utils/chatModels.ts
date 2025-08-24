@@ -40,10 +40,12 @@ class ChatModelsCache {
     }
 
     if (this.isInitializing) {
+      logger.debug("Chat models cache is initializing, waiting...");
       // Wait for initialization to complete
       while (this.isInitializing) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
+      logger.debug("Chat models cache initialization complete");
       return this.cachedModels;
     }
 
