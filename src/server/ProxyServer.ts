@@ -1,20 +1,20 @@
 import * as vscode from "vscode";
+import { ExtensionController } from "../core/controller";
+import { DEFAULT_CONFIG } from "../utils/config";
 import { logger } from "../utils/logger";
 import { analyzePortUsage } from "../utils/portUtils";
-import { ExtensionController } from "../core/controller";
-import { registerRooRoutes } from "./routes/rooRoutes";
+import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
 import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
-import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
-import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
-import { DEFAULT_CONFIG } from "../utils/config";
+import { registerRooRoutes } from "./routes/rooRoutes";
+import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 
-import { OpenAPIHono } from "@hono/zod-openapi";
-import { cors } from "hono/cors";
-import { compress } from "hono/compress";
 import { serve, ServerType } from "@hono/node-server";
+import { OpenAPIHono } from "@hono/zod-openapi";
+import { compress } from "hono/compress";
+import { cors } from "hono/cors";
 
 export class ProxyServer {
   private app: OpenAPIHono;
@@ -110,6 +110,10 @@ export class ProxyServer {
         {
           name: "MCP Configuration",
           description: "MCP server configuration operations",
+        },
+        {
+          name: "Configuration",
+          description: "Profile and configuration management",
         },
         {
           name: "Documentation",

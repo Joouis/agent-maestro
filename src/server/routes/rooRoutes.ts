@@ -1,24 +1,30 @@
-import { ClineMessage, RooCodeEventName } from "@roo-code/types";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { ClineMessage, RooCodeEventName } from "@roo-code/types";
+import { isEqual } from "es-toolkit";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
-import { logger } from "../../utils/logger";
 import { ExtensionController } from "../../core/controller";
-import { TaskEvent } from "../types";
+import { logger } from "../../utils/logger";
 import {
   addAgentMaestroMcpConfig,
   getAvailableExtensions,
 } from "../../utils/mcpConfig";
 import {
+  CreateProfileRequestSchema,
   ErrorResponseSchema,
-  ImagesDataUriSchema,
-  imagesDataUriErrorMessage,
-  RooMessageRequestSchema,
-  RooActionRequestSchema,
   HistoryItemSchema,
+  ImagesDataUriSchema,
+  ProfileListResponseSchema,
+  ProfileResponseSchema,
+  ProviderSettingsEntrySchema,
+  RooActionRequestSchema,
+  RooMessageRequestSchema,
   RooTaskResponseSchema,
+  SetActiveProfileRequestSchema,
+  UpdateProfileRequestSchema,
+  imagesDataUriErrorMessage,
 } from "../schemas";
-import { isEqual } from "es-toolkit";
+import { TaskEvent } from "../types";
 
 const filteredSayTypes = ["api_req_started"];
 
@@ -380,6 +386,295 @@ const installMcpConfigRoute = createRoute({
   },
 });
 
+// Profile Management Routes
+
+// GET /roo/profiles - List all profiles or get active profile
+const listProfilesRoute = createRoute({
+  method: "get",
+  path: "/roo/profiles",
+  tags: ["Configuration"],
+  summary: "List configuration profiles or get active profile",
+  description:
+    "Retrieves configuration profiles. Use state=all for all profiles, state=active for active profile only",
+  request: {
+    query: z.object({
+      extensionId: z.string().optional(),
+      state: z.enum(["all", "active"]).optional().default("all"),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.union([
+            ProfileListResponseSchema,
+            z.object({
+              name: z.string().optional(),
+              profile: ProviderSettingsEntrySchema.optional(),
+            }),
+          ]),
+        },
+      },
+      description: "Profiles or active profile retrieved successfully",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+// GET /roo/profiles/:name - Get specific profile
+const getProfileRoute = createRoute({
+  method: "get",
+  path: "/roo/profiles/{name}",
+  tags: ["Configuration"],
+  summary: "Get a specific configuration profile",
+  description: "Retrieves detailed information about a specific profile",
+  request: {
+    params: z.object({
+      name: z.string().describe("Profile name"),
+    }),
+    query: z.object({
+      extensionId: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: ProfileResponseSchema,
+        },
+      },
+      description: "Profile retrieved successfully",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Profile not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+// POST /roo/profiles - Create new profile
+const createProfileRoute = createRoute({
+  method: "post",
+  path: "/roo/profiles",
+  tags: ["Configuration"],
+  summary: "Create a new configuration profile",
+  description: "Creates a new configuration profile with the provided settings",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: CreateProfileRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            id: z.string(),
+            name: z.string(),
+            message: z.string(),
+            activated: z.boolean(),
+          }),
+        },
+      },
+      description: "Profile created successfully",
+    },
+    400: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Bad request - profile already exists",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+// PUT /roo/profiles/:name - Update profile
+const updateProfileRoute = createRoute({
+  method: "put",
+  path: "/roo/profiles/{name}",
+  tags: ["Configuration"],
+  summary: "Update an existing configuration profile",
+  description: "Updates an existing profile with new settings",
+  request: {
+    params: z.object({
+      name: z.string().describe("Profile name"),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: UpdateProfileRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            id: z.string(),
+            name: z.string(),
+            message: z.string(),
+            activated: z.boolean(),
+          }),
+        },
+      },
+      description: "Profile updated successfully",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Profile not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+//DELETE /roo/profiles/:name - Delete profile
+const deleteProfileRoute = createRoute({
+  method: "delete",
+  path: "/roo/profiles/{name}",
+  tags: ["Configuration"],
+  summary: "Delete a configuration profile",
+  description: "Deletes an existing configuration profile",
+  request: {
+    params: z.object({
+      name: z.string().describe("Profile name"),
+    }),
+    query: z.object({
+      extensionId: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+          }),
+        },
+      },
+      description: "Profile deleted successfully",
+    },
+    400: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Bad request - cannot delete active profile",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Profile not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+// PUT /roo/profiles/active/:name - Set active profile
+const setActiveProfileRoute = createRoute({
+  method: "put",
+  path: "/roo/profiles/active/{name}",
+  tags: ["Configuration"],
+  summary: "Set a profile as active",
+  description: "Activates the specified configuration profile",
+  request: {
+    params: z.object({
+      name: z.string().describe("Profile name to activate"),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: SetActiveProfileRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            name: z.string(),
+            message: z.string(),
+          }),
+        },
+      },
+      description: "Profile activated successfully",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Profile not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
 export function registerRooRoutes(
   app: OpenAPIHono,
   controller: ExtensionController,
@@ -398,7 +693,10 @@ export function registerRooRoutes(
 
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
-        return c.json({ message: "RooCode extension is not available" }, 500);
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
       }
 
       return streamSSE(c, async (stream) => {
@@ -451,7 +749,10 @@ export function registerRooRoutes(
 
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
-        return c.json({ message: "RooCode extension is not available" }, 500);
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
       }
 
       // Check if task exists in active tasks or history
@@ -510,7 +811,10 @@ export function registerRooRoutes(
 
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
-        return c.json({ message: "RooCode extension is not available" }, 500);
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
       }
 
       // Check if task exists in active tasks or history
@@ -591,7 +895,10 @@ export function registerRooRoutes(
       const adapter = controller.getRooAdapter(extensionId);
 
       if (!adapter) {
-        return c.json({ message: "RooCode extension is not available" }, 500);
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
       }
 
       return c.json(
@@ -618,7 +925,10 @@ export function registerRooRoutes(
       const adapter = controller.getRooAdapter(extensionId);
 
       if (!adapter) {
-        return c.json({ message: "RooCode extension is not available" }, 500);
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
       }
 
       const taskData = await adapter.getTaskWithId(taskId);
@@ -699,6 +1009,318 @@ export function registerRooRoutes(
       );
     } catch (error) {
       logger.error("Error adding MCP configuration:", error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // GET /api/v1/roo/profiles - List all profiles or get active profile
+  app.openapi(listProfilesRoute, async (c) => {
+    try {
+      const { extensionId, state } = c.req.query();
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
+      }
+
+      const activeProfileName = adapter.getActiveProfile();
+
+      // Handle state=active - return only active profile
+      if (state === "active") {
+        if (!activeProfileName) {
+          return c.json(
+            {
+              name: undefined,
+              profile: undefined,
+            },
+            200,
+          );
+        }
+
+        const profileEntry = adapter.getProfileEntry(activeProfileName);
+
+        return c.json(
+          {
+            name: activeProfileName,
+            profile: profileEntry,
+          },
+          200,
+        );
+      }
+
+      // Handle state=all (default) - return all profiles
+      const profileNames = adapter.getProfiles();
+
+      // Get full profile details for each profile
+      const profiles = profileNames.map((name) => {
+        const profileEntry = adapter.getProfileEntry(name);
+        if (!profileEntry) {
+          return {
+            id: name, // Use name as ID since getProfiles returns names
+            name: name,
+            apiProvider: undefined,
+          };
+        }
+        return {
+          id: profileEntry.id,
+          name: name,
+          apiProvider: profileEntry.apiProvider,
+        };
+      });
+
+      return c.json(
+        {
+          profiles,
+          activeProfile: activeProfileName,
+        },
+        200,
+      );
+    } catch (error) {
+      logger.error("Error listing profiles:", error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // GET /api/v1/roo/profiles/:name - Get specific profile
+  app.openapi(getProfileRoute, async (c) => {
+    try {
+      const { name } = c.req.param();
+      const { extensionId } = c.req.query();
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
+      }
+
+      const profileEntry = adapter.getProfileEntry(name);
+      if (!profileEntry) {
+        return c.json({ message: `Profile '${name}' not found` }, 404);
+      }
+
+      const activeProfileName = adapter.getActiveProfile();
+
+      // Get the full configuration to extract provider settings
+      const config = adapter.api?.getConfiguration();
+      if (!config) {
+        return c.json({ message: "Unable to retrieve configuration" }, 500);
+      }
+
+      // Extract provider settings from the configuration
+      const providerSettings: any = {};
+
+      // Copy relevant provider settings based on the profile's apiProvider
+      if (profileEntry.apiProvider) {
+        providerSettings.apiProvider = profileEntry.apiProvider;
+
+        // Copy all provider-specific settings from config
+        Object.keys(config).forEach((key) => {
+          if (
+            key.startsWith("model") ||
+            key.includes("ApiKey") ||
+            key.includes("BaseUrl") ||
+            key === "includeMaxTokens" ||
+            key === "reasoningEffort" ||
+            key === "diffEnabled" ||
+            key === "fuzzyMatchThreshold" ||
+            key === "rateLimitSeconds"
+          ) {
+            providerSettings[key] = config[key as keyof typeof config];
+          }
+        });
+      }
+
+      return c.json(
+        {
+          id: profileEntry.id,
+          name: name,
+          profile: providerSettings,
+          isActive: name === activeProfileName,
+        },
+        200,
+      );
+    } catch (error) {
+      logger.error(`Error getting profile ${c.req.param("name")}:`, error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // POST /api/v1/roo/profiles - Create new profile
+  app.openapi(createProfileRoute, async (c) => {
+    try {
+      const { name, profile, activate, extensionId } = await c.req.json();
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
+      }
+
+      // Check if profile already exists
+      const existingProfiles = adapter.getProfiles();
+      if (existingProfiles.includes(name)) {
+        return c.json({ message: `Profile '${name}' already exists` }, 400);
+      }
+
+      // Create the profile
+      const profileId = await adapter.createProfile(name, profile, activate);
+
+      logger.info(`Created profile '${name}' with ID: ${profileId}`);
+
+      return c.json(
+        {
+          id: profileId,
+          name,
+          message: `Profile '${name}' created successfully`,
+          activated: activate || false,
+        },
+        201,
+      );
+    } catch (error) {
+      logger.error("Error creating profile:", error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // PUT /api/v1/roo/profiles/:name - Update profile
+  app.openapi(updateProfileRoute, async (c) => {
+    try {
+      const { name } = c.req.param();
+      const { profile, activate, extensionId } = await c.req.json();
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
+      }
+
+      // Check if profile exists
+      const profileEntry = adapter.getProfileEntry(name);
+      if (!profileEntry) {
+        return c.json({ message: `Profile '${name}' not found` }, 404);
+      }
+
+      // Update the profile
+      const updatedId = await adapter.updateProfile(name, profile, activate);
+
+      logger.info(`Updated profile '${name}'`);
+
+      return c.json(
+        {
+          id: updatedId || profileEntry.id,
+          name,
+          message: `Profile '${name}' updated successfully`,
+          activated: activate || false,
+        },
+        200,
+      );
+    } catch (error) {
+      logger.error(`Error updating profile ${c.req.param("name")}:`, error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // DELETE /api/v1/roo/profiles/:name - Delete profile
+  app.openapi(deleteProfileRoute, async (c) => {
+    try {
+      const { name } = c.req.param();
+      const { extensionId } = c.req.query();
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
+      }
+
+      // Check if profile exists
+      const profileNames = adapter.getProfiles();
+      if (!profileNames.includes(name)) {
+        return c.json({ message: `Profile '${name}' not found` }, 404);
+      }
+
+      // Check if it's the active profile
+      const activeProfileName = adapter.getActiveProfile();
+      if (name === activeProfileName) {
+        return c.json({ message: "Cannot delete the active profile" }, 400);
+      }
+
+      // Delete the profile
+      await adapter.deleteProfile(name);
+
+      logger.info(`Deleted profile '${name}'`);
+
+      return c.json(
+        {
+          message: `Profile '${name}' deleted successfully`,
+        },
+        200,
+      );
+    } catch (error) {
+      logger.error(`Error deleting profile ${c.req.param("name")}:`, error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // PUT /api/v1/roo/profiles/active/:name - Set active profile
+  app.openapi(setActiveProfileRoute, async (c) => {
+    try {
+      const { name } = c.req.param();
+      const { extensionId } = await c.req.json();
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
+      }
+
+      // Check if profile exists
+      const profileNames = adapter.getProfiles();
+      if (!profileNames.includes(name)) {
+        return c.json({ message: `Profile '${name}' not found` }, 404);
+      }
+
+      // Set as active
+      await adapter.setActiveProfile(name);
+
+      logger.info(`Set profile '${name}' as active`);
+
+      return c.json(
+        {
+          name,
+          message: `Profile '${name}' is now active`,
+        },
+        200,
+      );
+    } catch (error) {
+      logger.error(
+        `Error setting active profile ${c.req.param("name")}:`,
+        error,
+      );
       const message =
         error instanceof Error ? error.message : "Unknown error occurred";
       return c.json({ message }, 500);

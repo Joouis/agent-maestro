@@ -253,6 +253,108 @@ export const FileWriteResponseSchema = z.object({
 });
 
 // ============================================================================
+// PROFILE MANAGEMENT SCHEMAS
+// ============================================================================
+
+export const ProviderSettingsSchema = z
+  .object({
+    apiProvider: z
+      .enum([
+        "anthropic",
+        "openai",
+        "bedrock",
+        "vertex",
+        "ollama",
+        "gemini",
+        "openrouter",
+        "deepseek",
+        "mistral",
+        "groq",
+        "fireworks",
+        "glama",
+        "vscode-lm",
+        "lmstudio",
+        "openai-native",
+        "unbound",
+        "requesty",
+        "human-relay",
+        "fake-ai",
+        "xai",
+        "chutes",
+        "litellm",
+        "kilocode",
+      ])
+      .optional(),
+    apiKey: z.string().optional(),
+    apiModelId: z.string().optional(),
+    modelTemperature: z.number().optional(),
+    modelMaxTokens: z.number().optional(),
+    modelMaxThinkingTokens: z.number().optional(),
+    includeMaxTokens: z.boolean().optional(),
+    reasoningEffort: z.enum(["low", "medium", "high"]).optional(),
+    diffEnabled: z.boolean().optional(),
+    fuzzyMatchThreshold: z.number().optional(),
+    rateLimitSeconds: z.number().optional(),
+    // Add other provider-specific fields as needed
+  })
+  .openapi("ProviderSettings");
+
+export const ProviderSettingsEntrySchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    apiProvider: z.string().optional(),
+  })
+  .openapi("ProviderSettingsEntry");
+
+export const CreateProfileRequestSchema = z
+  .object({
+    name: z.string().min(1).describe("Profile name"),
+    profile: ProviderSettingsSchema.optional().describe("Provider settings"),
+    activate: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe("Activate profile after creation"),
+    extensionId: z.string().optional().describe("Target extension ID"),
+  })
+  .openapi("CreateProfileRequest");
+
+export const UpdateProfileRequestSchema = z
+  .object({
+    profile: ProviderSettingsSchema.describe("Updated provider settings"),
+    activate: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe("Activate profile after update"),
+    extensionId: z.string().optional().describe("Target extension ID"),
+  })
+  .openapi("UpdateProfileRequest");
+
+export const SetActiveProfileRequestSchema = z
+  .object({
+    extensionId: z.string().optional().describe("Target extension ID"),
+  })
+  .openapi("SetActiveProfileRequest");
+
+export const ProfileResponseSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    profile: ProviderSettingsSchema,
+    isActive: z.boolean(),
+  })
+  .openapi("ProfileResponse");
+
+export const ProfileListResponseSchema = z
+  .object({
+    profiles: z.array(ProviderSettingsEntrySchema),
+    activeProfile: z.string().optional(),
+  })
+  .openapi("ProfileListResponse");
+
+// ============================================================================
 // SYSTEM INFORMATION SCHEMAS
 // ============================================================================
 export const ExtensionInfoSchema = z.object({
