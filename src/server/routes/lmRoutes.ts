@@ -1,12 +1,13 @@
+import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import * as vscode from "vscode";
+import { LanguageModelToolInformation } from "vscode";
+
 import { logger } from "../../utils/logger";
 import {
   ChatModelsResponseSchema,
   ErrorResponseSchema,
   ToolsResponseSchema,
 } from "../schemas";
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import * as vscode from "vscode";
-import { LanguageModelToolInformation } from "vscode";
 
 // OpenAPI route definitions
 const chatModelsRoute = createRoute({
