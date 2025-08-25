@@ -183,7 +183,6 @@ Our development roadmap includes several exciting enhancements:
 
 - **VS Code LM API**: OpenAPI compatible API based on GitHub Copilot and VS Code LM API.
 - **Production Deployment**: Code-server compatibility for containerization and deployment
-- **GitHub Copilot Integration**: Support for GitHub Copilot and GitHub Copilot Chat
 
 **Contributions Welcome**: We encourage community contributions to help expand Agent Maestro's capabilities and support for additional AI coding agents. We recommend using AI coding agents themselves to accelerate your development workflow when contributing to this project.
 

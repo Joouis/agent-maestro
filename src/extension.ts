@@ -96,10 +96,10 @@ export async function activate(context: vscode.ExtensionContext) {
           } else {
             // Don't show error message for "another instance running" case
             if (result.reason === "Another instance is already running") {
-              logger.info(`Server startup skipped: ${result.reason}`);
+              logger.info(`Proxy server startup skipped: ${result.reason}`);
             } else {
               vscode.window.showInformationMessage(
-                `Server startup: ${result.reason}`,
+                `Proxy server startup: ${result.reason}`,
               );
             }
           }

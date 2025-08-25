@@ -1,11 +1,12 @@
 // @ts-expect-error "TS1479: The current file is a CommonJS module"
 import { FastMCP } from "fastmcp";
 import { z } from "zod";
+
+import { McpTaskManager } from "../core/McpTaskManager";
+import { ExtensionController } from "../core/controller";
+import { DEFAULT_CONFIG } from "../utils/config";
 import { logger } from "../utils/logger";
 import { analyzePortUsage } from "../utils/portUtils";
-import { ExtensionController } from "../core/controller";
-import { McpTaskManager } from "../core/McpTaskManager";
-import { DEFAULT_CONFIG } from "../utils/config";
 
 // Input schema for the Execute_Roo_Tasks tool
 const defaultMaxConcurrency = 5;
@@ -76,7 +77,7 @@ export class McpServer {
     }
 
     // Analyze the current port usage
-    const analysis = await analyzePortUsage(this.port);
+    const analysis = await analyzePortUsage(this.port, "mcp");
     logger.debug(`MCP Port analysis for ${this.port}:`, analysis);
 
     const actualPort = this.port;
@@ -91,7 +92,7 @@ export class McpServer {
         logger.info(`MCP Server: ${analysis.message}`);
         return {
           started: false,
-          reason: "Another MCP instance is already running",
+          reason: "Another instance is already running",
           port: this.port,
         };
 

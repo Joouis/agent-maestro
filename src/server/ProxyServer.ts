@@ -1,4 +1,9 @@
+import { ServerType, serve } from "@hono/node-server";
+import { OpenAPIHono } from "@hono/zod-openapi";
+import { compress } from "hono/compress";
+import { cors } from "hono/cors";
 import * as vscode from "vscode";
+
 import { ExtensionController } from "../core/controller";
 import { DEFAULT_CONFIG } from "../utils/config";
 import { logger } from "../utils/logger";
@@ -10,11 +15,6 @@ import { registerInfoRoutes } from "./routes/infoRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
-
-import { serve, ServerType } from "@hono/node-server";
-import { OpenAPIHono } from "@hono/zod-openapi";
-import { compress } from "hono/compress";
-import { cors } from "hono/cors";
 
 export class ProxyServer {
   private app: OpenAPIHono;
@@ -130,7 +130,7 @@ export class ProxyServer {
     }
 
     // Analyze the current port usage
-    const analysis = await analyzePortUsage(this.port);
+    const analysis = await analyzePortUsage(this.port, "proxy");
     logger.debug(`Port analysis for ${this.port}:`, analysis);
 
     switch (analysis.action) {

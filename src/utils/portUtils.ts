@@ -1,5 +1,6 @@
-import * as net from "net";
 import * as http from "http";
+import * as net from "net";
+
 import { logger } from "./logger";
 
 /**
@@ -22,12 +23,17 @@ export function isPortAvailable(port: number): Promise<boolean> {
 }
 
 /**
- * Check if the port is being used by our proxy server by attempting to connect to our API
+ * Check if the port is being used by our Agent Maestro service
  */
-export function isOurProxyServer(port: number): Promise<boolean> {
+export function isAgentMaestroService(
+  port: number,
+  serviceType: "proxy" | "mcp" = "proxy",
+): Promise<boolean> {
   return new Promise((resolve) => {
+    const endpoint = serviceType === "proxy" ? "/api/v1/info" : "/health";
+
     const req = http.get(
-      `http://0.0.0.0:${port}/api/v1/info`,
+      `http://0.0.0.0:${port}${endpoint}`,
       {
         timeout: 2000,
       },
@@ -38,12 +44,18 @@ export function isOurProxyServer(port: number): Promise<boolean> {
         });
 
         res.on("end", () => {
-          try {
-            const parsed = JSON.parse(data);
-            const isOurs = parsed.name === "Agent Maestro";
+          if (serviceType === "proxy") {
+            try {
+              const parsed = JSON.parse(data);
+              const isOurs = parsed.name === "Agent Maestro";
+              resolve(isOurs);
+            } catch {
+              resolve(false);
+            }
+          } else {
+            const isOurs =
+              data.trim() === "Agent Maestro MCP Server is running";
             resolve(isOurs);
-          } catch {
-            resolve(false);
           }
         });
       },
@@ -84,7 +96,10 @@ export async function findAvailablePort(
 /**
  * Analyze port usage and determine the best course of action
  */
-export async function analyzePortUsage(port: number): Promise<{
+export async function analyzePortUsage(
+  port: number,
+  serviceType: "proxy" | "mcp" = "proxy",
+): Promise<{
   available: boolean;
   isOurServer: boolean;
   action: "use" | "skip" | "findAlternative";
@@ -101,7 +116,7 @@ export async function analyzePortUsage(port: number): Promise<{
     };
   }
 
-  const isOurs = await isOurProxyServer(port);
+  const isOurs = await isAgentMaestroService(port, serviceType);
 
   if (isOurs) {
     return {
