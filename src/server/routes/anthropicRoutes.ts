@@ -59,9 +59,10 @@ const convertAnthropicModelToVSCodeModel = (modelId: string): string => {
   return "claude-3.5-sonnet";
 };
 
+const ANTHROPIC_MODEL_PREFIX = "claude";
 const getChatModelClient = async (modelId: string) => {
   // Convert official Anthropic API model ID to VSCode LM API model ID
-  const vsCodeModelId = modelId.startsWith("claude")
+  const vsCodeModelId = modelId.startsWith(ANTHROPIC_MODEL_PREFIX)
     ? convertAnthropicModelToVSCodeModel(modelId)
     : modelId;
 
