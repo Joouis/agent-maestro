@@ -7,13 +7,20 @@ import {
   LanguageModelToolCallPart,
   LanguageModelToolResultPart,
 } from "vscode";
+import * as vscode from "vscode";
 
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new LanguageModelTextPart(param.text);
 
 const imageBlockParamToVSCodePart = (
   param: Anthropic.Messages.ImageBlockParam,
-) => new LanguageModelTextPart(JSON.stringify(param));
+) =>
+  param.source.type === "url"
+    ? new LanguageModelTextPart(JSON.stringify(param))
+    : new (vscode as any).LanguageModelDataPart(
+        Buffer.from(param.source.data, "base64"),
+        param.source.media_type,
+      );
 
 const thinkingBlockParamToVSCodePart = (
   param: Anthropic.Messages.ThinkingBlockParam,
@@ -92,7 +99,11 @@ const convertContentToVSCodeParts = (
         break;
       case "image":
         // Images are represented as text in VSCode LM API
-        parts.push(imageBlockParamToVSCodePart(block));
+        parts.push(
+          imageBlockParamToVSCodePart(
+            block,
+          ) as unknown as LanguageModelTextPart,
+        );
         break;
       case "document":
         // Skip document blocks as specified in original implementation
