@@ -14,13 +14,26 @@ const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
 
 const imageBlockParamToVSCodePart = (
   param: Anthropic.Messages.ImageBlockParam,
-) =>
-  param.source.type === "url"
-    ? new LanguageModelTextPart(JSON.stringify(param))
-    : new (vscode as any).LanguageModelDataPart(
-        Buffer.from(param.source.data, "base64"),
-        param.source.media_type,
-      );
+) => {
+  /**
+   * A language model response part containing arbitrary data, not an official API yet.
+   */
+  const LanguageModelDataPart = (vscode as any).LanguageModelDataPart;
+
+  if (
+    param.source.type === "url" ||
+    !LanguageModelDataPart ||
+    // Issue: https://github.com/microsoft/vscode/issues/265553
+    param.source.media_type !== "image/png"
+  ) {
+    return new LanguageModelTextPart(JSON.stringify(param));
+  }
+
+  return new LanguageModelDataPart(
+    Buffer.from(param.source.data, "base64"),
+    param.source.media_type,
+  );
+};
 
 const thinkingBlockParamToVSCodePart = (
   param: Anthropic.Messages.ThinkingBlockParam,
