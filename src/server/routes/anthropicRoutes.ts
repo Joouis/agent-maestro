@@ -462,6 +462,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             logger.info("Streaming response completed");
           } catch (streamError) {
             logger.error("Error in streaming:", streamError);
+            throw streamError;
           }
         },
         async (error, _stream) => {
