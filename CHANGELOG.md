@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.2.0 - 2025.09.07
+
+- Add PNG image support for Anthropic message API, enabling image-to-text capabilities
+- Fix model selection bug that incorrectly used Claude-3.5 when GPT or other non-Claude models were selected
+- Improve MCP server startup error handling and messaging
+
 ## v2.1.0 - 2025.08.24
 
 - New endpoints for creating, updating, deleting, listing, and activating Roo Code configurations.
