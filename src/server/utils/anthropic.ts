@@ -14,10 +14,10 @@ const imageBlockParamToVSCodePart = (
 
   if (
     param.source.type === "url" ||
-    !LanguageModelDataPart ||
+    !LanguageModelDataPart
     // "Unsupported image format" and "Invalid character" errors due to internal safe base64 conversion in copilot-chat
     // https://github.com/microsoft/vscode/issues/265553
-    param.source.media_type !== "image/png"
+    // param.source.media_type !== "image/png"
   ) {
     return new vscode.LanguageModelTextPart(JSON.stringify(param));
   }
