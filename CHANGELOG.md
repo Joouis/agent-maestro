@@ -1,8 +1,12 @@
 # Changelog
 
+## v2.2.1 - 2025.09.08
+
+- Add support for JPEG, GIF, and WebP images in Anthropic Messages API (works in VS Code Insiders, coming to stable release, see [#265553](https://github.com/microsoft/vscode/issues/265553))
+
 ## v2.2.0 - 2025.09.07
 
-- Add PNG image support for Anthropic message API, enabling image-to-text capabilities
+- Add PNG image support for Anthropic Messages API, enabling image-to-text capabilities
 - Fix model selection bug that incorrectly used Claude-3.5 when GPT or other non-Claude models were selected
 - Improve MCP server startup error handling and messaging
 
