@@ -2,16 +2,17 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as vscode from "vscode";
-import { logger } from "../../utils/logger";
+
 import { readConfiguration } from "../../utils/config";
-import { getMimeType } from "../utils/mimeTypes";
+import { logger } from "../../utils/logger";
 import {
   ErrorResponseSchema,
   FileReadRequestSchema,
   FileReadResponseSchema,
   FileWriteRequestSchema,
   FileWriteResponseSchema,
-} from "../schemas";
+} from "../schemas/common";
+import { getMimeType } from "../utils/mimeTypes";
 
 // Validate that the path is within the workspace
 function validateWorkspacePath(requestedPath: string): {

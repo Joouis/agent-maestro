@@ -1,13 +1,14 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import * as vscode from "vscode";
 import * as fs from "fs/promises";
+import * as vscode from "vscode";
+
 import { logger } from "../../utils/logger";
+import { ErrorResponseSchema } from "../schemas/common";
 import {
-  ErrorResponseSchema,
+  CloseWorkspacesResponseSchema,
   WorkspaceUpdateRequestSchema,
   WorkspaceUpdateResponseSchema,
-  CloseWorkspacesResponseSchema,
-} from "../schemas";
+} from "../schemas/vsc";
 
 // OpenAPI route definitions
 const updateWorkspaceFoldersRoute = createRoute({

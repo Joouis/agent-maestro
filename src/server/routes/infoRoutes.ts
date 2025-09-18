@@ -1,8 +1,9 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { logger } from "../../utils/logger";
+
 import { ExtensionController } from "../../core/controller";
+import { logger } from "../../utils/logger";
 import { getSystemInfo } from "../../utils/systemInfo";
-import { ErrorResponseSchema, SystemInfoSchema } from "../schemas";
+import { ErrorResponseSchema, SystemInfoSchema } from "../schemas/common";
 
 // OpenAPI route definition
 const systemInfoRoute = createRoute({

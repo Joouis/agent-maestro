@@ -3,6 +3,7 @@ import { ClineMessage, RooCodeEventName } from "@roo-code/types";
 import { isEqual } from "es-toolkit";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
+
 import { ExtensionController } from "../../core/controller";
 import { logger } from "../../utils/logger";
 import {
@@ -10,10 +11,13 @@ import {
   getAvailableExtensions,
 } from "../../utils/mcpConfig";
 import {
-  CreateProfileRequestSchema,
-  ErrorResponseSchema,
-  HistoryItemSchema,
   ImagesDataUriSchema,
+  imagesDataUriErrorMessage,
+} from "../schemas/cline";
+import { ErrorResponseSchema } from "../schemas/common";
+import {
+  CreateProfileRequestSchema,
+  HistoryItemSchema,
   ProfileResponseSchema,
   ProviderSettingsEntrySchema,
   RooActionRequestSchema,
@@ -21,8 +25,7 @@ import {
   RooTaskResponseSchema,
   SetActiveProfileRequestSchema,
   UpdateProfileRequestSchema,
-  imagesDataUriErrorMessage,
-} from "../schemas";
+} from "../schemas/roo";
 import { TaskEvent } from "../types";
 
 const filteredSayTypes = ["api_req_started"];

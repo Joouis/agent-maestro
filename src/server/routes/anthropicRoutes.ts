@@ -11,7 +11,7 @@ import {
   AnthropicErrorResponseSchema,
   AnthropicMessageCreateParamsSchema,
   AnthropicMessageResponseSchema,
-} from "../schemas";
+} from "../schemas/anthropic";
 import {
   convertAnthropicMessagesToVSCode,
   convertAnthropicSystemToVSCode,

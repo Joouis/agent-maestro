@@ -3,11 +3,8 @@ import * as vscode from "vscode";
 import { LanguageModelToolInformation } from "vscode";
 
 import { logger } from "../../utils/logger";
-import {
-  ChatModelsResponseSchema,
-  ErrorResponseSchema,
-  ToolsResponseSchema,
-} from "../schemas";
+import { ErrorResponseSchema } from "../schemas/common";
+import { ChatModelsResponseSchema, ToolsResponseSchema } from "../schemas/vsc";
 
 // OpenAPI route definitions
 const chatModelsRoute = createRoute({
