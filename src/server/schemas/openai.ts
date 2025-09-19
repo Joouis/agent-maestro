@@ -1,6 +1,10 @@
 import { z } from "@hono/zod-openapi";
+import de from "zod/v4/locales/de.js";
 
-const ReasoningEffort = z.enum(["low", "medium", "high"]);
+const ReasoningEffort = z
+  .enum(["low", "medium", "high"])
+  .default("medium")
+  .nullable();
 
 const VoiceIdsShared = z.enum([
   "alloy",
@@ -159,33 +163,32 @@ const ChatOutputPrediction = z.object({
 // Response modalities
 const ResponseModalities = z.array(z.enum(["text", "audio"]));
 
-/**
- * POST /chat/completions request body
- */
-export const CreateChatCompletionRequest = z.looseObject({
-  // Required properties
-  messages: z.array(ChatCompletionRequestMessage).min(1),
-  model: z.string(),
+const ServiceTier = z
+  .enum(["auto", "default", "flex"])
+  .default("auto")
+  .nullable();
 
-  // Optional metadata and basic parameters
+const ModelResponseProperties = z.looseObject({
   metadata: z.record(z.string(), z.string()).optional(),
   temperature: z.number().min(0).max(2).nullable().default(1).optional(),
   top_p: z.number().min(0).max(1).nullable().default(1).optional(),
   user: z.string().optional(),
-  top_logprobs: z.number().int().min(0).max(20).optional(),
+  service_tier: ServiceTier.optional(),
+});
 
-  // Modalities and reasoning
+/**
+ * POST /chat/completions request body
+ */
+export const CreateChatCompletionRequest = ModelResponseProperties.extend({
+  messages: z.array(ChatCompletionRequestMessage).min(1),
+  model: z.string(),
   modalities: ResponseModalities.nullable().optional(),
-  reasoning_effort: ReasoningEffort.nullable().default("medium").optional(),
-
-  // Token limits and penalties
+  reasoning_effort: ReasoningEffort.optional(),
   max_completion_tokens: z.number().int().nullable().optional(),
   frequency_penalty: z.number().min(-2).max(2).nullable().default(0).optional(),
   presence_penalty: z.number().min(-2).max(2).nullable().default(0).optional(),
-
   // web_search_options not supported yet
-
-  // Response format and audio
+  top_logprobs: z.number().int().min(0).max(20).optional(),
   response_format: ResponseFormat.optional(),
   audio: z
     .object({
@@ -194,13 +197,9 @@ export const CreateChatCompletionRequest = z.looseObject({
     })
     .nullable()
     .optional(),
-
-  // Streaming and storage
   store: z.boolean().nullable().default(false).optional(),
   stream: z.boolean().nullable().default(false).optional(),
   stop: StopConfiguration.default(null).optional(),
-
-  // Bias and probability settings
   logit_bias: z
     .record(z.string(), z.number().int())
     .nullable()
@@ -327,7 +326,7 @@ const ChatCompletionChoice = z.object({
 /**
  * POST /chat/completions application/json response
  */
-export const CreateChatCompletionResponse = z.object({
+export const CreateChatCompletionResponse = z.looseObject({
   id: z.string(),
   choices: z.array(ChatCompletionChoice),
   created: z.number().int(),
@@ -401,7 +400,7 @@ const CreateChatCompletionStreamChoice = z.object({
 /**
  * POST /chat/completions text/event-stream response
  */
-export const CreateChatCompletionStreamResponse = z.object({
+export const CreateChatCompletionStreamResponse = z.looseObject({
   id: z.string(),
   choices: z.array(CreateChatCompletionStreamChoice),
   created: z.number().int(),
@@ -434,10 +433,12 @@ const ResponseErrorCode = z.enum([
   "image_file_not_found",
 ]);
 
-const ResponseError = z.object({
-  code: ResponseErrorCode,
-  message: z.string(),
-});
+const ResponseError = z
+  .object({
+    code: ResponseErrorCode,
+    message: z.string(),
+  })
+  .nullable();
 
 // Response usage schemas
 const ResponseUsage = z.object({
@@ -481,12 +482,11 @@ const ItemResource = z.object({
 
 // Updated Reasoning schema to match OpenAI.Reasoning
 const Reasoning = z.object({
-  effort: ReasoningEffort.nullable().default("medium").optional(),
+  effort: ReasoningEffort.optional(),
   summary: z.enum(["auto", "concise", "detailed"]).nullable().optional(),
   generate_summary: z
     .enum(["auto", "concise", "detailed"])
     .nullable()
-    .default(null)
     .optional(),
 });
 
@@ -497,9 +497,19 @@ const ResponseTextFormatConfigurationType = z.enum([
   "json_object",
 ]);
 
-const ResponseTextFormatConfiguration = z.object({
-  type: ResponseTextFormatConfigurationType,
+const TextResponseFormatJsonSchema = z.object({
+  type: z.literal("json_schema"),
+  description: z.string().optional(),
+  name: z.string(),
+  schema: ResponseFormatJsonSchemaSchema,
+  strict: z.boolean().default(false).nullable().optional(),
 });
+
+const TextResponseFormatConfiguration = z.union([
+  ResponseFormatText,
+  TextResponseFormatJsonSchema,
+  ResponseFormatJsonObject,
+]);
 
 // Tool choice options (enum)
 const ToolChoiceOptions = z.enum(["none", "auto", "required"]);
@@ -517,29 +527,26 @@ const ToolType = z.enum([
 ]);
 
 // Function tool (enhanced version)
-const FunctionTool = z.object({
+const FunctionTool = FunctionObject.extend({
   type: z.literal("function"),
-  function: FunctionObject,
+});
+
+const RankingOptions = z.object({
+  ranker: z.enum(["auto", "default-2024-11-15"]).optional(),
+  score_threshold: z.number().min(0).max(1).optional(),
 });
 
 // File search tool
 const FileSearchTool = z.object({
   type: z.literal("file_search"),
-  file_search: z
-    .object({
-      max_num_results: z.number().int().min(1).max(50).optional(),
-      ranking_options: z
-        .object({
-          ranker: z.enum(["auto", "default_2024_08_21"]).optional(),
-          score_threshold: z.number().min(0).max(1).optional(),
-        })
-        .optional(),
-    })
-    .optional(),
+  vector_store_ids: z.array(z.string()),
+  max_num_results: z.number().int().min(1).max(50).optional(),
+  ranking_options: RankingOptions.optional(),
+  filters: z.record(z.string(), z.any()).optional(),
 });
 
 // Code interpreter tool
-const CodeInterpreterTool = z.object({
+const CodeInterpreterTool = z.looseObject({
   type: z.literal("code_interpreter"),
   code_interpreter: z
     .object({
@@ -560,18 +567,26 @@ const CodeInterpreterTool = z.object({
     .optional(),
 });
 
+const ApproximateLocation = z.object({
+  type: z.literal("approximate"),
+  country: z.string().optional(),
+  region: z.string().optional(),
+  city: z.string().optional(),
+  timezone: z.string().optional(),
+});
+
 // Web search tool
 const WebSearchPreviewTool = z.object({
-  type: z.literal("web_search_preview"),
-  web_search_preview: z
-    .object({
-      max_results: z.number().int().min(1).max(20).optional(),
-    })
+  type: z.string(), // web_search_preview, web_search_preview_2025_03_11
+  user_location: ApproximateLocation.optional(),
+  search_context_size: z
+    .enum(["low", "medium", "high"])
+    .default("medium")
     .optional(),
 });
 
 // Image generation tool
-const ImageGenTool = z.object({
+const ImageGenTool = z.looseObject({
   type: z.literal("image_gen"),
   image_gen: z
     .object({
@@ -588,17 +603,13 @@ const ImageGenTool = z.object({
 // Computer use tool
 const ComputerUsePreviewTool = z.object({
   type: z.literal("computer_use_preview"),
-  computer_use_preview: z
-    .object({
-      display_width_px: z.number().int().optional(),
-      display_height_px: z.number().int().optional(),
-      display_number: z.number().int().optional(),
-    })
-    .optional(),
+  environment: z.enum(["windows", "mac", "linux", "ubuntu", "browser"]),
+  display_width: z.number().int(),
+  display_height: z.number().int(),
 });
 
 // Local shell tool
-const LocalShellTool = z.object({
+const LocalShellTool = z.looseObject({
   type: z.literal("local_shell"),
   local_shell: z
     .object({
@@ -609,7 +620,7 @@ const LocalShellTool = z.object({
 });
 
 // MCP tool
-const MCPTool = z.object({
+const MCPTool = z.looseObject({
   type: z.literal("mcp"),
   mcp: z.object({
     server_name: z.string(),
@@ -619,83 +630,26 @@ const MCPTool = z.object({
 
 // Union of all tools
 const Tool = z.union([
-  FunctionTool,
   FileSearchTool,
-  CodeInterpreterTool,
+  FunctionTool,
   WebSearchPreviewTool,
-  ImageGenTool,
   ComputerUsePreviewTool,
+  // Not found in OpenAI YAML schema but keep for the future
+  CodeInterpreterTool,
+  ImageGenTool,
   LocalShellTool,
   MCPTool,
 ]);
 
-// Tool choice object types
-const ToolChoiceObjectFunction = z.object({
+const ToolChoiceFunction = z.object({
   type: z.literal("function"),
-  function: z.object({
-    name: z.string(),
-  }),
+  name: z.string(),
 });
 
-const ToolChoiceObjectFileSearch = z.object({
-  type: z.literal("file_search"),
-});
-
-const ToolChoiceObjectCodeInterpreter = z.object({
-  type: z.literal("code_interpreter"),
-});
-
-const ToolChoiceObjectWebSearch = z.object({
-  type: z.literal("web_search_preview"),
-});
-
-const ToolChoiceObjectImageGen = z.object({
-  type: z.literal("image_gen"),
-});
-
-const ToolChoiceObjectComputer = z.object({
-  type: z.literal("computer_use_preview"),
-});
-
-const ToolChoiceObjectLocalShell = z.object({
-  type: z.literal("local_shell"),
-});
-
-const ToolChoiceObjectMCP = z.object({
-  type: z.literal("mcp"),
-  mcp: z.object({
-    server_name: z.string(),
-    tool_name: z.string().optional(),
-  }),
-});
-
-// Union of all tool choice objects
-const ToolChoiceObject = z.union([
-  ToolChoiceObjectFunction,
-  ToolChoiceObjectFileSearch,
-  ToolChoiceObjectCodeInterpreter,
-  ToolChoiceObjectWebSearch,
-  ToolChoiceObjectImageGen,
-  ToolChoiceObjectComputer,
-  ToolChoiceObjectLocalShell,
-  ToolChoiceObjectMCP,
-]);
-
-// Prompt schema
-const Prompt = z.object({
-  id: z.string().optional(),
-  template: z.string().optional(),
-  variables: z.record(z.string(), z.string()).optional(),
-});
-
-// Includable options
 const Includable = z.enum([
-  "code_interpreter_call.outputs",
-  "computer_call_output.output.image_url",
   "file_search_call.results",
   "message.input_image.image_url",
-  "message.output_text.logprobs",
-  "reasoning.encrypted_content",
+  "computer_call_output.output.image_url",
 ]);
 
 // Basic content types for ItemParam
@@ -841,58 +795,36 @@ const ItemParam = z.union([
   ItemReferenceItemParam,
 ]);
 
-// OpenAI.Response schema converted to Response
-const Response = z.object({
-  // Required properties
-  metadata: z.record(z.string(), z.string()).nullable(),
-  temperature: z.number().min(0).max(2).nullable(),
-  top_p: z.number().min(0).max(1).nullable(),
-  user: z.string().nullable(),
-  id: z.string(),
-  object: z.literal("response"),
-  created_at: z.number().int(),
-  error: ResponseError.nullable(),
-  incomplete_details: z
-    .object({
-      reason: z.enum(["max_output_tokens", "content_filter"]),
-    })
-    .nullable(),
-  output: z.array(ItemResource),
-  instructions: z.union([z.string(), z.array(ItemParam)]).nullable(),
-  parallel_tool_calls: z.boolean().default(true),
+const ToolChoiceTypes = z.object({
+  // type: z.enum([
+  //   "file_search",
+  //   "web_search_preview",
+  //   "computer_use_preview",
+  //   "web_search_preview_2025_03_11",
+  // ]),
+  type: z.string(),
+});
 
-  // Optional properties
-  top_logprobs: z.number().int().min(0).max(20).nullable().optional(),
+const ResponseProperties = z.object({
   previous_response_id: z.string().nullable().optional(),
+  model: z.string(),
   reasoning: Reasoning.nullable().optional(),
-  background: z.boolean().nullable().default(false).optional(),
   max_output_tokens: z.number().int().nullable().optional(),
-  max_tool_calls: z.number().int().nullable().optional(),
+  instruction: z.string().nullable().optional(),
   text: z
     .object({
-      format: ResponseTextFormatConfiguration.optional(),
+      format: TextResponseFormatConfiguration.optional(),
     })
     .optional(),
   tools: z.array(Tool).optional(),
-  tool_choice: z.union([ToolChoiceOptions, ToolChoiceObject]).optional(),
-  prompt: Prompt.nullable().optional(),
+  tool_choice: z
+    .union([ToolChoiceOptions, ToolChoiceTypes, ToolChoiceFunction])
+    .optional(),
   truncation: z
     .enum(["auto", "disabled"])
     .nullable()
     .default("disabled")
     .optional(),
-  status: z
-    .enum([
-      "completed",
-      "failed",
-      "in_progress",
-      "cancelled",
-      "queued",
-      "incomplete",
-    ])
-    .optional(),
-  output_text: z.string().nullable().optional(),
-  usage: ResponseUsage.optional(),
 });
 
 // Response Stream Event schemas
@@ -1117,53 +1049,92 @@ const ResponseStreamEvent = z.discriminatedUnion("type", [
   ResponseFunctionCallArgumentsDoneEvent,
 ]);
 
+const InputTextContent = z.object({
+  type: z.literal("input_text"),
+  text: z.string(),
+});
+
+const InputImageContent = z.object({
+  type: z.literal("input_image"),
+  image_url: z.string().nullable().optional(),
+  file_id: z.string().nullable().optional(),
+  detail: z.enum(["auto", "low", "high"]).default("auto"),
+});
+
+const InputFileContent = z.object({
+  type: z.literal("input_file"),
+  file_id: z.string().nullable(),
+  filename: z.string().optional(),
+  file_data: z.string().optional(),
+});
+
+const InputContent = z.union([
+  InputTextContent,
+  InputImageContent,
+  InputFileContent,
+]);
+
+const InputMessageContentList = z.array(InputContent);
+
+const EasyInputMessage = z.object({
+  role: z.enum(["user", "assistant", "system", "developer"]),
+  content: z.union([z.string(), InputMessageContentList]),
+  type: z.literal("message").optional(),
+});
+
+// TODO: z.union([InputMessage, OutputMessage, FileSearchToolCall, ComputerToolCall, ComputerCallOutputItemParam, WebSearchToolCall, FunctionToolCall, FunctionCallOutputItemParam, ReasoningItem])
+const Item = z.record(z.string(), z.any());
+
+const ItemReferenceParam = z.object({
+  type: z.literal("item_reference").nullable().optional(),
+  id: z.string(),
+});
+
 /**
  * POST /responses request body
  */
-export const CreateResponse = z.object({
-  // Required
-  model: z.string(),
-
-  // Basic parameters
-  metadata: z.record(z.string(), z.string()).optional(),
-  temperature: z.number().min(0).max(2).nullable().default(1).optional(),
-  top_p: z.number().min(0).max(1).nullable().default(1).optional(),
-  user: z.string().optional(),
-  top_logprobs: z.number().int().min(0).max(20).optional(),
-
-  // Advanced features
-  previous_response_id: z.string().nullable().optional(),
-  reasoning: Reasoning.nullable().optional(),
-  background: z.boolean().nullable().default(false).optional(),
-  max_output_tokens: z.number().int().nullable().optional(),
-  max_tool_calls: z.number().int().nullable().optional(),
-
-  // Text formatting
-  text: z
-    .object({
-      format: ResponseTextFormatConfiguration.optional(),
-    })
-    .optional(),
-
-  // Tools
-  tools: z.array(Tool).optional(),
-  tool_choice: z.union([ToolChoiceOptions, ToolChoiceObject]).optional(),
-
-  // Prompt and input
-  prompt: Prompt.nullable().optional(),
-  truncation: z
-    .enum(["auto", "disabled"])
-    .nullable()
-    .default("disabled")
-    .optional(),
+export const CreateResponse = ModelResponseProperties.extend(
+  ResponseProperties,
+).extend({
   input: z
-    .union([z.string(), z.array(z.union([ImplicitUserMessage, ItemParam]))])
+    .union([
+      z.string(),
+      z.array(z.union([EasyInputMessage, Item, ItemReferenceParam])),
+    ])
     .optional(),
-
-  // Additional options
   include: z.array(Includable).nullable().optional(),
   parallel_tool_calls: z.boolean().nullable().default(true).optional(),
   store: z.boolean().nullable().default(true).optional(),
-  instructions: z.string().nullable().optional(),
   stream: z.boolean().nullable().default(false).optional(),
 });
+
+// TODO: z.union([OutputMessage, FileSearchToolCall, FunctionToolCall, WebSearchToolCall,ComputerToolCall, ReasoningItem]);
+const OutputItem = z.record(z.string(), z.any());
+
+/**
+ * POST /responses application/json response
+ */
+export const CreateResponseResponse = ModelResponseProperties.extend(
+  ResponseProperties,
+).extend({
+  id: z.string(),
+  object: z.literal("response"),
+  status: z.enum(["completed", "failed", "in_progress", "incomplete"]),
+  created_at: z.number().int(),
+  error: ResponseError,
+  incomplete_details: z
+    .object({
+      reason: z.enum(["max_output_tokens", "content_filter"]).optional(),
+    })
+    .nullable(),
+  output: OutputItem,
+  output_text: z.string().nullable().optional(),
+  usage: ResponseUsage,
+  parallel_tool_calls: z.boolean().nullable().default(true),
+});
+
+/**
+ * POST /responses text/event-stream response
+ */
+// TODO
+// export const ResponseStreamEvent =
