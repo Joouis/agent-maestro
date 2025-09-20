@@ -46,7 +46,7 @@ export class ProxyServer {
     this.app.route("/api/anthropic", this.getApiAnthropicRoutes());
 
     // OpenAI-compatible messages endpoint
-    // this.app.route("/api/openai", this.getApiOpenAiRoutes());
+    this.app.route("/api/openai", this.getApiOpenAiRoutes());
 
     // GET /openapi.json - OpenAPI specification
     this.app.doc("/openapi.json", this.getOpenApiDocTpl());
@@ -71,11 +71,11 @@ export class ProxyServer {
     return routes;
   }
 
-  // private getApiOpenAiRoutes(): OpenAPIHono {
-  //   const routes = new OpenAPIHono();
-  //   registerOpenaiRoutes(routes);
-  //   return routes;
-  // }
+  private getApiOpenAiRoutes(): OpenAPIHono {
+    const routes = new OpenAPIHono();
+    registerOpenaiRoutes(routes);
+    return routes;
+  }
 
   private getOpenApiDocTpl() {
     return {

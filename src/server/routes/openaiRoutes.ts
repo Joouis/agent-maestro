@@ -35,22 +35,13 @@ const convertOpenAIMessagesToVSCode = (
     // Map roles to VSCode LM format
     switch (msg.role) {
       case "system":
-        return vscode.LanguageModelChatMessage.User(
-          content,
-          vscode.LanguageModelChatMessageRole.User,
-        );
+        return vscode.LanguageModelChatMessage.User(content);
       case "user":
-        return vscode.LanguageModelChatMessage.User(
-          content,
-          vscode.LanguageModelChatMessageRole.User,
-        );
+        return vscode.LanguageModelChatMessage.User(content);
       case "assistant":
         return vscode.LanguageModelChatMessage.Assistant(content);
       default:
-        return vscode.LanguageModelChatMessage.User(
-          content,
-          vscode.LanguageModelChatMessageRole.User,
-        );
+        return vscode.LanguageModelChatMessage.User(content);
     }
   });
 };
@@ -134,24 +125,115 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
   // POST /chat/completions - OpenAI-compatible chat completions endpoint
   app.openapi(chatCompletionsRoute, async (c: Context): Promise<Response> => {
     try {
-      // Parse request body
-      const requestBody = await c.req.json();
+      // Parse and validate request body
+      const requestBody =
+        (await c.req.json()) as OpenAI.ChatCompletionCreateParams;
 
-      // TODO: Implement chat completions handler logic
-      // This should include:
-      // 1. Validate and parse the request using CreateChatCompletionRequest schema
-      // 2. Convert OpenAI request format to VSCode Language Model format
-      // 3. Get appropriate chat model client from chatModelsCache
-      // 4. Handle both streaming and non-streaming responses
-      // 5. Convert VSCode LM responses back to OpenAI format
-      // 6. Return proper CreateChatCompletionResponse or CreateChatCompletionStreamResponse
+      logger.debug(
+        "/chat/completions payload: ",
+        JSON.stringify(requestBody, null, 2),
+      );
 
+      const {
+        model: modelId,
+        messages,
+        stream = false,
+        ...otherParams
+      } = requestBody;
+
+      // 1. Get chat model client
+      const { client, error: clientError } = await getChatModelClient(modelId);
+
+      if (clientError) {
+        return c.json(clientError, 404);
+      }
+
+      logger.info(
+        `Received /chat/completions call with selected model: ${client.name} (${client.vendor}/${client.family})`,
+      );
+
+      // 2. Convert OpenAI messages to VSCode LM format
+      const vsCodeLmMessages = convertOpenAIMessagesToVSCode(messages);
+
+      // Count input tokens
+      let inputTokenCount = 0;
+      const cancellationToken = new vscode.CancellationTokenSource().token;
+      for (const msg of vsCodeLmMessages) {
+        inputTokenCount += await client.countTokens(msg, cancellationToken);
+      }
+
+      // 3. Build VSCode Language Model request options
+      const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
+        justification:
+          "OpenAI-compatible /chat/completions endpoint using VS Code Language Model API",
+        modelOptions: {
+          temperature: otherParams.temperature,
+          // Map max_completion_tokens or max_tokens to VSCode options
+          ...(otherParams.max_completion_tokens && {
+            maxTokens: otherParams.max_completion_tokens,
+          }),
+          ...(otherParams.max_tokens && { maxTokens: otherParams.max_tokens }),
+        },
+        // TODO: Convert tools and tool_choice when needed
+      };
+
+      // 4. Send request to VSCode LM API
+      const response = await client.sendRequest(
+        vsCodeLmMessages,
+        lmRequestOptions,
+        cancellationToken,
+      );
+
+      // 5. Handle non-streaming response
+      if (!stream) {
+        let fullText = "";
+        for await (const fragment of response.text) {
+          fullText += fragment;
+        }
+
+        // Count output tokens
+        const outputTokenCount = await client.countTokens(fullText);
+
+        // Build OpenAI-compatible response
+        const openaiResponse: OpenAI.ChatCompletion = {
+          id: `chatcmpl-${Date.now()}`,
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: modelId,
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant",
+                content: fullText,
+                refusal: null,
+              },
+              finish_reason: "stop",
+              logprobs: null,
+            },
+          ],
+          usage: {
+            prompt_tokens: inputTokenCount,
+            completion_tokens: outputTokenCount,
+            total_tokens: inputTokenCount + outputTokenCount,
+          },
+        };
+
+        logger.debug(
+          "/chat/completions response: ",
+          JSON.stringify(openaiResponse, null, 2),
+        );
+
+        return c.json(openaiResponse);
+      }
+
+      // TODO: Implement streaming response
       return c.json(
         {
           error: {
-            message: "Chat completions endpoint not yet implemented",
+            message: "Streaming not yet implemented",
             type: "not_implemented_error",
-            code: "not_implemented",
+            code: "streaming_not_implemented",
           },
         },
         501,
