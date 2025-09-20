@@ -771,13 +771,85 @@ const FileSearchToolCall = z.looseObject({
     .optional(),
 });
 
-// TODO: ComputerAction
-const ComputerAction = z.record(z.string(), z.any());
+const Click = z.object({
+  type: z.literal("click"),
+  button: z.enum(["left", "right", "wheel", "back", "forward"]).optional(),
+  x: z.number().int().optional(),
+  y: z.number().int().optional(),
+});
+
+const DoubleClick = z.object({
+  type: z.literal("double_click"),
+  x: z.number().int(),
+  y: z.number().int(),
+});
+
+const Drag = z.object({
+  type: z.literal("drag"),
+  path: z
+    .array(
+      z.object({
+        x: z.number().int(),
+        y: z.number().int(),
+      }),
+    )
+    .optional(),
+});
+
+const KeyPress = z.object({
+  type: z.literal("keypress"),
+  keys: z.array(z.string()),
+});
+
+const Move = z.object({
+  type: z.literal("move"),
+  x: z.number().int().optional(),
+  y: z.number().int().optional(),
+});
+
+const Screenshot = z.object({
+  type: z.literal("screenshot"),
+});
+
+const Scroll = z.object({
+  type: z.literal("scroll"),
+  x: z.number().int().optional(),
+  y: z.number().int().optional(),
+  direction: z.enum(["up", "down", "left", "right"]).optional(),
+});
+
+const Type = z.object({
+  type: z.literal("type"),
+  text: z.string(),
+});
+
+const Wait = z.object({
+  type: z.literal("wait"),
+  duration: z.number().optional(),
+});
+
+const ComputerAction = z.discriminatedUnion("type", [
+  Click,
+  DoubleClick,
+  Drag,
+  KeyPress,
+  Move,
+  Screenshot,
+  Scroll,
+  Type,
+  Wait,
+]);
 
 const ComputerToolCallSafetyCheck = z.looseObject({
   id: z.string(),
   code: z.string(),
   message: z.string(),
+});
+
+const ComputerCallSafetyCheckParam = z.object({
+  id: z.string(),
+  code: z.string().nullable().optional(),
+  message: z.string().nullable().optional(),
 });
 
 const ComputerToolCall = z.looseObject({
@@ -800,8 +872,10 @@ const ComputerCallOutputItemParam = z.looseObject({
   call_id: z.string().min(1).max(64),
   type: z.literal("computer_call_output"),
   output: ComputerScreenshotImage,
-  // TODO: ComputerCallSafetyCheckParam
-  acknowledged_safety_checks: z.any().optional(),
+  acknowledged_safety_checks: z
+    .array(ComputerCallSafetyCheckParam)
+    .nullable()
+    .optional(),
   status: z.enum(["in_progress", "completed", "failed"]).nullable().optional(),
 });
 
