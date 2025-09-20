@@ -4,8 +4,18 @@ import { logger } from "./logger";
 
 class ChatModelsCache {
   private static instance: ChatModelsCache;
-  private cachedModels: vscode.LanguageModelChat[] = [];
+  private _cachedModels: vscode.LanguageModelChat[] = [];
   private initializationPromise: Promise<void> | null = null;
+
+  // Getter that filters out claude-3.7 models by default due to model_not_supported error
+  private get cachedModels(): vscode.LanguageModelChat[] {
+    return this._cachedModels.filter((m) => !m.id.includes("claude-3.7"));
+  }
+
+  // Setter for internal use
+  private set cachedModels(models: vscode.LanguageModelChat[]) {
+    this._cachedModels = models;
+  }
 
   private constructor() {}
 
@@ -162,10 +172,7 @@ export const getChatModelClient = async (modelId: string) => {
     : modelId;
 
   const models = await chatModelsCache.getChatModels();
-  const client = models
-    // Exclude Claude 3.7 models due to model_not_supported error
-    .filter((m) => !m.id.includes("claude-3.7"))
-    .find((m) => m.id === vsCodeModelId);
+  const client = models.find((m) => m.id === vsCodeModelId);
 
   if (!client) {
     logger.error(
