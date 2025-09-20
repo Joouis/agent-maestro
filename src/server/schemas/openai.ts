@@ -233,7 +233,9 @@ export const CreateChatCompletionRequest = ModelResponseProperties.extend({
     .union([z.enum(["none", "auto"]), ChatCompletionFunctionCallOption])
     .optional(),
   functions: z.array(ChatCompletionFunctions).min(1).max(128).optional(),
-});
+}).describe(
+  "The request body to create a chat completion request for /chat/completions API. Docs: https://platform.openai.com/docs/api-reference/chat/create",
+);
 
 // Completion usage with detailed token breakdown
 const CompletionTokensDetails = z.object({
@@ -325,16 +327,20 @@ const ChatCompletionChoice = z.object({
 /**
  * POST /chat/completions application/json response
  */
-export const CreateChatCompletionResponse = z.looseObject({
-  id: z.string(),
-  choices: z.array(ChatCompletionChoice),
-  created: z.number().int(),
-  model: z.string(),
-  service_tier: z.enum(["scale", "default"]).nullable().optional(),
-  system_fingerprint: z.string().optional(),
-  object: z.literal("chat.completion"),
-  usage: CompletionUsage.optional(),
-});
+export const CreateChatCompletionResponse = z
+  .looseObject({
+    id: z.string(),
+    choices: z.array(ChatCompletionChoice),
+    created: z.number().int(),
+    model: z.string(),
+    service_tier: z.enum(["scale", "default"]).nullable().optional(),
+    system_fingerprint: z.string().optional(),
+    object: z.literal("chat.completion"),
+    usage: CompletionUsage.optional(),
+  })
+  .describe(
+    "The response in application/json type of /chat/completions API. Docs: https://platform.openai.com/docs/api-reference/chat/create",
+  );
 
 // Chat completion response role
 const ChatCompletionResponse = z.enum([
@@ -399,16 +405,20 @@ const CreateChatCompletionStreamChoice = z.object({
 /**
  * POST /chat/completions text/event-stream response
  */
-export const CreateChatCompletionStreamResponse = z.looseObject({
-  id: z.string(),
-  choices: z.array(CreateChatCompletionStreamChoice),
-  created: z.number().int(),
-  model: z.string(),
-  service_tier: z.enum(["scale", "default"]).nullable().optional(),
-  system_fingerprint: z.string().optional(),
-  object: z.literal("chat.completion.chunk"),
-  usage: CompletionUsage.nullable().optional(), // Only present on final chunk
-});
+export const CreateChatCompletionStreamResponse = z
+  .looseObject({
+    id: z.string(),
+    choices: z.array(CreateChatCompletionStreamChoice),
+    created: z.number().int(),
+    model: z.string(),
+    service_tier: z.enum(["scale", "default"]).nullable().optional(),
+    system_fingerprint: z.string().optional(),
+    object: z.literal("chat.completion.chunk"),
+    usage: CompletionUsage.nullable().optional(), // Only present on final chunk
+  })
+  .describe(
+    "The response in text/event-stream type of /chat/completions API. Docs: https://platform.openai.com/docs/api-reference/chat/create",
+  );
 
 // Response error schemas
 const ResponseErrorCode = z.enum([
@@ -931,20 +941,22 @@ const ItemReferenceParam = z.object({
 /**
  * POST /responses request body
  */
-export const CreateResponse = ModelResponseProperties.extend(
-  ResponseProperties,
-).extend({
-  input: z
-    .union([
-      z.string(),
-      z.array(z.union([EasyInputMessage, Item, ItemReferenceParam])),
-    ])
-    .optional(),
-  include: z.array(Includable).nullable().optional(),
-  parallel_tool_calls: z.boolean().nullable().default(true).optional(),
-  store: z.boolean().nullable().default(true).optional(),
-  stream: z.boolean().nullable().default(false).optional(),
-});
+export const CreateResponse = ModelResponseProperties.extend(ResponseProperties)
+  .extend({
+    input: z
+      .union([
+        z.string(),
+        z.array(z.union([EasyInputMessage, Item, ItemReferenceParam])),
+      ])
+      .optional(),
+    include: z.array(Includable).nullable().optional(),
+    parallel_tool_calls: z.boolean().nullable().default(true).optional(),
+    store: z.boolean().nullable().default(true).optional(),
+    stream: z.boolean().nullable().default(false).optional(),
+  })
+  .describe(
+    "The request body to create a model response for /responses API. Docs: https://platform.openai.com/docs/api-reference/responses/create",
+  );
 
 const OutputItem = z.discriminatedUnion("type", [
   OutputMessage,
@@ -960,22 +972,26 @@ const OutputItem = z.discriminatedUnion("type", [
  */
 export const CreateResponseResponse = ModelResponseProperties.extend(
   ResponseProperties,
-).extend({
-  id: z.string(),
-  object: z.literal("response"),
-  status: z.enum(["completed", "failed", "in_progress", "incomplete"]),
-  created_at: z.number().int(),
-  error: ResponseError,
-  incomplete_details: z
-    .object({
-      reason: z.enum(["max_output_tokens", "content_filter"]).optional(),
-    })
-    .nullable(),
-  output: OutputItem,
-  output_text: z.string().nullable().optional(),
-  usage: ResponseUsage,
-  parallel_tool_calls: z.boolean().nullable().default(true),
-});
+)
+  .extend({
+    id: z.string(),
+    object: z.literal("response"),
+    status: z.enum(["completed", "failed", "in_progress", "incomplete"]),
+    created_at: z.number().int(),
+    error: ResponseError,
+    incomplete_details: z
+      .object({
+        reason: z.enum(["max_output_tokens", "content_filter"]).optional(),
+      })
+      .nullable(),
+    output: OutputItem,
+    output_text: z.string().nullable().optional(),
+    usage: ResponseUsage,
+    parallel_tool_calls: z.boolean().nullable().default(true),
+  })
+  .describe(
+    "The response in application/json type of /responses API. Docs: https://platform.openai.com/docs/api-reference/responses/create",
+  );
 
 const ResponseAudioDeltaEvent = z.looseObject({
   type: z.literal("response.audio.delta"),
@@ -1226,41 +1242,45 @@ const ResponseWebSearchCallSearchingEvent = z.looseObject({
 /**
  * POST /responses text/event-stream response
  */
-export const ResponseStreamEvent = z.discriminatedUnion("type", [
-  ResponseAudioDeltaEvent,
-  ResponseAudioDoneEvent,
-  ResponseAudioTranscriptDeltaEvent,
-  ResponseAudioTranscriptDoneEvent,
-  ResponseCodeInterpreterCallCodeDeltaEvent,
-  ResponseCodeInterpreterCallCodeDoneEvent,
-  ResponseCodeInterpreterCallCompletedEvent,
-  ResponseCodeInterpreterCallInProgressEvent,
-  ResponseCodeInterpreterCallInterpretingEvent,
-  ResponseCompletedEvent,
-  ResponseContentPartAddedEvent,
-  ResponseContentPartDoneEvent,
-  ResponseCreatedEvent,
-  ResponseErrorEvent,
-  ResponseFileSearchCallCompletedEvent,
-  ResponseFileSearchCallInProgressEvent,
-  ResponseFileSearchCallSearchingEvent,
-  ResponseFunctionCallArgumentsDeltaEvent,
-  ResponseFunctionCallArgumentsDoneEvent,
-  ResponseInProgressEvent,
-  ResponseFailedEvent,
-  ResponseIncompleteEvent,
-  ResponseOutputItemAddedEvent,
-  ResponseOutputItemDoneEvent,
-  ResponseReasoningSummaryPartAddedEvent,
-  ResponseReasoningSummaryPartDoneEvent,
-  ResponseReasoningSummaryTextDeltaEvent,
-  ResponseReasoningSummaryTextDoneEvent,
-  ResponseRefusalDeltaEvent,
-  ResponseRefusalDoneEvent,
-  ResponseTextAnnotationDeltaEvent,
-  ResponseTextDeltaEvent,
-  ResponseTextDoneEvent,
-  ResponseWebSearchCallCompletedEvent,
-  ResponseWebSearchCallInProgressEvent,
-  ResponseWebSearchCallSearchingEvent,
-]);
+export const ResponseStreamEvent = z
+  .discriminatedUnion("type", [
+    ResponseAudioDeltaEvent,
+    ResponseAudioDoneEvent,
+    ResponseAudioTranscriptDeltaEvent,
+    ResponseAudioTranscriptDoneEvent,
+    ResponseCodeInterpreterCallCodeDeltaEvent,
+    ResponseCodeInterpreterCallCodeDoneEvent,
+    ResponseCodeInterpreterCallCompletedEvent,
+    ResponseCodeInterpreterCallInProgressEvent,
+    ResponseCodeInterpreterCallInterpretingEvent,
+    ResponseCompletedEvent,
+    ResponseContentPartAddedEvent,
+    ResponseContentPartDoneEvent,
+    ResponseCreatedEvent,
+    ResponseErrorEvent,
+    ResponseFileSearchCallCompletedEvent,
+    ResponseFileSearchCallInProgressEvent,
+    ResponseFileSearchCallSearchingEvent,
+    ResponseFunctionCallArgumentsDeltaEvent,
+    ResponseFunctionCallArgumentsDoneEvent,
+    ResponseInProgressEvent,
+    ResponseFailedEvent,
+    ResponseIncompleteEvent,
+    ResponseOutputItemAddedEvent,
+    ResponseOutputItemDoneEvent,
+    ResponseReasoningSummaryPartAddedEvent,
+    ResponseReasoningSummaryPartDoneEvent,
+    ResponseReasoningSummaryTextDeltaEvent,
+    ResponseReasoningSummaryTextDoneEvent,
+    ResponseRefusalDeltaEvent,
+    ResponseRefusalDoneEvent,
+    ResponseTextAnnotationDeltaEvent,
+    ResponseTextDeltaEvent,
+    ResponseTextDoneEvent,
+    ResponseWebSearchCallCompletedEvent,
+    ResponseWebSearchCallInProgressEvent,
+    ResponseWebSearchCallSearchingEvent,
+  ])
+  .describe(
+    "The response in text/event-stream type of /responses API. Docs: https://platform.openai.com/docs/api-reference/responses/create",
+  );
