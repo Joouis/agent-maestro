@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
-import de from "zod/v4/locales/de.js";
+import { result } from "es-toolkit/compat";
+import { file } from "zod";
 
 const ReasoningEffort = z
   .enum(["low", "medium", "high"])
@@ -453,33 +454,6 @@ const ResponseUsage = z.object({
   total_tokens: z.number().int(),
 });
 
-// Item type enum
-const ItemTypeEnum = z.enum([
-  "message",
-  "file_search_call",
-  "function_call",
-  "function_call_output",
-  "computer_call",
-  "computer_call_output",
-  "web_search_call",
-  "reasoning",
-  "item_reference",
-  "image_generation_call",
-  "code_interpreter_call",
-  "local_shell_call",
-  "local_shell_call_output",
-  "mcp_list_tools",
-  "mcp_approval_request",
-  "mcp_approval_response",
-  "mcp_call",
-]);
-
-// Item resource schema (simplified - full discriminated union would be extensive)
-const ItemResource = z.object({
-  type: ItemTypeEnum,
-  id: z.string(),
-});
-
 // Updated Reasoning schema to match OpenAI.Reasoning
 const Reasoning = z.object({
   effort: ReasoningEffort.optional(),
@@ -489,13 +463,6 @@ const Reasoning = z.object({
     .nullable()
     .optional(),
 });
-
-// Response text format configuration
-const ResponseTextFormatConfigurationType = z.enum([
-  "text",
-  "json_schema",
-  "json_object",
-]);
 
 const TextResponseFormatJsonSchema = z.object({
   type: z.literal("json_schema"),
@@ -513,18 +480,6 @@ const TextResponseFormatConfiguration = z.union([
 
 // Tool choice options (enum)
 const ToolChoiceOptions = z.enum(["none", "auto", "required"]);
-
-// Enhanced tool system
-const ToolType = z.enum([
-  "function",
-  "file_search",
-  "code_interpreter",
-  "computer_use_preview",
-  "web_search_preview",
-  "image_gen",
-  "local_shell",
-  "mcp",
-]);
 
 // Function tool (enhanced version)
 const FunctionTool = FunctionObject.extend({
@@ -652,149 +607,6 @@ const Includable = z.enum([
   "computer_call_output.output.image_url",
 ]);
 
-// Basic content types for ItemParam
-const ItemContentType = z.enum([
-  "input_text",
-  "input_audio",
-  "input_image",
-  "input_file",
-  "output_text",
-  "output_audio",
-  "refusal",
-]);
-
-// Content schemas
-const ItemContentInputText = z.object({
-  type: z.literal("input_text"),
-  text: z.string(),
-});
-
-const ItemContentInputImage = z.object({
-  type: z.literal("input_image"),
-  image_url: z.object({
-    url: z.string(),
-    detail: z.enum(["auto", "low", "high"]).optional(),
-  }),
-});
-
-const ItemContentInputFile = z.object({
-  type: z.literal("input_file"),
-  file: z.object({
-    id: z.string(),
-    purpose: z.string().optional(),
-  }),
-});
-
-const ItemContentInputAudio = z.object({
-  type: z.literal("input_audio"),
-  input_audio: z.object({
-    data: z.string(),
-    format: z.enum(["wav", "mp3"]),
-  }),
-});
-
-const ItemContentOutputText = z.object({
-  type: z.literal("output_text"),
-  text: z.string(),
-  logprobs: z
-    .object({
-      tokens: z.array(ChatCompletionTokenLogprob),
-    })
-    .optional(),
-});
-
-const ItemContentOutputAudio = z.object({
-  type: z.literal("output_audio"),
-  output_audio: z.object({
-    id: z.string(),
-    data: z.string().optional(),
-    transcript: z.string().optional(),
-    expires_at: z.number().int().optional(),
-  }),
-});
-
-const ItemContentRefusal = z.object({
-  type: z.literal("refusal"),
-  refusal: z.string(),
-});
-
-// Union of all content types
-const ItemContent = z.union([
-  ItemContentInputText,
-  ItemContentInputImage,
-  ItemContentInputFile,
-  ItemContentInputAudio,
-  ItemContentOutputText,
-  ItemContentOutputAudio,
-  ItemContentRefusal,
-]);
-
-// Implicit user message
-const ImplicitUserMessage = z.object({
-  content: z.union([z.string(), z.array(ItemContent)]).optional(),
-  role: z.literal("user").optional(),
-});
-
-// Basic item parameter types
-const ItemType = z.enum([
-  "message",
-  "function_call",
-  "function_call_output",
-  "file_search_call",
-  "code_interpreter_call",
-  "computer_call",
-  "computer_call_output",
-  "web_search_call",
-  "image_gen_call",
-  "local_shell_call",
-  "local_shell_call_output",
-  "reasoning",
-  "item_reference",
-]);
-
-// Basic message item param
-const ResponsesMessageItemParam = z.object({
-  type: z.literal("message"),
-  role: ChatCompletionRoleExtended,
-  content: z.array(ItemContent).optional(),
-  name: z.string().optional(),
-});
-
-// Function call item param
-const FunctionToolCallItemParam = z.object({
-  type: z.literal("function_call"),
-  name: z.string(),
-  call_id: z.string(),
-  arguments: z.string(),
-});
-
-const FunctionToolCallOutputItemParam = z.object({
-  type: z.literal("function_call_output"),
-  call_id: z.string(),
-  output: z.string(),
-});
-
-// Reasoning item param
-const ReasoningItemParam = z.object({
-  type: z.literal("reasoning"),
-  content: z.string(),
-});
-
-// Item reference param
-const ItemReferenceItemParam = z.object({
-  type: z.literal("item_reference"),
-  id: z.string(),
-});
-
-// Simplified ItemParam union (basic implementation)
-const ItemParam = z.union([
-  ResponsesMessageItemParam,
-  FunctionToolCallItemParam,
-  FunctionToolCallOutputItemParam,
-  ReasoningItemParam,
-  ItemReferenceItemParam,
-]);
-
 const ToolChoiceTypes = z.object({
   // type: z.enum([
   //   "file_search",
@@ -826,228 +638,6 @@ const ResponseProperties = z.object({
     .default("disabled")
     .optional(),
 });
-
-// Response Stream Event schemas
-
-// Response stream event types
-const ResponseStreamEventType = z.union([
-  z.string(),
-  z.enum([
-    "response.audio.delta",
-    "response.audio.done",
-    "response.audio_transcript.delta",
-    "response.audio_transcript.done",
-    "response.code_interpreter_call_code.delta",
-    "response.code_interpreter_call_code.done",
-    "response.code_interpreter_call.completed",
-    "response.code_interpreter_call.in_progress",
-    "response.code_interpreter_call.interpreting",
-    "response.completed",
-    "response.content_part.added",
-    "response.content_part.done",
-    "response.created",
-    "error",
-    "response.file_search_call.completed",
-    "response.file_search_call.in_progress",
-    "response.file_search_call.searching",
-    "response.function_call_arguments.delta",
-    "response.function_call_arguments.done",
-    "response.in_progress",
-    "response.failed",
-    "response.incomplete",
-    "response.output_item.added",
-    "response.output_item.done",
-    "response.refusal.delta",
-    "response.refusal.done",
-    "response.output_text.annotation.added",
-    "response.output_text.delta",
-    "response.output_text.done",
-    "response.reasoning_summary_part.added",
-    "response.reasoning_summary_part.done",
-    "response.reasoning_summary_text.delta",
-    "response.reasoning_summary_text.done",
-    "response.web_search_call.completed",
-    "response.web_search_call.in_progress",
-    "response.web_search_call.searching",
-    "response.image_generation_call.completed",
-    "response.image_generation_call.generating",
-    "response.image_generation_call.in_progress",
-    "response.image_generation_call.partial_image",
-    "response.mcp_call.arguments_delta",
-    "response.mcp_call.arguments_done",
-    "response.mcp_call.completed",
-    "response.mcp_call.failed",
-    "response.mcp_call.in_progress",
-    "response.mcp_list_tools.completed",
-    "response.mcp_list_tools.failed",
-    "response.mcp_list_tools.in_progress",
-    "response.queued",
-    "response.reasoning.delta",
-    "response.reasoning.done",
-    "response.reasoning_summary.delta",
-    "response.reasoning_summary.done",
-  ]),
-]);
-
-// Base ResponseStreamEvent schema
-const BaseResponseStreamEvent = z.object({
-  type: ResponseStreamEventType,
-  sequence_number: z.number().int(),
-});
-
-// Individual event schemas
-const ResponseCreatedEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.created"),
-  response: Response,
-});
-
-const ResponseCompletedEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.completed"),
-  response: Response,
-});
-
-const ResponseInProgressEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.in_progress"),
-  response: Response,
-});
-
-const ResponseFailedEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.failed"),
-  response: Response,
-});
-
-const ResponseIncompleteEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.incomplete"),
-  response: Response,
-});
-
-const ResponseQueuedEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.queued"),
-  response: Response,
-});
-
-const ResponseErrorEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("error"),
-  code: z.string().nullable(),
-  message: z.string(),
-  param: z.string().nullable(),
-});
-
-const ResponseTextDeltaEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.output_text.delta"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  content_index: z.number().int(),
-  delta: z.string(),
-  obfuscation: z.string(),
-});
-
-const ResponseTextDoneEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.output_text.done"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  content_index: z.number().int(),
-});
-
-const ResponseOutputItemAddedEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.output_item.added"),
-  output_index: z.number().int(),
-  item: ItemResource,
-});
-
-const ResponseOutputItemDoneEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.output_item.done"),
-  output_index: z.number().int(),
-  item: ItemResource,
-});
-
-const ResponseContentPartAddedEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.content_part.added"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  content_index: z.number().int(),
-  part: ItemContent,
-});
-
-const ResponseContentPartDoneEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.content_part.done"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  content_index: z.number().int(),
-  part: ItemContent,
-});
-
-const ResponseRefusalDeltaEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.refusal.delta"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  content_index: z.number().int(),
-  delta: z.string(),
-  obfuscation: z.string(),
-});
-
-const ResponseRefusalDoneEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.refusal.done"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  content_index: z.number().int(),
-});
-
-const ResponseReasoningDeltaEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.reasoning.delta"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  content_index: z.number().int(),
-  delta: z.string(),
-  obfuscation: z.string(),
-});
-
-const ResponseReasoningDoneEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.reasoning.done"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  content_index: z.number().int(),
-});
-
-// Function call events
-const ResponseFunctionCallArgumentsDeltaEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.function_call_arguments.delta"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  call_id: z.string(),
-  delta: z.string(),
-  obfuscation: z.string(),
-});
-
-const ResponseFunctionCallArgumentsDoneEvent = BaseResponseStreamEvent.extend({
-  type: z.literal("response.function_call_arguments.done"),
-  item_id: z.string(),
-  output_index: z.number().int(),
-  call_id: z.string(),
-});
-
-// Main discriminated union
-const ResponseStreamEvent = z.discriminatedUnion("type", [
-  ResponseCreatedEvent,
-  ResponseCompletedEvent,
-  ResponseInProgressEvent,
-  ResponseFailedEvent,
-  ResponseIncompleteEvent,
-  ResponseQueuedEvent,
-  ResponseErrorEvent,
-  ResponseTextDeltaEvent,
-  ResponseTextDoneEvent,
-  ResponseOutputItemAddedEvent,
-  ResponseOutputItemDoneEvent,
-  ResponseContentPartAddedEvent,
-  ResponseContentPartDoneEvent,
-  ResponseRefusalDeltaEvent,
-  ResponseRefusalDoneEvent,
-  ResponseReasoningDeltaEvent,
-  ResponseReasoningDoneEvent,
-  ResponseFunctionCallArgumentsDeltaEvent,
-  ResponseFunctionCallArgumentsDoneEvent,
-]);
 
 const InputTextContent = z.object({
   type: z.literal("input_text"),
@@ -1082,8 +672,133 @@ const EasyInputMessage = z.object({
   type: z.literal("message").optional(),
 });
 
-// TODO: z.union([InputMessage, OutputMessage, FileSearchToolCall, ComputerToolCall, ComputerCallOutputItemParam, WebSearchToolCall, FunctionToolCall, FunctionCallOutputItemParam, ReasoningItem])
-const Item = z.record(z.string(), z.any());
+const InputMessage = z.looseObject({
+  type: z.literal("message"),
+  role: z.enum(["user", "system", "developer"]),
+  status: z.enum(["in_progress", "completed", "incomplete"]).optional(),
+  content: InputMessageContentList,
+});
+
+// TODO: Annotation
+const Annotation = z.record(z.string(), z.any());
+
+const OutputTextContent = z.looseObject({
+  type: z.literal("output_text"),
+  text: z.string(),
+  annotations: z.array(Annotation),
+});
+
+const RefusalContent = z.looseObject({
+  type: z.literal("refusal"),
+  refusal: z.string(),
+});
+
+const OutputContent = z.union([OutputTextContent, RefusalContent]);
+
+const OutputMessage = z.looseObject({
+  id: z.string(),
+  type: z.literal("message"),
+  role: z.literal("assistant"),
+  content: OutputContent,
+  status: z.enum(["in_progress", "completed", "incomplete"]),
+});
+
+const FileSearchToolCall = z.looseObject({
+  id: z.string(),
+  type: z.literal("file_search_call"),
+  status: z.enum(["in_progress", "completed", "failed"]),
+  queries: z.array(z.string()),
+  results: z
+    .array(
+      z.object({
+        file_id: z.string(),
+        text: z.string(),
+        filename: z.string().optional(),
+        attributes: z.any().optional(),
+        score: z.number(),
+      }),
+    )
+    .nullable()
+    .optional(),
+});
+
+// TODO: ComputerAction
+const ComputerAction = z.record(z.string(), z.any());
+
+const ComputerToolCallSafetyCheck = z.looseObject({
+  id: z.string(),
+  code: z.string(),
+  message: z.string(),
+});
+
+const ComputerToolCall = z.looseObject({
+  id: z.string(),
+  type: z.literal("computer_call"),
+  call_id: z.string().optional(),
+  action: ComputerAction,
+  pending_safety_checks: ComputerToolCallSafetyCheck,
+  status: z.enum(["in_progress", "completed", "failed"]),
+});
+
+const ComputerScreenshotImage = z.looseObject({
+  type: z.literal("computer_screenshot"),
+  image_url: z.string().optional(),
+  file_id: z.string().optional(),
+});
+
+const ComputerCallOutputItemParam = z.looseObject({
+  id: z.string().nullable().optional(),
+  call_id: z.string().min(1).max(64),
+  type: z.literal("computer_call_output"),
+  output: ComputerScreenshotImage,
+  // TODO: ComputerCallSafetyCheckParam
+  acknowledged_safety_checks: z.any().optional(),
+  status: z.enum(["in_progress", "completed", "failed"]).nullable().optional(),
+});
+
+const WebSearchToolCall = z.looseObject({
+  id: z.string(),
+  type: z.literal("web_search_call"),
+  status: z.enum(["in_progress", "completed", "failed"]),
+});
+
+const FunctionToolCall = z.looseObject({
+  id: z.string().optional(),
+  type: z.literal("function_call"),
+  call_id: z.string(),
+  name: z.string(),
+  arguments: z.string(),
+  status: z.enum(["in_progress", "completed", "failed"]).optional(),
+});
+
+const FunctionCallOutputItemParam = z.looseObject({
+  id: z.string().nullable().optional(),
+  call_id: z.string().min(1).max(64),
+  type: z.literal("function_call_output"),
+  output: z.string().max(10485760),
+  status: z.enum(["in_progress", "completed", "failed"]).nullable().optional(),
+});
+
+const ReasoningItem = z.looseObject({
+  id: z.string(),
+  type: z.literal("reasoning"),
+  summary: z.array(
+    z.object({ type: z.literal("summary_text"), text: z.string() }),
+  ),
+  status: z.enum(["in_progress", "completed", "incomplete"]).optional(),
+});
+
+const Item = z.discriminatedUnion("type", [
+  InputMessage,
+  OutputMessage,
+  FileSearchToolCall,
+  ComputerToolCall,
+  ComputerCallOutputItemParam,
+  WebSearchToolCall,
+  FunctionToolCall,
+  FunctionCallOutputItemParam,
+  ReasoningItem,
+]);
 
 const ItemReferenceParam = z.object({
   type: z.literal("item_reference").nullable().optional(),
@@ -1133,8 +848,293 @@ export const CreateResponseResponse = ModelResponseProperties.extend(
   parallel_tool_calls: z.boolean().nullable().default(true),
 });
 
+const ResponseAudioDeltaEvent = z.looseObject({
+  type: z.literal("response.audio.delta"),
+  delta: z.string(), // base64 format
+  response_id: z.string().optional(),
+});
+
+const ResponseAudioDoneEvent = z.looseObject({
+  type: z.literal("response.audio.done"),
+  response_id: z.string(),
+});
+
+const ResponseAudioTranscriptDeltaEvent = z.looseObject({
+  type: z.literal("response.audio.transcript.delta"),
+  delta: z.string(),
+  response_id: z.string().optional(),
+});
+
+const ResponseAudioTranscriptDoneEvent = z.looseObject({
+  type: z.literal("response.audio.transcript.done"),
+  response_id: z.string(),
+});
+
+const ResponseCodeInterpreterCallCodeDeltaEvent = z.looseObject({
+  type: z.literal("response.code_interpreter_call.code.delta"),
+  output_index: z.number().int(),
+  delta: z.string(),
+  response_id: z.string().optional(),
+});
+
+const ResponseCodeInterpreterCallCodeDoneEvent = z.looseObject({
+  type: z.literal("response.code_interpreter_call.code.done"),
+  output_index: z.number().int(),
+  code: z.string(),
+  response_id: z.string(),
+});
+
+const ResponseCodeInterpreterCallCompletedEvent = z.looseObject({
+  type: z.literal("response.code_interpreter_call.completed"),
+  output_index: z.number().int(),
+  // TODO: CodeInterpreterToolCall
+  code_interpreter_call: z.record(z.string(), z.any()),
+  response_id: z.string(),
+});
+
+const ResponseCodeInterpreterCallInProgressEvent = z.looseObject({
+  type: z.literal("response.code_interpreter_call.in_progress"),
+  output_index: z.number().int(),
+  // TODO: CodeInterpreterToolCall
+  code_interpreter_call: z.record(z.string(), z.any()),
+  response_id: z.string().optional(),
+});
+
+const ResponseCodeInterpreterCallInterpretingEvent = z.looseObject({
+  type: z.literal("response.code_interpreter_call.interpreting"),
+  output_index: z.number().int(),
+  // TODO: CodeInterpreterToolCall
+  code_interpreter_call: z.record(z.string(), z.any()),
+  response_id: z.string().optional(),
+});
+
+const ResponseFileSearchCallCompletedEvent = z.looseObject({
+  type: z.literal("response.file_search_call.completed"),
+  output_index: z.number().int(),
+  item_id: z.string(),
+});
+
+const ResponseCompletedEvent = z.looseObject({
+  type: z.literal("response.completed"),
+  response: CreateResponseResponse,
+});
+
+const ResponseContentPartAddedEvent = z.looseObject({
+  type: z.literal("response.content_part.added"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  content_index: z.number().int(),
+  part: OutputContent,
+});
+
+const ResponseContentPartDoneEvent = z.looseObject({
+  type: z.literal("response.content_part.done"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  content_index: z.number().int(),
+  part: OutputContent,
+});
+
+const ResponseCreatedEvent = z.looseObject({
+  type: z.literal("response.created"),
+  response: CreateResponseResponse,
+});
+
+const ResponseErrorEvent = z.looseObject({
+  type: z.literal("error"),
+  code: z.string().nullable(),
+  message: z.string(),
+  param: z.string().nullable(),
+});
+
+const ResponseFileSearchCallInProgressEvent = z.looseObject({
+  type: z.literal("response.file_search_call.in_progress"),
+  output_index: z.number().int(),
+  item_id: z.string(),
+});
+
+const ResponseFileSearchCallSearchingEvent = z.looseObject({
+  type: z.literal("response.file_search_call.searching"),
+  output_index: z.number().int(),
+  item_id: z.string(),
+});
+
+const ResponseFunctionCallArgumentsDeltaEvent = z.looseObject({
+  type: z.literal("response.function_call_arguments.delta"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  delta: z.string(),
+});
+
+const ResponseFunctionCallArgumentsDoneEvent = z.looseObject({
+  type: z.literal("response.function_call_arguments.done"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  arguments: z.string(),
+});
+
+const ResponseInProgressEvent = z.looseObject({
+  type: z.literal("response.in_progress"),
+  response: CreateResponseResponse,
+});
+
+const ResponseFailedEvent = z.looseObject({
+  type: z.literal("response.failed"),
+  response: CreateResponseResponse,
+});
+
+const ResponseIncompleteEvent = z.looseObject({
+  type: z.literal("response.incomplete"),
+  response: CreateResponseResponse,
+});
+
+const ResponseOutputItemAddedEvent = z.looseObject({
+  type: z.literal("response.output_item.added"),
+  output_index: z.number().int(),
+  item: OutputItem,
+});
+
+const ResponseOutputItemDoneEvent = z.looseObject({
+  type: z.literal("response.output_item.done"),
+  output_index: z.number().int(),
+  item: OutputItem,
+});
+
+const ResponseReasoningSummaryPartAddedEvent = z.looseObject({
+  type: z.literal("response.reasoning_summary_part.added"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  summary_index: z.number().int(),
+  part: z.object({
+    type: z.literal("summary_text"),
+    text: z.string(),
+  }),
+});
+
+const ResponseReasoningSummaryPartDoneEvent = z.looseObject({
+  type: z.literal("response.reasoning_summary_part.done"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  summary_index: z.number().int(),
+  part: z.object({
+    type: z.literal("summary_text"),
+    text: z.string(),
+  }),
+});
+
+const ResponseReasoningSummaryTextDeltaEvent = z.looseObject({
+  type: z.literal("response.reasoning_summary_text.delta"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  summary_index: z.number().int(),
+  delta: z.string(),
+});
+
+const ResponseReasoningSummaryTextDoneEvent = z.looseObject({
+  type: z.literal("response.reasoning_summary_text.done"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  summary_index: z.number().int(),
+  text: z.string(),
+});
+
+const ResponseRefusalDeltaEvent = z.looseObject({
+  type: z.literal("response.refusal.delta"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  content_index: z.number().int(),
+  delta: z.string(),
+});
+
+const ResponseRefusalDoneEvent = z.looseObject({
+  type: z.literal("response.refusal.done"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  content_index: z.number().int(),
+  refusal: z.string(),
+});
+
+const ResponseTextAnnotationDeltaEvent = z.looseObject({
+  type: z.literal("response.output_text.annotation.added"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  content_index: z.number().int(),
+  annotation_index: z.number().int(),
+  annotation: Annotation,
+});
+
+const ResponseTextDeltaEvent = z.looseObject({
+  type: z.literal("response.output_text.delta"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  content_index: z.number().int(),
+  delta: z.string(),
+});
+
+const ResponseTextDoneEvent = z.looseObject({
+  type: z.literal("response.output_text.done"),
+  item_id: z.string(),
+  output_index: z.number().int(),
+  content_index: z.number().int(),
+  text: z.string(),
+});
+
+const ResponseWebSearchCallCompletedEvent = z.looseObject({
+  type: z.literal("response.web_search_call.completed"),
+  output_index: z.number().int(),
+  item_id: z.string(),
+});
+
+const ResponseWebSearchCallInProgressEvent = z.looseObject({
+  type: z.literal("response.web_search_call.in_progress"),
+  output_index: z.number().int(),
+  item_id: z.string(),
+});
+
+const ResponseWebSearchCallSearchingEvent = z.looseObject({
+  type: z.literal("response.web_search_call.searching"),
+  output_index: z.number().int(),
+  item_id: z.string(),
+});
+
 /**
  * POST /responses text/event-stream response
  */
-// TODO
-// export const ResponseStreamEvent =
+export const ResponseStreamEvent = z.discriminatedUnion("type", [
+  ResponseAudioDeltaEvent,
+  ResponseAudioDoneEvent,
+  ResponseAudioTranscriptDeltaEvent,
+  ResponseAudioTranscriptDoneEvent,
+  ResponseCodeInterpreterCallCodeDeltaEvent,
+  ResponseCodeInterpreterCallCodeDoneEvent,
+  ResponseCodeInterpreterCallCompletedEvent,
+  ResponseCodeInterpreterCallInProgressEvent,
+  ResponseCodeInterpreterCallInterpretingEvent,
+  ResponseCompletedEvent,
+  ResponseContentPartAddedEvent,
+  ResponseContentPartDoneEvent,
+  ResponseCreatedEvent,
+  ResponseErrorEvent,
+  ResponseFileSearchCallCompletedEvent,
+  ResponseFileSearchCallInProgressEvent,
+  ResponseFileSearchCallSearchingEvent,
+  ResponseFunctionCallArgumentsDeltaEvent,
+  ResponseFunctionCallArgumentsDoneEvent,
+  ResponseInProgressEvent,
+  ResponseFailedEvent,
+  ResponseIncompleteEvent,
+  ResponseOutputItemAddedEvent,
+  ResponseOutputItemDoneEvent,
+  ResponseReasoningSummaryPartAddedEvent,
+  ResponseReasoningSummaryPartDoneEvent,
+  ResponseReasoningSummaryTextDeltaEvent,
+  ResponseReasoningSummaryTextDoneEvent,
+  ResponseRefusalDeltaEvent,
+  ResponseRefusalDoneEvent,
+  ResponseTextAnnotationDeltaEvent,
+  ResponseTextDeltaEvent,
+  ResponseTextDoneEvent,
+  ResponseWebSearchCallCompletedEvent,
+  ResponseWebSearchCallInProgressEvent,
+  ResponseWebSearchCallSearchingEvent,
+]);
