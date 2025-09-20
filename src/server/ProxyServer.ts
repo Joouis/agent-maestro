@@ -13,6 +13,7 @@ import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
+import { registerOpenaiRoutes } from "./routes/openaiRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 
@@ -44,6 +45,9 @@ export class ProxyServer {
     // Anthropic-compatible messages endpoint
     this.app.route("/api/anthropic", this.getApiAnthropicRoutes());
 
+    // OpenAI-compatible messages endpoint
+    // this.app.route("/api/openai", this.getApiOpenAiRoutes());
+
     // GET /openapi.json - OpenAPI specification
     this.app.doc("/openapi.json", this.getOpenApiDocTpl());
   }
@@ -66,6 +70,12 @@ export class ProxyServer {
     registerAnthropicRoutes(routes);
     return routes;
   }
+
+  // private getApiOpenAiRoutes(): OpenAPIHono {
+  //   const routes = new OpenAPIHono();
+  //   registerOpenaiRoutes(routes);
+  //   return routes;
+  // }
 
   private getOpenApiDocTpl() {
     return {
