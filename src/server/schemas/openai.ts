@@ -941,22 +941,21 @@ const ItemReferenceParam = z.object({
 /**
  * POST /responses request body
  */
-export const CreateResponse = ModelResponseProperties.extend(ResponseProperties)
-  .extend({
-    input: z
-      .union([
-        z.string(),
-        z.array(z.union([EasyInputMessage, Item, ItemReferenceParam])),
-      ])
-      .optional(),
-    include: z.array(Includable).nullable().optional(),
-    parallel_tool_calls: z.boolean().nullable().default(true).optional(),
-    store: z.boolean().nullable().default(true).optional(),
-    stream: z.boolean().nullable().default(false).optional(),
-  })
-  .describe(
-    "The request body to create a model response for /responses API. Docs: https://platform.openai.com/docs/api-reference/responses/create",
-  );
+export const CreateResponse = ModelResponseProperties.extend({
+  ...ResponseProperties,
+  input: z
+    .union([
+      z.string(),
+      z.array(z.union([EasyInputMessage, Item, ItemReferenceParam])),
+    ])
+    .optional(),
+  include: z.array(Includable).nullable().optional(),
+  parallel_tool_calls: z.boolean().nullable().default(true).optional(),
+  store: z.boolean().nullable().default(true).optional(),
+  stream: z.boolean().nullable().default(false).optional(),
+}).describe(
+  "The request body to create a model response for /responses API. Docs: https://platform.openai.com/docs/api-reference/responses/create",
+);
 
 const OutputItem = z.discriminatedUnion("type", [
   OutputMessage,
@@ -970,28 +969,25 @@ const OutputItem = z.discriminatedUnion("type", [
 /**
  * POST /responses application/json response
  */
-export const CreateResponseResponse = ModelResponseProperties.extend(
-  ResponseProperties,
-)
-  .extend({
-    id: z.string(),
-    object: z.literal("response"),
-    status: z.enum(["completed", "failed", "in_progress", "incomplete"]),
-    created_at: z.number().int(),
-    error: ResponseError,
-    incomplete_details: z
-      .object({
-        reason: z.enum(["max_output_tokens", "content_filter"]).optional(),
-      })
-      .nullable(),
-    output: OutputItem,
-    output_text: z.string().nullable().optional(),
-    usage: ResponseUsage,
-    parallel_tool_calls: z.boolean().nullable().default(true),
-  })
-  .describe(
-    "The response in application/json type of /responses API. Docs: https://platform.openai.com/docs/api-reference/responses/create",
-  );
+export const CreateResponseResponse = ModelResponseProperties.extend({
+  ...ResponseProperties,
+  id: z.string(),
+  object: z.literal("response"),
+  status: z.enum(["completed", "failed", "in_progress", "incomplete"]),
+  created_at: z.number().int(),
+  error: ResponseError,
+  incomplete_details: z
+    .object({
+      reason: z.enum(["max_output_tokens", "content_filter"]).optional(),
+    })
+    .nullable(),
+  output: OutputItem,
+  output_text: z.string().nullable().optional(),
+  usage: ResponseUsage,
+  parallel_tool_calls: z.boolean().nullable().default(true),
+}).describe(
+  "The response in application/json type of /responses API. Docs: https://platform.openai.com/docs/api-reference/responses/create",
+);
 
 const ResponseAudioDeltaEvent = z.looseObject({
   type: z.literal("response.audio.delta"),
