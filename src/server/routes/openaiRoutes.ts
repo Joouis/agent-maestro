@@ -197,7 +197,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
 
         // Build OpenAI-compatible response
         const openaiResponse: OpenAI.ChatCompletion = {
-          id: `chatcmpl-${Date.now()}`,
+          id: `AM-${Date.now()}`,
           object: "chat.completion",
           created: Math.floor(Date.now() / 1000),
           model: modelId,
@@ -231,7 +231,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
       // 6. If streaming, pipe chunks as SSE
       return streamSSE(c, async (stream) => {
         try {
-          const chatCompletionId = `chatcmpl-${Date.now()}`;
+          const chatCompletionId = `AM-${Date.now()}`;
           const created = Math.floor(Date.now() / 1000);
 
           // Send initial chunk with role
