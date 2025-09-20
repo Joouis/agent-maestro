@@ -1,6 +1,4 @@
 import { z } from "@hono/zod-openapi";
-import { result } from "es-toolkit/compat";
-import { file } from "zod";
 
 const ReasoningEffort = z
   .enum(["low", "medium", "high"])
@@ -522,6 +520,34 @@ const CodeInterpreterTool = z.looseObject({
     .optional(),
 });
 
+const CodeInterpreterTextOutput = z.object({
+  type: z.literal("logs"),
+  logs: z.string(),
+});
+
+const CodeInterpreterFileOutput = z.object({
+  type: z.literal("files"),
+  files: z.array(
+    z.object({
+      mime_type: z.string(),
+      file_id: z.string(),
+    }),
+  ),
+});
+
+const CodeInterpreterToolOutput = z.union([
+  CodeInterpreterTextOutput,
+  CodeInterpreterFileOutput,
+]);
+
+const CodeInterpreterToolCall = z.looseObject({
+  id: z.string(),
+  type: z.literal("code_interpreter_call"),
+  code: z.string(),
+  status: z.enum(["in_progress", "interpreting", "completed"]),
+  results: z.array(CodeInterpreterToolOutput),
+});
+
 const ApproximateLocation = z.object({
   type: z.literal("approximate"),
   country: z.string().optional(),
@@ -679,8 +705,31 @@ const InputMessage = z.looseObject({
   content: InputMessageContentList,
 });
 
-// TODO: Annotation
-const Annotation = z.record(z.string(), z.any());
+const FileCitationBody = z.object({
+  type: z.literal("file_citation"),
+  file_id: z.string(),
+  index: z.number().int(),
+});
+
+const UrlCitationBody = z.object({
+  type: z.literal("url_citation"),
+  url: z.string(),
+  start_index: z.number().int(),
+  end_index: z.number().int(),
+  title: z.string(),
+});
+
+const FilePath = z.object({
+  type: z.literal("file_path"),
+  file_id: z.string(),
+  index: z.number().int(),
+});
+
+const Annotation = z.discriminatedUnion("type", [
+  FileCitationBody,
+  UrlCitationBody,
+  FilePath,
+]);
 
 const OutputTextContent = z.looseObject({
   type: z.literal("output_text"),
@@ -736,7 +785,7 @@ const ComputerToolCall = z.looseObject({
   type: z.literal("computer_call"),
   call_id: z.string().optional(),
   action: ComputerAction,
-  pending_safety_checks: ComputerToolCallSafetyCheck,
+  pending_safety_checks: z.array(ComputerToolCallSafetyCheck),
   status: z.enum(["in_progress", "completed", "failed"]),
 });
 
@@ -823,8 +872,14 @@ export const CreateResponse = ModelResponseProperties.extend(
   stream: z.boolean().nullable().default(false).optional(),
 });
 
-// TODO: z.union([OutputMessage, FileSearchToolCall, FunctionToolCall, WebSearchToolCall,ComputerToolCall, ReasoningItem]);
-const OutputItem = z.record(z.string(), z.any());
+const OutputItem = z.discriminatedUnion("type", [
+  OutputMessage,
+  FileSearchToolCall,
+  FunctionToolCall,
+  WebSearchToolCall,
+  ComputerToolCall,
+  ReasoningItem,
+]);
 
 /**
  * POST /responses application/json response
@@ -887,24 +942,21 @@ const ResponseCodeInterpreterCallCodeDoneEvent = z.looseObject({
 const ResponseCodeInterpreterCallCompletedEvent = z.looseObject({
   type: z.literal("response.code_interpreter_call.completed"),
   output_index: z.number().int(),
-  // TODO: CodeInterpreterToolCall
-  code_interpreter_call: z.record(z.string(), z.any()),
+  code_interpreter_call: CodeInterpreterToolCall,
   response_id: z.string(),
 });
 
 const ResponseCodeInterpreterCallInProgressEvent = z.looseObject({
   type: z.literal("response.code_interpreter_call.in_progress"),
   output_index: z.number().int(),
-  // TODO: CodeInterpreterToolCall
-  code_interpreter_call: z.record(z.string(), z.any()),
+  code_interpreter_call: CodeInterpreterToolCall,
   response_id: z.string().optional(),
 });
 
 const ResponseCodeInterpreterCallInterpretingEvent = z.looseObject({
   type: z.literal("response.code_interpreter_call.interpreting"),
   output_index: z.number().int(),
-  // TODO: CodeInterpreterToolCall
-  code_interpreter_call: z.record(z.string(), z.any()),
+  code_interpreter_call: CodeInterpreterToolCall,
   response_id: z.string().optional(),
 });
 
