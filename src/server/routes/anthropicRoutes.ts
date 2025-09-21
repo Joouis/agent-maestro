@@ -324,6 +324,8 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                   delta: { type: "text_delta", text: chunk.value },
                 });
               } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+                // TODO: accumulatedText does not include tool calls yet
+
                 // Every tool call is a new content block
                 if (lastBlock) {
                   await writeSSE({
