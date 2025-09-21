@@ -12,7 +12,10 @@ import {
   CreateChatCompletionResponse,
   CreateChatCompletionStreamResponse,
 } from "../schemas/openai";
-import { convertOpenAIMessagesToVSCode } from "../utils/openai";
+import {
+  convertOpenAIChatCompletionToolToVSCode,
+  convertOpenAIMessagesToVSCode,
+} from "../utils/openai";
 
 // OpenAPI route definition for /chat/completions
 const chatCompletionsRoute = createRoute({
@@ -88,6 +91,8 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
         model: modelId,
         messages,
         stream = false,
+        tools,
+        tool_choice,
         ...otherParams
       } = requestBody;
 
@@ -116,15 +121,14 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
         justification:
           "OpenAI-compatible /chat/completions endpoint using VS Code Language Model API",
-        modelOptions: {
-          temperature: otherParams.temperature,
-          // Map max_completion_tokens or max_tokens to VSCode options
-          ...(otherParams.max_completion_tokens && {
-            maxTokens: otherParams.max_completion_tokens,
-          }),
-          ...(otherParams.max_tokens && { maxTokens: otherParams.max_tokens }),
-        },
-        // TODO: Convert tools and tool_choice when needed
+        modelOptions: otherParams,
+        tools: tools
+          ? tools.map(convertOpenAIChatCompletionToolToVSCode)
+          : undefined,
+        toolMode:
+          tool_choice === "required"
+            ? vscode.LanguageModelChatToolMode.Required
+            : vscode.LanguageModelChatToolMode.Auto,
       };
 
       // 4. Send request to VSCode LM API

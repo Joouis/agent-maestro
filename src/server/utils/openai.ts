@@ -108,3 +108,23 @@ export const convertOpenAIMessagesToVSCode = (
     }
   });
 };
+
+export const convertOpenAIChatCompletionToolToVSCode = (
+  tool: OpenAI.ChatCompletionTool,
+): vscode.LanguageModelChatTool => {
+  if (tool.type === "function") {
+    // FunctionDefinition
+    return {
+      name: tool.function.name,
+      description: tool.function.description || "",
+      inputSchema: tool.function.parameters,
+    };
+  }
+
+  // CustomToolDefinition, not sure if the custom.format could work as inputSchema
+  return {
+    name: tool.custom.name,
+    description: tool.custom.description || "",
+    inputSchema: tool.custom.format,
+  };
+};
