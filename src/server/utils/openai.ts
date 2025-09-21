@@ -43,7 +43,8 @@ export const convertOpenAIMessagesToVSCode = (
         return new vscode.LanguageModelChatMessage(
           msg.role === "tool"
             ? vscode.LanguageModelChatMessageRole.Assistant
-            : vscode.LanguageModelChatMessageRole.System,
+            : // : vscode.LanguageModelChatMessageRole.System,
+              vscode.LanguageModelChatMessageRole.User,
           content,
         );
 
