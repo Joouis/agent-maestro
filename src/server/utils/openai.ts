@@ -1,0 +1,110 @@
+import OpenAI from "openai";
+import * as vscode from "vscode";
+
+const convertOpenAIChatCompletionContentPartToUserContent = (
+  part: OpenAI.ChatCompletionContentPart,
+): vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart => {
+  if (part.type === "text") {
+    return new vscode.LanguageModelTextPart(part.text);
+  }
+
+  /**
+   * Not supported content part types in user messages:
+   * - ChatCompletionContentPartImage
+   * - ChatCompletionContentPartInputAudio
+   * - ChatCompletionContentPart.File
+   *
+   * Fallback: serialize to JSON string
+   */
+  return new vscode.LanguageModelTextPart(JSON.stringify(part));
+};
+
+/**
+ * Convert OpenAI messages to VSCode Language Model messages
+ */
+export const convertOpenAIMessagesToVSCode = (
+  messages: OpenAI.ChatCompletionMessageParam[],
+): vscode.LanguageModelChatMessage[] => {
+  return messages.map((msg) => {
+    // Handle different content formats
+    let content;
+
+    // Map roles to VSCode LM format
+    switch (msg.role) {
+      case "developer": // ChatCompletionDeveloperMessageParam
+      case "system": // ChatCompletionSystemMessageParam
+      case "tool": // ChatCompletionToolMessageParam
+        content =
+          typeof msg.content === "string"
+            ? msg.content
+            : msg.content.map((m) => ({
+                value: m.text,
+              }));
+        return new vscode.LanguageModelChatMessage(
+          msg.role === "tool"
+            ? vscode.LanguageModelChatMessageRole.Assistant
+            : vscode.LanguageModelChatMessageRole.System,
+          content,
+        );
+
+      case "user": // ChatCompletionUserMessageParam
+        if (typeof msg.content === "string") {
+          return vscode.LanguageModelChatMessage.User(msg.content);
+        }
+        return vscode.LanguageModelChatMessage.User(
+          msg.content.map(convertOpenAIChatCompletionContentPartToUserContent),
+        );
+
+      case "assistant": // ChatCompletionAssistantMessageParam
+        content = [];
+        if (typeof msg.content === "string") {
+          content.push(new vscode.LanguageModelTextPart(msg.content));
+        } else if (Array.isArray(msg.content)) {
+          msg.content.forEach((c) => {
+            if (c.type === "text") {
+              content.push(new vscode.LanguageModelTextPart(c.text));
+            } else {
+              // ChatCompletionContentPartRefusal
+              content.push(new vscode.LanguageModelTextPart(JSON.stringify(c)));
+            }
+          });
+        }
+
+        // ChatCompletionMessageCustomToolCall
+        msg.tool_calls?.forEach((toolCall) => {
+          let input = {};
+          if (toolCall.type === "function") {
+            // ChatCompletionMessageFunctionToolCall
+            try {
+              input = JSON.parse(toolCall.function.arguments);
+            } catch {}
+            content.push(
+              new vscode.LanguageModelToolCallPart(
+                toolCall.id,
+                toolCall.function.name,
+                input,
+              ),
+            );
+          } else if (toolCall.type === "custom") {
+            // ChatCompletionMessageCustomToolCall
+            try {
+              input = JSON.parse(toolCall.custom.input);
+            } catch {}
+            content.push(
+              new vscode.LanguageModelToolCallPart(
+                toolCall.id,
+                toolCall.custom.name,
+                input,
+              ),
+            );
+          }
+        });
+        return vscode.LanguageModelChatMessage.Assistant(content);
+
+      default: // Fallback for unknown roles
+        return vscode.LanguageModelChatMessage.Assistant(
+          "Unknown role message: " + JSON.stringify(msg),
+        );
+    }
+  });
+};

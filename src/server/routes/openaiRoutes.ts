@@ -12,41 +12,7 @@ import {
   CreateChatCompletionResponse,
   CreateChatCompletionStreamResponse,
 } from "../schemas/openai";
-
-/**
- * Convert OpenAI messages to VSCode Language Model messages
- */
-const convertOpenAIMessagesToVSCode = (
-  messages: OpenAI.ChatCompletionMessageParam[],
-): vscode.LanguageModelChatMessage[] => {
-  return messages.map((msg) => {
-    // Handle different content formats
-    let content: string;
-    if (typeof msg.content === "string") {
-      content = msg.content || "";
-    } else if (Array.isArray(msg.content)) {
-      // Extract text parts - TODO: handle images and other types
-      content = msg.content
-        .filter((part: any) => part.type === "text")
-        .map((part: any) => part.text)
-        .join("\n");
-    } else {
-      content = "";
-    }
-
-    // Map roles to VSCode LM format
-    switch (msg.role) {
-      case "system":
-        return vscode.LanguageModelChatMessage.User(content);
-      case "user":
-        return vscode.LanguageModelChatMessage.User(content);
-      case "assistant":
-        return vscode.LanguageModelChatMessage.Assistant(content);
-      default:
-        return vscode.LanguageModelChatMessage.User(content);
-    }
-  });
-};
+import { convertOpenAIMessagesToVSCode } from "../utils/openai";
 
 // OpenAPI route definition for /chat/completions
 const chatCompletionsRoute = createRoute({
