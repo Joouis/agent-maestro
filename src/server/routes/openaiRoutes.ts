@@ -7,6 +7,7 @@ import * as vscode from "vscode";
 import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import {
+  CommonResponseError,
   CreateChatCompletionRequest,
   CreateChatCompletionResponse,
   CreateChatCompletionStreamResponse,
@@ -80,13 +81,7 @@ const chatCompletionsRoute = createRoute({
     400: {
       content: {
         "application/json": {
-          schema: z.object({
-            error: z.object({
-              message: z.string(),
-              type: z.string(),
-              code: z.string().optional(),
-            }),
-          }),
+          schema: CommonResponseError,
         },
       },
       description: "Bad request - invalid parameters",
@@ -94,13 +89,7 @@ const chatCompletionsRoute = createRoute({
     404: {
       content: {
         "application/json": {
-          schema: z.object({
-            error: z.object({
-              message: z.string(),
-              type: z.string(),
-              code: z.string().optional(),
-            }),
-          }),
+          schema: CommonResponseError,
         },
       },
       description: "Model not found",
@@ -108,13 +97,7 @@ const chatCompletionsRoute = createRoute({
     500: {
       content: {
         "application/json": {
-          schema: z.object({
-            error: z.object({
-              message: z.string(),
-              type: z.string(),
-              code: z.string().optional(),
-            }),
-          }),
+          schema: CommonResponseError,
         },
       },
       description: "Internal server error",
@@ -229,39 +212,15 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
       }
 
       // 6. If streaming, pipe chunks as SSE
-      return streamSSE(c, async (stream) => {
-        try {
-          const chatCompletionId = `AM-${Date.now()}`;
-          const created = Math.floor(Date.now() / 1000);
+      return streamSSE(
+        c,
+        async (stream) => {
+          try {
+            const chatCompletionId = `AM-${Date.now()}`;
+            const created = Math.floor(Date.now() / 1000);
 
-          // Send initial chunk with role
-          const initialChunk: OpenAI.ChatCompletionChunk = {
-            id: chatCompletionId,
-            object: "chat.completion.chunk",
-            created,
-            model: modelId,
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  role: "assistant",
-                  content: "",
-                },
-                finish_reason: null,
-                logprobs: null,
-              },
-            ],
-          };
-          await stream.writeSSE({
-            data: JSON.stringify(initialChunk),
-          });
-
-          // Process streaming response
-          let fullText = "";
-          for await (const fragment of response.text) {
-            fullText += fragment;
-
-            const contentChunk: OpenAI.ChatCompletionChunk = {
+            // Send initial chunk with role
+            const initialChunk: OpenAI.ChatCompletionChunk = {
               id: chatCompletionId,
               object: "chat.completion.chunk",
               created,
@@ -270,7 +229,8 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
                 {
                   index: 0,
                   delta: {
-                    content: fragment,
+                    role: "assistant",
+                    content: "",
                   },
                   finish_reason: null,
                   logprobs: null,
@@ -278,52 +238,81 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
               ],
             };
             await stream.writeSSE({
-              data: JSON.stringify(contentChunk),
+              data: JSON.stringify(initialChunk),
             });
-          }
 
-          // Count output tokens for final chunk if usage is requested
-          let usage: OpenAI.CompletionUsage | undefined;
-          if (requestBody.stream_options?.include_usage) {
-            const outputTokenCount = await client.countTokens(fullText);
-            usage = {
-              prompt_tokens: inputTokenCount,
-              completion_tokens: outputTokenCount,
-              total_tokens: inputTokenCount + outputTokenCount,
+            // Process streaming response
+            let fullText = "";
+            for await (const fragment of response.text) {
+              fullText += fragment;
+
+              const contentChunk: OpenAI.ChatCompletionChunk = {
+                id: chatCompletionId,
+                object: "chat.completion.chunk",
+                created,
+                model: modelId,
+                choices: [
+                  {
+                    index: 0,
+                    delta: {
+                      content: fragment,
+                    },
+                    finish_reason: null,
+                    logprobs: null,
+                  },
+                ],
+              };
+              await stream.writeSSE({
+                data: JSON.stringify(contentChunk),
+              });
+            }
+
+            // Count output tokens for final chunk if usage is requested
+            let usage: OpenAI.CompletionUsage | undefined;
+            if (requestBody.stream_options?.include_usage) {
+              const outputTokenCount = await client.countTokens(fullText);
+              usage = {
+                prompt_tokens: inputTokenCount,
+                completion_tokens: outputTokenCount,
+                total_tokens: inputTokenCount + outputTokenCount,
+              };
+            }
+
+            // Send final chunk with finish_reason
+            const finalChunk: OpenAI.ChatCompletionChunk = {
+              id: chatCompletionId,
+              object: "chat.completion.chunk",
+              created,
+              model: modelId,
+              choices: [
+                {
+                  index: 0,
+                  delta: {},
+                  finish_reason: "stop",
+                  logprobs: null,
+                },
+              ],
+              ...(usage && { usage }),
             };
+            await stream.writeSSE({
+              data: JSON.stringify(finalChunk),
+            });
+
+            // Send [DONE] signal
+            await stream.writeSSE({
+              data: "[DONE]",
+            });
+
+            logger.info("OpenAI streaming response completed");
+          } catch (streamError) {
+            logger.error("Error in OpenAI streaming:", streamError);
+            throw streamError;
           }
-
-          // Send final chunk with finish_reason
-          const finalChunk: OpenAI.ChatCompletionChunk = {
-            id: chatCompletionId,
-            object: "chat.completion.chunk",
-            created,
-            model: modelId,
-            choices: [
-              {
-                index: 0,
-                delta: {},
-                finish_reason: "stop",
-                logprobs: null,
-              },
-            ],
-            ...(usage && { usage }),
-          };
-          await stream.writeSSE({
-            data: JSON.stringify(finalChunk),
-          });
-
-          // Send [DONE] signal
-          await stream.writeSSE({
-            data: "[DONE]",
-          });
-
-          logger.info("OpenAI streaming response completed");
-        } catch (streamError) {
-          logger.error("Error in OpenAI streaming:", streamError);
-          throw streamError;
-        }
-      });
+        },
+        async (error, _stream) => {
+          logger.error("Stream error occurred:", error);
+        },
+      );
     } catch (error) {
       return c.json(
         {

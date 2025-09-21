@@ -1085,6 +1085,15 @@ const ResponseErrorEvent = z.looseObject({
   param: z.string().nullable(),
 });
 
+export const CommonResponseError = z.looseObject({
+  error: z.looseObject({
+    type: z.string(),
+    message: z.string(),
+    param: z.string().nullable(),
+    code: z.string().nullable(),
+  }),
+});
+
 const ResponseFileSearchCallInProgressEvent = z.looseObject({
   type: z.literal("response.file_search_call.in_progress"),
   output_index: z.number().int(),
