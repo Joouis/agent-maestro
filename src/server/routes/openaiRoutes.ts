@@ -140,13 +140,27 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
 
       // 5. Handle non-streaming response
       if (!stream) {
-        let fullText = "";
-        for await (const fragment of response.text) {
-          fullText += fragment;
+        let content = "";
+        let toolCalls: OpenAI.ChatCompletionMessageToolCall[] = [];
+        let accumulatedText = "";
+        for await (const chunk of response.stream) {
+          if (chunk instanceof vscode.LanguageModelTextPart) {
+            content += chunk.value;
+          } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+            toolCalls.push({
+              id: chunk.callId,
+              type: "function",
+              function: {
+                name: chunk.name,
+                arguments: JSON.stringify(chunk.input),
+              },
+            });
+          }
+          accumulatedText += JSON.stringify(chunk);
         }
 
         // Count output tokens
-        const outputTokenCount = await client.countTokens(fullText);
+        const completionTokens = await client.countTokens(accumulatedText);
 
         // Build OpenAI-compatible response
         const openaiResponse: OpenAI.ChatCompletion = {
@@ -159,17 +173,18 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
               index: 0,
               message: {
                 role: "assistant",
-                content: fullText,
+                content,
+                tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
                 refusal: null,
               },
-              finish_reason: "stop",
+              finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
               logprobs: null,
             },
           ],
           usage: {
             prompt_tokens: inputTokenCount,
-            completion_tokens: outputTokenCount,
-            total_tokens: inputTokenCount + outputTokenCount,
+            completion_tokens: completionTokens,
+            total_tokens: inputTokenCount + completionTokens,
           },
         };
 
@@ -212,39 +227,75 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
             });
 
             // Process streaming response
-            let fullText = "";
-            for await (const fragment of response.text) {
-              fullText += fragment;
-
-              const contentChunk: OpenAI.ChatCompletionChunk = {
-                id: chatCompletionId,
-                object: "chat.completion.chunk",
-                created,
-                model: modelId,
-                choices: [
-                  {
-                    index: 0,
-                    delta: {
-                      content: fragment,
+            let accumulatedText = "";
+            let toolCalls: vscode.LanguageModelToolCallPart[] = [];
+            for await (const chunk of response.stream) {
+              if (chunk instanceof vscode.LanguageModelTextPart) {
+                const contentChunk: OpenAI.ChatCompletionChunk = {
+                  id: chatCompletionId,
+                  object: "chat.completion.chunk",
+                  created,
+                  model: modelId,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        role: "assistant",
+                        content: chunk.value,
+                      },
+                      finish_reason: null,
+                      logprobs: null,
                     },
-                    finish_reason: null,
-                    logprobs: null,
-                  },
-                ],
-              };
-              await stream.writeSSE({
-                data: JSON.stringify(contentChunk),
-              });
+                  ],
+                };
+                await stream.writeSSE({
+                  data: JSON.stringify(contentChunk),
+                });
+              } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+                toolCalls.push(chunk);
+                const toolCallChunk: OpenAI.ChatCompletionChunk = {
+                  id: chatCompletionId,
+                  object: "chat.completion.chunk",
+                  created,
+                  model: modelId,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        role: "assistant",
+                        tool_calls: [
+                          {
+                            index: toolCalls.length - 1,
+                            id: chunk.callId,
+                            type: "function",
+                            function: {
+                              name: chunk.name,
+                              arguments: JSON.stringify(chunk.input),
+                            },
+                          },
+                        ],
+                      },
+                      finish_reason: null,
+                      logprobs: null,
+                    },
+                  ],
+                };
+                await stream.writeSSE({
+                  data: JSON.stringify(toolCallChunk),
+                });
+              }
+              accumulatedText += JSON.stringify(chunk);
             }
 
             // Count output tokens for final chunk if usage is requested
             let usage: OpenAI.CompletionUsage | undefined;
             if (requestBody.stream_options?.include_usage) {
-              const outputTokenCount = await client.countTokens(fullText);
+              let completionTokens = await client.countTokens(accumulatedText);
+
               usage = {
                 prompt_tokens: inputTokenCount,
-                completion_tokens: outputTokenCount,
-                total_tokens: inputTokenCount + outputTokenCount,
+                completion_tokens: completionTokens,
+                total_tokens: inputTokenCount + completionTokens,
               };
             }
 
@@ -258,11 +309,11 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
                 {
                   index: 0,
                   delta: {},
-                  finish_reason: "stop",
+                  finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
                   logprobs: null,
                 },
               ],
-              ...(usage && { usage }),
+              usage,
             };
             await stream.writeSSE({
               data: JSON.stringify(finalChunk),
