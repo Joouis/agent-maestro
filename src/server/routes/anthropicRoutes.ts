@@ -27,11 +27,9 @@ interface ContentBlock {
 
 const prepareAnthropicMessages = async ({
   requestBody,
-  c,
   client,
 }: {
   requestBody: Anthropic.Messages.MessageCreateParams;
-  c: Context;
   client: vscode.LanguageModelChat;
 }) => {
   const { system, messages } = requestBody;
@@ -202,7 +200,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const { vsCodeLmMessages, inputTokenCount, cancellationToken } =
         await prepareAnthropicMessages({
           requestBody,
-          c,
           client,
         });
 
@@ -436,7 +433,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       const { inputTokenCount } = await prepareAnthropicMessages({
         requestBody,
-        c,
         client,
       });
 
