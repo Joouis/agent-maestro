@@ -33,7 +33,6 @@ export const convertOpenAIMessagesToVSCode = (
     switch (msg.role) {
       case "developer": // ChatCompletionDeveloperMessageParam
       case "system": // ChatCompletionSystemMessageParam
-      case "tool": // ChatCompletionToolMessageParam
         content =
           typeof msg.content === "string"
             ? msg.content
@@ -41,10 +40,7 @@ export const convertOpenAIMessagesToVSCode = (
                 value: m.text,
               }));
         return new vscode.LanguageModelChatMessage(
-          msg.role === "tool"
-            ? vscode.LanguageModelChatMessageRole.Assistant
-            : // : vscode.LanguageModelChatMessageRole.System,
-              vscode.LanguageModelChatMessageRole.User,
+          vscode.LanguageModelChatMessageRole.User,
           content,
         );
 
@@ -101,6 +97,16 @@ export const convertOpenAIMessagesToVSCode = (
           }
         });
         return vscode.LanguageModelChatMessage.Assistant(content);
+
+      case "tool": // ChatCompletionToolMessageParam
+        // Tool messages should be converted to LanguageModelToolResultPart
+        content =
+          typeof msg.content === "string"
+            ? [new vscode.LanguageModelTextPart(msg.content)]
+            : msg.content;
+        return vscode.LanguageModelChatMessage.User([
+          new vscode.LanguageModelToolResultPart(msg.tool_call_id, content),
+        ]);
 
       default: // Fallback for unknown roles
         return vscode.LanguageModelChatMessage.Assistant(

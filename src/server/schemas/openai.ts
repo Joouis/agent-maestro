@@ -121,6 +121,7 @@ const ChatCompletionRequestMessage = z.object({
   role: z.enum(["system", "user", "assistant", "tool"]),
   content: z
     .union([z.string(), z.array(ChatCompletionRequestMessageContentPart)])
+    .nullable()
     .optional(),
   name: z.string().optional(),
   tool_calls: z
