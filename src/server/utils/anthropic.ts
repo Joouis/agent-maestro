@@ -204,7 +204,7 @@ export const convertAnthropicMessagesToVSCode = (
 
 /**
  * Convert Anthropic system prompt to VS Code LanguageModelChatMessage array
- * System prompts are treated as Assistant messages in VS Code LM API
+ * System prompts are treated as User messages in VS Code LM API
  *
  * @param system - Anthropic system prompt (string or array of TextBlockParam)
  * @returns Array of VS Code LanguageModelChatMessage for system content
@@ -217,12 +217,12 @@ export const convertAnthropicSystemToVSCode = (
   }
 
   if (typeof system === "string") {
-    return [vscode.LanguageModelChatMessage.Assistant(system)];
+    return [vscode.LanguageModelChatMessage.User(system)];
   }
 
   // Handle array of TextBlockParam
   return system.map((block) =>
-    vscode.LanguageModelChatMessage.Assistant(block.text),
+    vscode.LanguageModelChatMessage.User(block.text),
   );
 };
 
