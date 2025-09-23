@@ -76,7 +76,9 @@ export const convertOpenAIMessagesToVSCode = (
             // ChatCompletionMessageFunctionToolCall
             try {
               input = JSON.parse(toolCall.function.arguments);
-            } catch {}
+            } catch (e) {
+              logger.error("Failed to parse function tool call input", e);
+            }
             content.push(
               new vscode.LanguageModelToolCallPart(
                 toolCall.id,
@@ -89,7 +91,7 @@ export const convertOpenAIMessagesToVSCode = (
             try {
               input = JSON.parse(toolCall.custom.input);
             } catch (e) {
-              logger.error("Failed to parse tool call input", e);
+              logger.error("Failed to parse custom tool call input", e);
             }
             content.push(
               new vscode.LanguageModelToolCallPart(
