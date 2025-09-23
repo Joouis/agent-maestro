@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import * as vscode from "vscode";
 
+import { logger } from "../../utils/logger";
+
 const convertOpenAIChatCompletionContentPartToUserContent = (
   part: OpenAI.ChatCompletionContentPart,
 ): vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart => {
@@ -86,7 +88,9 @@ export const convertOpenAIMessagesToVSCode = (
             // ChatCompletionMessageCustomToolCall
             try {
               input = JSON.parse(toolCall.custom.input);
-            } catch {}
+            } catch (e) {
+              logger.error("Failed to parse tool call input", e);
+            }
             content.push(
               new vscode.LanguageModelToolCallPart(
                 toolCall.id,
