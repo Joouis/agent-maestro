@@ -290,7 +290,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
             // Count output tokens for final chunk if usage is requested
             let usage: OpenAI.CompletionUsage | undefined;
             if (requestBody.stream_options?.include_usage) {
-              let completionTokens = await client.countTokens(accumulatedText);
+              const completionTokens = await client.countTokens(accumulatedText);
 
               usage = {
                 prompt_tokens: inputTokenCount,
