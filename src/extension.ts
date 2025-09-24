@@ -321,20 +321,58 @@ export async function activate(context: vscode.ExtensionContext) {
       "agent-maestro.configureClaudeCode",
       async () => {
         try {
-          const workspaceRoot =
-            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-          if (!workspaceRoot) {
-            vscode.window.showErrorMessage(
-              "No workspace folder found. Please open a workspace to configure Claude Code settings.",
-            );
+          // Ask user whether to configure user settings or project settings
+          const settingsType = await vscode.window.showQuickPick(
+            [
+              {
+                label: "User Settings",
+                description:
+                  "Personal global settings for all projects (~/.claude/settings.json)",
+              },
+              {
+                label: "Project Settings",
+                description:
+                  "Team-shared project settings in source control (.claude/settings.json)",
+              },
+            ],
+            {
+              title: "Configure Claude Code Settings",
+              placeHolder: "Choose where to save Claude Code settings",
+            },
+          );
+
+          if (!settingsType) {
             return;
           }
 
-          const claudeDir = vscode.Uri.joinPath(
-            vscode.Uri.file(workspaceRoot),
-            ".claude",
-          );
-          const settingsFile = vscode.Uri.joinPath(claudeDir, "settings.json");
+          let claudeDir: vscode.Uri;
+          let settingsFile: vscode.Uri;
+
+          if (settingsType.label === "User Settings") {
+            // Use user's home directory
+            const os = require("os");
+            const homePath = os.homedir();
+            claudeDir = vscode.Uri.file(homePath).with({
+              path: homePath + "/.claude",
+            });
+            settingsFile = vscode.Uri.joinPath(claudeDir, "settings.json");
+          } else {
+            // Use project directory
+            const workspaceRoot =
+              vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+              vscode.window.showErrorMessage(
+                "No workspace folder found. Please open a workspace to configure project Claude Code settings.",
+              );
+              return;
+            }
+
+            claudeDir = vscode.Uri.joinPath(
+              vscode.Uri.file(workspaceRoot),
+              ".claude",
+            );
+            settingsFile = vscode.Uri.joinPath(claudeDir, "settings.json");
+          }
 
           // Check if settings file exists and confirm override
           let existingSettings: any = {};
