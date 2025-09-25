@@ -29,8 +29,7 @@ const envMcpPort = process.env.AGENT_MAESTRO_MCP_PORT
 
 export async function activate(context: vscode.ExtensionContext) {
   // Only show logger automatically in development mode
-  const isDevMode = context.extensionMode === vscode.ExtensionMode.Development;
-  if (isDevMode) {
+  if (context.extensionMode === vscode.ExtensionMode.Development) {
     logger.show();
   }
 
@@ -53,14 +52,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
   mcpServer = new McpServer({
     controller,
-    port: envMcpPort ? envMcpPort : isDevMode ? 33334 : config.mcpServerPort,
+    port: envMcpPort ? envMcpPort : config.mcpServerPort,
   });
 
-  const proxyPort = envProxyPort
-    ? envProxyPort
-    : isDevMode
-      ? 33333
-      : config.proxyServerPort;
+  const proxyPort = envProxyPort ? envProxyPort : config.proxyServerPort;
   proxy = new ProxyServer(controller, proxyPort, context);
 
   // Register commands

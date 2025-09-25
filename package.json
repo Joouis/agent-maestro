@@ -64,20 +64,17 @@
         "agent-maestro.defaultRooIdentifier": {
           "type": "string",
           "default": "rooveterinaryinc.roo-cline",
-          "description": "Default Roo extension identifier to use when multiple variants are available (need restart to take effect)",
-          "scope": "application"
+          "description": "Default Roo extension identifier to use when multiple variants are available (need restart to take effect)"
         },
         "agent-maestro.proxyServerPort": {
           "type": "number",
           "default": 23333,
-          "description": "Port for the Agent Maestro proxy server (need restart to take effect)",
-          "scope": "application"
+          "description": "Port for the Agent Maestro proxy server (need restart to take effect)"
         },
         "agent-maestro.mcpServerPort": {
           "type": "number",
           "default": 23334,
-          "description": "Port for the Agent Maestro MCP server (need restart to take effect)",
-          "scope": "application"
+          "description": "Port for the Agent Maestro MCP server (need restart to take effect)"
         },
         "agent-maestro.allowOutsideWorkspaceAccess": {
           "type": "boolean",
