@@ -11,44 +11,27 @@ Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Clin
 
 ![Agent Maestro Demo](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/agent-maestro-demo.gif)
 
-## 🎉 What's New in v2.0.0
-
-### **GitHub Copilot + Claude Code Integration**
-
-- **Anthropic-Compatible Endpoints**: Leverage VS Code's built-in language model supported by GitHub Copilot through Claude-compatible APIs without additional subscription
-- **One-Click Claude Code Setup**: Automated configuration command for instant Claude Code integration
-
-### **Enhanced Performance & Stability**
-
-- **Hono Framework Migration**: Improved performance, better stability, enhanced type safety
-- **VS Code Language Model API**: Direct access to VS Code's native LM ecosystem
-- **Streamlined Architecture**: Smaller memory footprint and faster response times
-
-## Why Agent Maestro
-
-AI Agents represent a transformative shift—from simple LLM calls to autonomous collaborators that function as employees, partners, or entire development teams at your command. While open-source agent frameworks offer flexibility, they often require significant setup and configuration.
-
-VS Code extensions like GitHub Copilot Chat, Cline, and Roo Code have collectively surpassed tens of millions of downloads, offering battle‑tested, out‑of‑the‑box agent experiences. Agent Maestro taps into this maturity as among the first headless bridges to VS Code’s best‑in‑class AI agents: no custom framework setup, no GUI dependencies. Leverage VS Code’s unified APIs and rich model catalog (including free tiers) to assist tasks, automate workflows, and generate solutions across any environment—from CI pipelines and scripts to your terminal—effortlessly.
-
 ## Key Features
 
-- **Anthropic Compatibility**: Use GitHub Copilot with Claude Code through Anthropic-compatible endpoints
-- **One-Click Claude Code Setup**: Automated configuration command for instant Claude Code integration
-- **Parallel Task Execution**: Execute up to 20 concurrent AI coding tasks through built-in MCP server integration
-- **Unified API Gateway**: Single RESTful interface controlling multiple AI agents through standardized endpoints
-- **Multi-Agent Support**: Currently supports RooCode (and its variants like Kilo Code) and Cline extensions with plans for GitHub Copilot
-- **Real-time Event Streaming**: Server-Sent Events (SSE) for live task monitoring and message streaming
-- **Task Management**: Comprehensive lifecycle management with creation, execution, monitoring, and completion tracking
-- **OpenAPI Documentation**: Auto-generated API documentation accessible via `/openapi.json`
-- **Extension Auto-Discovery**: Automatic detection and activation of installed AI coding extensions
+Turn VS Code into your compliant AI playground with powerful API compatibility and one-click setup:
 
-**Note on Agent Support**: While Cline integration is included, RooCode offers the most comprehensive integration capabilities and is recommended for production use. GitHub Copilot integration via Anthropic endpoints provides the best balance of features and reliability.
+- **Universal API Compatibility**: Anthropic (`/messages`) and OpenAI (`/chat/completions`) compatible endpoints - use Claude Code, Codex or any LLM client seamlessly
+- **One-Click Setup**: Automated configuration commands for instant Claude Code and Codex integration
+- **Headless AI Agent Control**: Create and manage tasks through REST APIs for Roo Code and Cline extensions
+  - **Comprehensive APIs**: Complete task lifecycle management with OpenAPI documentation at `/openapi.json`
+  - **Parallel Execution**: Run up to 20 concurrent RooCode (and its variants like Kilo Code) tasks with built-in MCP server integration
+  - **Real-time Streaming**: Server-Sent Events (SSE) for live task monitoring and message updates
+  - **Flexible Configuration**: Workspace-level settings, environment variables, and extension auto-discovery
 
 ## Quick Start
 
 ### Prerequisites
 
-Agent Maestro assumes you already installed [Roo Code](https://marketplace.visualstudio.com/items?itemName=RooVeterinaryInc.roo-cline) or its variants for the web proxy scenario, or [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) for personal development routines.
+Agent Maestro assumes you already installed one of the supported AI coding extensions:
+
+- [Roo Code](https://marketplace.visualstudio.com/items?itemName=RooVeterinaryInc.roo-cline) or its variants for comprehensive API control
+- [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) for personal development routines.
+- [Codex](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt) for personal development routines.
 
 ### Installation
 
@@ -58,9 +41,15 @@ Install the [Agent Maestro extension](https://marketplace.visualstudio.com/items
 
 Configure Claude Code to use VS Code's language models with a single command `Agent Maestro: Configure Claude Code Settings` via Command Palette.
 
-This automatically creates `.claude/settings.json` with Agent Maestro endpoint and fills in available LLM models from VS Code.
+This automatically creates or updates `.claude/settings.json` with Agent Maestro endpoint and fills in available LLM models from VS Code.
 
 **That's it!** You can now use Claude Code with VS Code's built-in language models.
+
+### One-Click Setup for Codex
+
+Configure Codex to use VS Code's language models with a single command `Agent Maestro: Configure Codex Settings` via Command Palette.
+
+This automatically creates or updates `~/.codex/config.toml` with Agent Maestro endpoint and sets up `GPT-5-Codex` as the recommended model.
 
 ### Usage
 
@@ -89,6 +78,7 @@ This automatically creates `.claude/settings.json` with Agent Maestro endpoint a
    **New Configuration Commands:**
 
    - `Agent Maestro: Configure Claude Code Settings` - One-click Claude Code setup
+   - `Agent Maestro: Configure Codex Settings` - One-click Codex setup
 
 3. **Development Resources**:
    - **API Documentation**: Complete reference in [`docs/roo-code/`](docs/roo-code/README.md)
@@ -119,16 +109,37 @@ code .
 
 > **Note:** Environment variables take precedence over extension settings.
 
-## API Overview
+### Workspace-Level Configuration
 
-Agent Maestro v2.0.0 provides multiple API interfaces for different integration needs.
+You can configure Agent Maestro settings per workspace by adding them to your project's `.vscode/settings.json` file:
+
+```json
+{
+  "agent-maestro.defaultRooIdentifier": "roo-cline",
+  "agent-maestro.proxyServerPort": 23333,
+  "agent-maestro.mcpServerPort": 23334
+}
+```
+
+**Available Settings:**
+
+| Setting                              | Description                  | Default       |
+| ------------------------------------ | ---------------------------- | ------------- |
+| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"roo-cline"` |
+| `agent-maestro.proxyServerPort`      | Proxy server port            | `23333`       |
+| `agent-maestro.mcpServerPort`        | MCP server port              | `23334`       |
+
+This allows different projects to use different configurations without affecting your global VS Code settings.
+
+## API Overview
 
 > 💡 **Always refer to [`/openapi.json`](http://localhost:23333/openapi.json) for the latest API documentation.**
 
 ### Base URLs
 
 - **REST API**: `http://localhost:23333/api/v1`
-- **Anthropic API**: `http://localhost:23333/api/anthropic/v1`
+- **Anthropic API**: `http://localhost:23333/api/anthropic`
+- **OpenAI API**: `http://localhost:23333/api/openai`
 - **MCP Server**: `http://localhost:23334`
 
 ### Anthropic-Compatible Endpoints
@@ -137,6 +148,12 @@ Perfect for GitHub Copilot and Claude Code integration:
 
 - **`POST /api/anthropic/v1/messages`** - Anthropic Claude API compatibility using VS Code's Language Model API
 - **`POST /api/anthropic/v1/messages/count_tokens`** - Token counting for Anthropic-compatible messages
+
+### OpenAI-Compatible Endpoints
+
+Perfect for Codex and OpenAI model integration:
+
+- **`POST /api/openai/chat/completions`** - OpenAI Chat Completions API compatibility using VS Code's Language Model API
 
 ### RooCode Agent Routes
 
@@ -181,8 +198,9 @@ Basic integration support:
 
 Our development roadmap includes several exciting enhancements:
 
-- **VS Code LM API**: OpenAPI compatible API based on GitHub Copilot and VS Code LM API.
 - **Production Deployment**: Code-server compatibility for containerization and deployment
+- **Headless AI Agent Control**: Complete REST API integration for Claude Code and Codex extensions with task lifecycle management
+- **Task Scheduler**: Cron-like scheduling system for automated AI agent tasks and workflows
 
 **Contributions Welcome**: We encourage community contributions to help expand Agent Maestro's capabilities and support for additional AI coding agents. We recommend using AI coding agents themselves to accelerate your development workflow when contributing to this project.
 
@@ -198,6 +216,6 @@ This project is licensed under the terms specified in the [LICENSE](./LICENSE) f
 
 Built with ❤️ by AI agents for AI agents
 
-[🐛 Report Bug](https://github.com/Joouis/agent-maestro/issues) • [✨ Request Feature](https://github.com/Joouis/agent-maestro/issues) • [💬 Discussions](https://github.com/Joouis/agent-maestro/discussions)
+[🐛 Report Bug](https://github.com/Joouis/agent-maestro/issues) • [✨ Request Feature](https://github.com/Joouis/agent-maestro/issues)
 
 </div>
