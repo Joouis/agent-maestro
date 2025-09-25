@@ -535,7 +535,6 @@ model_provider = "agent-maestro"
 # Configure the Agent Maestro provider
 [model_providers.agent-maestro]
 name = "Agent Maestro"
-# Make sure you set the appropriate subdomain for this URL.
 base_url = "http://localhost:${proxyPort}/api/openai"
 wire_api = "chat"
 `;
