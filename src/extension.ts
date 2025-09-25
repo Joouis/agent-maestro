@@ -531,7 +531,6 @@ export async function activate(context: vscode.ExtensionContext) {
           const configContent = `# Set the default model and provider
 model = "${selectedModel.modelId}"
 model_provider = "agent-maestro"
-preferred_auth_method = "apikey"
 
 # Configure the Agent Maestro provider
 [model_providers.agent-maestro]
