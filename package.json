@@ -2,7 +2,7 @@
   "name": "agent-maestro",
   "displayName": "Agent Maestro",
   "description": "Take AI coding beyond VS Code. Agent Maestro gives you a local server to run coding agents like Roo Code anywhere, plus an Anthropic-compatible API that makes using Claude Code in VS Code effortless — built on GitHub Copilot and LM API compatibility, so setup takes just one command.",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
   "repository": "https://github.com/Joouis/agent-maestro",

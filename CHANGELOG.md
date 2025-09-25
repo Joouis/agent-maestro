@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.3.0 - 2025.09.25
+
+- Added **OpenAI-compatible** `POST /chat/completions` endpoint
+- New **"Configure Codex Settings" command** for one-click setup; `GPT-5-Codex` is now the recommended top model
+- Updated scope of `agent-maestro.defaultRooIdentifier`, `agent-maestro.proxyServerPort`, and `agent-maestro.mcpServerPort` to support workspace-level config via VS Code `settings.json`
+- Added support for configuring user settings in Claude Code
+- Default Claude Code settings now set `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
+- Anthropic System prompt is now treated as a user message instead of an assistant message
+
 ## v2.2.1 - 2025.09.08
 
 - Add support for JPEG, GIF, and WebP images in Anthropic Messages API (works in VS Code Insiders, coming to stable release, see [#265553](https://github.com/microsoft/vscode/issues/265553))
