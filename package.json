@@ -134,6 +134,11 @@
         "command": "agent-maestro.configureClaudeCode",
         "title": "Configure Claude Code Settings",
         "category": "Agent Maestro"
+      },
+      {
+        "command": "agent-maestro.configureCodex",
+        "title": "Configure Codex Settings",
+        "category": "Agent Maestro"
       }
     ]
   },

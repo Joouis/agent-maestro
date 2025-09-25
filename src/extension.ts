@@ -1,4 +1,6 @@
-import os from "os";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import * as vscode from "vscode";
 
 import { ExtensionController } from "./core/controller";
@@ -471,6 +473,97 @@ export async function activate(context: vscode.ExtensionContext) {
           logger.error("Error configuring Claude Code settings:", error);
           vscode.window.showErrorMessage(
             `Failed to configure Claude Code settings: ${(error as Error).message}`,
+          );
+        }
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "agent-maestro.configureCodex",
+      async () => {
+        try {
+          const codexConfigPath = `${os.homedir()}/.codex/config.toml`;
+
+          // Check if config file exists and confirm override
+          let fileExists = false;
+          try {
+            fs.accessSync(codexConfigPath);
+            fileExists = true;
+
+            const shouldOverride = await vscode.window.showQuickPick(
+              ["Yes", "No"],
+              {
+                title: "Codex Configuration Found",
+                placeHolder:
+                  "Config file already exists. Do you want to update it?",
+              },
+            );
+
+            if (shouldOverride !== "Yes") {
+              return;
+            }
+          } catch (error) {
+            // File doesn't exist, continue with creation
+          }
+
+          const modelOptions = await getChatModelsQuickPickItems("gpt-5-codex");
+
+          if (modelOptions.length === 0) {
+            vscode.window.showErrorMessage(
+              "No available chat model provided by VS Code LM API.",
+            );
+            return;
+          }
+
+          const selectedModel = await vscode.window.showQuickPick(
+            modelOptions,
+            {
+              title: "Select model",
+              placeHolder: "Choose which model to use with Codex",
+            },
+          );
+
+          if (!selectedModel?.modelId) {
+            return;
+          }
+
+          // Create config content
+          const configContent = `# Set the default model and provider
+model = "${selectedModel.modelId}"
+model_provider = "agent-maestro"
+preferred_auth_method = "apikey"
+
+# Configure the Agent Maestro provider
+[model_providers.agent-maestro]
+name = "Agent Maestro"
+# Make sure you set the appropriate subdomain for this URL.
+base_url = "http://localhost:${proxyPort}/api/openai"
+wire_api = "chat"
+`;
+
+          // Ensure .codex directory exists
+          const codexDir = path.dirname(codexConfigPath);
+
+          try {
+            fs.mkdirSync(codexDir, { recursive: true });
+          } catch (error) {
+            // Directory might already exist, ignore error
+          }
+
+          // Write config file
+          fs.writeFileSync(codexConfigPath, configContent);
+
+          vscode.window.showInformationMessage(
+            `Codex configuration ${fileExists ? "updated" : "created"} successfully! The configuration points to Agent Maestro proxy server for OpenAI-compatible API.`,
+          );
+
+          logger.info(
+            `Codex configuration ${fileExists ? "updated" : "created"}: ${codexConfigPath}`,
+          );
+        } catch (error) {
+          logger.error("Error configuring Codex settings:", error);
+          vscode.window.showErrorMessage(
+            `Failed to configure Codex settings: ${(error as Error).message}`,
           );
         }
       },

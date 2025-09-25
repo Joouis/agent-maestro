@@ -79,7 +79,7 @@ const chatModelToQuickPickItem = (model: vscode.LanguageModelChat) => ({
   modelId: model.id,
 });
 
-export const getChatModelsQuickPickItems = async () => {
+export const getChatModelsQuickPickItems = async (recommended?: string) => {
   // Get available models from cache first, fallback to direct API call
   let allModels = await chatModelsCache.getChatModels();
   if (allModels.length === 0) {
@@ -89,7 +89,13 @@ export const getChatModelsQuickPickItems = async () => {
   const claudeModels = [];
   const geminiModels = [];
   const restModels = [];
+  let recommendedModel = null;
+
   for (const m of allModels) {
+    if (recommended && m.id === recommended) {
+      recommendedModel = m;
+    }
+
     if (m.id.toLocaleLowerCase().includes("claude")) {
       claudeModels.push(m);
     } else if (m.id.toLocaleLowerCase().includes("gemini")) {
@@ -100,7 +106,25 @@ export const getChatModelsQuickPickItems = async () => {
   }
 
   // Show model selection for ANTHROPIC_MODEL
-  const modelOptions = [
+  const modelOptions = [];
+
+  // Add recommended model at the top if found
+  if (recommendedModel) {
+    modelOptions.push(
+      {
+        kind: vscode.QuickPickItemKind.Separator,
+        label: "Recommended",
+        modelId: "",
+      },
+      {
+        ...chatModelToQuickPickItem(recommendedModel),
+        label: `${recommendedModel.name}`,
+      },
+    );
+  }
+
+  // Add the rest of the models in their categories
+  modelOptions.push(
     {
       kind: vscode.QuickPickItemKind.Separator,
       label: "Claude",
@@ -119,7 +143,7 @@ export const getChatModelsQuickPickItems = async () => {
       modelId: "",
     },
     ...geminiModels.map(chatModelToQuickPickItem),
-  ];
+  );
 
   return modelOptions;
 };
