@@ -1,3 +1,4 @@
+import os from "os";
 import * as vscode from "vscode";
 
 import { ExtensionController } from "./core/controller";
@@ -350,7 +351,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
           if (settingsType.label === "User Settings") {
             // Use user's home directory
-            const os = require("os");
             const homePath = os.homedir();
             claudeDir = vscode.Uri.file(homePath).with({
               path: homePath + "/.claude",
