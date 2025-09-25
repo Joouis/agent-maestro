@@ -5,9 +5,9 @@
 [![Rating](https://img.shields.io/visual-studio-marketplace/r/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
 [![License](https://img.shields.io/github/license/Joouis/agent-maestro)](./LICENSE) -->
 
-Take AI coding beyond VS Code. Agent Maestro gives you a local server to run coding agents like Roo Code anywhere, plus an Anthropic-compatible API that makes using Claude Code in VS Code effortless — built on GitHub Copilot and LM API compatibility, so setup takes just one command.
+Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code or Codex straight in through an OpenAI/Anthropic-compatible API.
 
-![Claude Code Support](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/claude-code-support.jpg)
+![Claude Code Support](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/configure-claude-code-demo.gif)
 
 ![Agent Maestro Demo](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/agent-maestro-demo.gif)
 
