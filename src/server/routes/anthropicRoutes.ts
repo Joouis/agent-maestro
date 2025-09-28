@@ -19,12 +19,6 @@ import {
   convertAnthropicToolToVSCode,
 } from "../utils/anthropic";
 
-interface ContentBlock {
-  type: "text" | "tool_use" | string;
-  text?: string;
-  toolUse?: vscode.LanguageModelToolCallPart;
-}
-
 const prepareAnthropicMessages = async ({
   requestBody,
   client,
@@ -312,7 +306,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               },
             });
 
-            const contentBlocks: ContentBlock[] = [];
+            const contentBlocks: Anthropic.Messages.ContentBlock[] = [];
             let accumulatedText = "";
 
             for await (const chunk of response.stream) {
@@ -328,7 +322,11 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
                 // Start a new text block
                 if (!lastBlock || lastBlock.type !== "text") {
-                  contentBlocks.push({ type: "text", text: "" });
+                  contentBlocks.push({
+                    type: "text",
+                    text: "",
+                    citations: null,
+                  });
                   await writeSSE({
                     type: "content_block_start",
                     index: contentBlocks.length - 1,
@@ -337,13 +335,15 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                 }
 
                 // Append text to the current text block
-                contentBlocks.at(-1)!.text += chunk.value;
-                accumulatedText += chunk.value;
+                (contentBlocks.at(-1) as Anthropic.Messages.TextBlock).text +=
+                  chunk.value;
                 await writeSSE({
                   type: "content_block_delta",
                   index: contentBlocks.length - 1,
                   delta: { type: "text_delta", text: chunk.value },
                 });
+
+                accumulatedText += chunk.value;
               } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
                 // Every tool call is a new content block
                 if (lastBlock) {
@@ -353,7 +353,13 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                   });
                 }
 
-                contentBlocks.push({ type: "tool_use", toolUse: chunk });
+                contentBlocks.push({
+                  type: "tool_use",
+                  id: chunk.callId,
+                  name: chunk.name,
+                  input: chunk.input,
+                });
+
                 await writeSSE({
                   type: "content_block_start",
                   index: contentBlocks.length - 1,
