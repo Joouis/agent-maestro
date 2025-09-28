@@ -558,6 +558,22 @@ wire_api = "chat"
           logger.info(
             `Codex configuration ${fileExists ? "updated" : "created"}: ${codexConfigPath}`,
           );
+
+          // Ask user if they want to reload window to make Codex configuration take effect
+          const shouldReload = await vscode.window.showQuickPick(
+            ["Yes", "No"],
+            {
+              title: "Reload Window",
+              placeHolder:
+                "Reload VS Code window to apply Codex configuration changes?",
+            },
+          );
+
+          if (shouldReload === "Yes") {
+            await vscode.commands.executeCommand(
+              "workbench.action.reloadWindow",
+            );
+          }
         } catch (error) {
           logger.error("Error configuring Codex settings:", error);
           vscode.window.showErrorMessage(
