@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.3.1 - 2025.09.28
+
+- Add tool handling support for non-streaming `/v1/messages` API
+- Add tool calls to output token counts for `/v1/messages` API
+- Prompt user to reload VS Code window after updating or creating Codex configuration to ensure changes take effect
+
 ## v2.3.0 - 2025.09.25
 
 - Added **OpenAI-compatible** `POST /chat/completions` endpoint
