@@ -219,15 +219,36 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         cancellationToken,
       );
 
-      // 5. Non-streaming response: collect full text
+      // 5. Non-streaming response: collect content blocks using unified approach
       if (!msgCreateParams.stream) {
-        let fullText = "";
-        for await (const fragment of response.text) {
-          fullText += fragment;
+        const content: Anthropic.Messages.ContentBlock[] = [];
+        let accumulatedText = "";
+
+        for await (const chunk of response.stream) {
+          if (chunk instanceof vscode.LanguageModelTextPart) {
+            let lastBlock = content.at(-1);
+            if (!lastBlock || lastBlock.type !== "text") {
+              lastBlock = { type: "text", text: "", citations: null };
+              content.push(lastBlock);
+            }
+            lastBlock.text += chunk.value;
+            accumulatedText += chunk.value;
+          } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+            content.push({
+              type: "tool_use",
+              id: chunk.callId,
+              name: chunk.name,
+              input: chunk.input,
+            });
+
+            accumulatedText += JSON.stringify(chunk);
+          }
         }
 
         // Count output tokens
-        const outputTokenCount = await client.countTokens(fullText);
+        const outputTokenCount = accumulatedText
+          ? await client.countTokens(accumulatedText)
+          : 1;
 
         // https://docs.anthropic.com/en/api/messages#response-id
         const resp: Anthropic.Messages.Message = {
@@ -235,9 +256,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           type: "message",
           role: "assistant",
           model: modelId,
-          // TODO: what about other ContentBlock like ToolUseBlock or ThinkingBlock?
-          content: [{ type: "text", text: fullText, citations: null }],
-          stop_reason: "end_turn",
+          content,
+          stop_reason:
+            content.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn",
           stop_sequence: null,
           usage: {
             // cache_creation: null,
@@ -324,8 +345,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                   delta: { type: "text_delta", text: chunk.value },
                 });
               } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-                // TODO: accumulatedText does not include tool calls yet
-
                 // Every tool call is a new content block
                 if (lastBlock) {
                   await writeSSE({
@@ -354,6 +373,8 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                     partial_json: JSON.stringify(chunk.input),
                   },
                 });
+
+                accumulatedText += JSON.stringify(chunk);
               }
             }
 
