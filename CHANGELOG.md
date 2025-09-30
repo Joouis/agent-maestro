@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.3.2 - 2025.09.30
+
+- **Added warning** when detecting Claude Code extension versions newer than `v1.0.127` (native v2), which ignore LLM Gateway settings and may limit Agent Maestro features.
+- **Updated README note** to clarify compatibility:
+  - Agent Maestro continues to work with the Claude Code CLI (terminal).
+  - Supported on legacy extension versions prior to v2.
+
 ## v2.3.1 - 2025.09.28
 
 - Add tool handling support for non-streaming `/v1/messages` API
