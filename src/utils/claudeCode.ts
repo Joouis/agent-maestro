@@ -3,10 +3,10 @@ import * as vscode from "vscode";
 const CLAUDE_CODE_EXTENSION_ID = "anthropic.claude-code";
 const CLAUDE_V1_MAX_VERSION = "1.0.127";
 
-const isVersionGreaterThan = (version: string, baseline: string) => {
-  const normalize = (value: string) =>
-    value.split(/[.-]/).map((segment) => Number.parseInt(segment, 10) || 0);
+const normalize = (value: string) =>
+  value.split(/[.\-]/).map((segment) => Number.parseInt(segment, 10) || 0);
 
+const isVersionGreaterThan = (version: string, baseline: string) => {
   const a = normalize(version);
   const b = normalize(baseline);
   const length = Math.max(a.length, b.length);
