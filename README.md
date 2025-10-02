@@ -7,8 +7,6 @@
 
 Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code or Codex straight in through an OpenAI/Anthropic-compatible API.
 
-> ⚠️ **Note:** The Claude Code native extension (versions **later than `v1.0.127`**) **no longer support LLM Gateway settings**. Agent Maestro remains compatible with the **Claude Code CLI** in the terminal and with **legacy extension versions prior to v2**.
-
 ![Claude Code Support](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/configure-claude-code-demo.gif)
 
 ![Agent Maestro Demo](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/agent-maestro-demo.gif)

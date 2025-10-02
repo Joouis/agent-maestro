@@ -10,7 +10,7 @@ import {
   chatModelsCache,
   getChatModelsQuickPickItems,
 } from "./utils/chatModels";
-import { showClaudeCodeCompatibilityWarning } from "./utils/claudeCode";
+import { performClaudeCodeSelfCheck } from "./utils/claude";
 import { readConfiguration } from "./utils/config";
 import { logger } from "./utils/logger";
 import {
@@ -36,7 +36,8 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.show();
   }
 
-  showClaudeCodeCompatibilityWarning();
+  // Perform self-check to add additional settings for seamless Claude Code native extension compatibility
+  performClaudeCodeSelfCheck();
 
   // Initialize the extension controller
   controller = new ExtensionController();
