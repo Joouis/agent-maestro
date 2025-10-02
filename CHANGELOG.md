@@ -1,9 +1,13 @@
 # Changelog
 
+## v2.3.3 - 2025.10.02
+
+- **Seamlessly support Claude Code native extension** by self-check and extra config
+
 ## v2.3.2 - 2025.09.30
 
-- **Added warning** when detecting Claude Code extension versions newer than `v1.0.127` (native v2), which ignore LLM Gateway settings and may limit Agent Maestro features.
-- **Updated README note** to clarify compatibility:
+- Show warning when detecting Claude Code extension versions newer than `v1.0.127` (native v2), which ignore LLM Gateway settings and may limit Agent Maestro features.
+- Updated README note to clarify compatibility:
   - Agent Maestro continues to work with the Claude Code CLI (terminal).
   - Supported on legacy extension versions prior to v2.
 
