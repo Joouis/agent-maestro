@@ -10,7 +10,10 @@ import {
   chatModelsCache,
   getChatModelsQuickPickItems,
 } from "./utils/chatModels";
-import { performClaudeCodeSelfCheck } from "./utils/claude";
+import {
+  ensureClaudeConfigExists,
+  performClaudeCodeSelfCheck,
+} from "./utils/claude";
 import { readConfiguration } from "./utils/config";
 import { logger } from "./utils/logger";
 import {
@@ -465,6 +468,9 @@ export async function activate(context: vscode.ExtensionContext) {
             settingsFile,
             Buffer.from(JSON.stringify(newSettings, null, 2)),
           );
+
+          // Ensure Claude config exists with primaryApiKey for seamless compatibility
+          ensureClaudeConfigExists();
 
           vscode.window.showInformationMessage(
             `Claude Code settings ${fileExists ? "updated" : "created"} successfully! The settings point to Agent Maestro proxy server for Anthropic-compatible API.`,
