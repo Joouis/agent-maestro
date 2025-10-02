@@ -86,7 +86,7 @@ const hasAgentMaestroClaudeSettings = (): boolean => {
       const settings: ClaudeSettings = JSON.parse(settingsContent);
 
       const authToken = settings.env?.ANTHROPIC_AUTH_TOKEN;
-      return authToken?.includes("Agent Maestro") || false;
+      return !!authToken?.includes("Agent Maestro");
     } catch (error) {
       logger.debug(
         `Error reading Claude settings from ${settingsPath}:`,
