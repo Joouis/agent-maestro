@@ -38,6 +38,10 @@ export class ProxyServer {
     this.app = new OpenAPIHono();
     this.app.use(cors());
     this.app.use(compress());
+    this.app.use("*", async (c, next) => {
+      logger.debug(`Incoming request: ${c.req.method} ${c.req.url}`);
+      await next();
+    });
 
     // Register routes under the /api/v1 namespace
     this.app.route("/api/v1", this.getApiV1Routes());
