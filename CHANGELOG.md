@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.3.4 - 2025.10.14
+## v2.3.4 - 2025.10.15
 
 - Ensure proxy server availability through automatic port monitoring
 - Improved Claude model handling to prioritize user-configured models over hardcoded defaults
