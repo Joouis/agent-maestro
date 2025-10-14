@@ -243,7 +243,7 @@ export class ProxyServer {
     return `http://0.0.0.0:${this.port}/openapi.json`;
   }
 
-  private startPortMonitoring(): void {
+  private startPortMonitoring() {
     if (this.portMonitorInterval) {
       return; // Monitoring is already active
     }
