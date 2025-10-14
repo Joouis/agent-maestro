@@ -5,7 +5,10 @@ import * as vscode from "vscode";
 
 import { ExtensionController } from "./core/controller";
 import { McpServer } from "./server/McpServer";
-import { ProxyServer } from "./server/ProxyServer";
+import {
+  ANOTHER_INSTANCE_RUNNING_MESSAGE,
+  ProxyServer,
+} from "./server/ProxyServer";
 import {
   chatModelsCache,
   getChatModelsQuickPickItems,
@@ -100,7 +103,7 @@ export async function activate(context: vscode.ExtensionContext) {
             );
           } else {
             // Don't show error message for "another instance running" case
-            if (result.reason === "Another instance is already running") {
+            if (result.reason === ANOTHER_INSTANCE_RUNNING_MESSAGE) {
               logger.info(`Proxy server startup skipped: ${result.reason}`);
             } else {
               vscode.window.showInformationMessage(

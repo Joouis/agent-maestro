@@ -19,6 +19,9 @@ import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 
 const PORT_MONITOR_INTERVAL_MS = 60_000; // 1 minute
 
+export const ANOTHER_INSTANCE_RUNNING_MESSAGE =
+  "Another instance is already running, monitoring for availability";
+
 export class ProxyServer {
   private app: OpenAPIHono;
   private controller: ExtensionController;
@@ -182,8 +185,7 @@ export class ProxyServer {
         await this.startPortMonitoring();
         return {
           started: false,
-          reason:
-            "Another instance is already running, monitoring for availability",
+          reason: ANOTHER_INSTANCE_RUNNING_MESSAGE,
           port: this.port,
         };
 
