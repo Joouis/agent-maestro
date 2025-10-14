@@ -273,8 +273,6 @@ export class ProxyServer {
           await this.start();
         } catch (error) {
           logger.error("Failed to start proxy server after monitoring:", error);
-          // Restart monitoring if server start fails
-          this.startPortMonitoring();
         }
       } catch (error) {
         logger.error("Error during proxy server port monitoring:", error);

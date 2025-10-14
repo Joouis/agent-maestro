@@ -261,8 +261,6 @@ export class McpServer {
           await this.start();
         } catch (error) {
           logger.error("Failed to start MCP server after monitoring:", error);
-          // Restart monitoring if server start fails
-          this.startPortMonitoring();
         }
       } catch (error) {
         logger.error("Error during MCP server port monitoring:", error);
