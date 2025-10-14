@@ -156,7 +156,7 @@ export const getChatModelClient = async (modelId: string) => {
   const client = models.find((m) => m.id === modelId);
 
   if (!client) {
-    logger.error(`No VS Code LM model available for model ID: ${modelId} `);
+    logger.error(`No VS Code LM model available for model ID: ${modelId}`);
     return {
       error: {
         error: {

@@ -58,7 +58,7 @@ const applyClaudeModelSelection = (
     // Unknown Claude model - default to main model
     const effectiveModelId = claudeConfig.mainModel;
     logger.info(
-      `⚡ ${context}: Unknown Claude model ${modelId}, using configured main model: ${effectiveModelId}`,
+      `${context}: Unknown Claude model ${modelId}, using configured main model: ${effectiveModelId}`,
     );
     return effectiveModelId;
   }
