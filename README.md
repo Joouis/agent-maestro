@@ -30,6 +30,7 @@ Turn VS Code into your compliant AI playground with powerful API compatibility a
 Agent Maestro assumes you already installed one of the supported AI coding extensions:
 
 - [Roo Code](https://marketplace.visualstudio.com/items?itemName=RooVeterinaryInc.roo-cline) or its variants for comprehensive API control
+- [KiloCode](https://marketplace.visualstudio.com/items?itemName=kilocode.kilo-code) - **✅ Fully tested and supported** (v4.103.1)
 - [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) for personal development routines.
 - [Codex](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt) for personal development routines.
 
@@ -50,6 +51,40 @@ This automatically creates or updates `.claude/settings.json` with Agent Maestro
 Configure Codex to use VS Code's language models with a single command `Agent Maestro: Configure Codex Settings` via Command Palette.
 
 This automatically creates or updates `~/.codex/config.toml` with Agent Maestro endpoint and sets up `GPT-5-Codex` as the recommended model.
+
+### ✨ **KiloCode Integration** (Fully Tested)
+
+Agent Maestro has been thoroughly tested and verified to work seamlessly with KiloCode v4.103.1:
+
+**Quick Setup:**
+
+1. Install KiloCode extension from VS Code Marketplace
+2. Configure workspace settings with KiloCode as default:
+   ```json
+   {
+     "agent-maestro.defaultRooIdentifier": "kilocode.kilo-code"
+   }
+   ```
+3. Agent Maestro will automatically detect and integrate with KiloCode
+
+**Verified Features:**
+
+- ✅ **Task Creation**: Create KiloCode tasks via REST API
+- ✅ **Parallel Execution**: Up to 20 concurrent KiloCode tasks
+- ✅ **Real-time Streaming**: Live task monitoring via SSE
+- ✅ **API Compatibility**: Full OpenAPI specification support
+- ✅ **Extension Detection**: Automatic recognition and integration
+
+**Test API Integration:**
+
+```bash
+curl -X POST http://localhost:23333/api/v1/roo/task \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello KiloCode! Ready to work together.",
+    "extensionId": "kilocode.kilo-code"
+  }'
+```
 
 ### Usage
 
@@ -115,19 +150,33 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 
 ```json
 {
-  "agent-maestro.defaultRooIdentifier": "roo-cline",
+  "agent-maestro.defaultRooIdentifier": "kilocode.kilo-code",
   "agent-maestro.proxyServerPort": 23333,
   "agent-maestro.mcpServerPort": 23334
 }
 ```
 
+**Example configurations for different extensions:**
+
+```json
+// For KiloCode (recommended - fully tested)
+{
+  "agent-maestro.defaultRooIdentifier": "kilocode.kilo-code"
+}
+
+// For RooCode/Cline
+{
+  "agent-maestro.defaultRooIdentifier": "roo-cline"
+}
+```
+
 **Available Settings:**
 
-| Setting                              | Description                  | Default       |
-| ------------------------------------ | ---------------------------- | ------------- |
-| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"roo-cline"` |
-| `agent-maestro.proxyServerPort`      | Proxy server port            | `23333`       |
-| `agent-maestro.mcpServerPort`        | MCP server port              | `23334`       |
+|| Setting | Description | Default | KiloCode Value |
+|| ------------------------------------ | ---------------------------- | ------------- | -------------- |
+|| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"roo-cline"` | `"kilocode.kilo-code"` |
+|| `agent-maestro.proxyServerPort` | Proxy server port | `23333` | `23333` |
+|| `agent-maestro.mcpServerPort` | MCP server port | `23334` | `23334` |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
 
@@ -157,11 +206,18 @@ Perfect for Codex and OpenAI model integration:
 
 ### RooCode Agent Routes
 
-Full-featured agent integration with real-time streaming:
+Full-featured agent integration with real-time streaming (supports RooCode, KiloCode, and other variants):
 
-- **`POST /api/v1/roo/task`** - Create new RooCode task with SSE streaming
+- **`POST /api/v1/roo/task`** - Create new RooCode/KiloCode task with SSE streaming
 - **`POST /api/v1/roo/task/{taskId}/message`** - Send message to existing task with SSE streaming
 - **`POST /api/v1/roo/task/{taskId}/action`** - Perform actions (pressPrimaryButton, pressSecondaryButton, cancel, resume)
+- **`GET /api/v1/roo/tasks`** - Get task history
+- **`GET /api/v1/roo/task/{taskId}`** - Get specific task details
+
+**Extension ID Examples:**
+
+- KiloCode: `"extensionId": "kilocode.kilo-code"`
+- RooCode: `"extensionId": "rooveterinaryinc.roo-cline"`
 
 ### VS Code Language Model API
 
