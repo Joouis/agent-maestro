@@ -2,7 +2,7 @@
 
 ## v2.3.4 - 2025.10.15
 
-- Ensure proxy server availability through automatic port monitoring
+- Add automatic port monitoring to ensure Proxy and MCP server availability
 - Improved Claude model handling to prioritize user-configured models over hardcoded defaults
 
 ## v2.3.3 - 2025.10.02

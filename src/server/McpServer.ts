@@ -5,6 +5,10 @@ import { z } from "zod";
 import { McpTaskManager } from "../core/McpTaskManager";
 import { ExtensionController } from "../core/controller";
 import { DEFAULT_CONFIG } from "../utils/config";
+import {
+  ANOTHER_INSTANCE_RUNNING_MESSAGE,
+  PORT_MONITOR_INTERVAL_MS,
+} from "../utils/constant";
 import { logger } from "../utils/logger";
 import { analyzePortUsage } from "../utils/portUtils";
 
@@ -37,6 +41,7 @@ export class McpServer {
   private port: number;
   private server: FastMCP;
   private isRunning = false;
+  private portMonitorInterval?: NodeJS.Timeout;
 
   constructor(config: McpServerConfig) {
     this.controller = config.controller;
@@ -88,11 +93,12 @@ export class McpServer {
         break;
 
       case "skip":
-        // Another instance of our server is already running, skip silently
+        // Another instance of our server is already running, start monitoring
         logger.info(`MCP Server: ${analysis.message}`);
+        this.startPortMonitoring();
         return {
           started: false,
-          reason: "Another instance is already running",
+          reason: ANOTHER_INSTANCE_RUNNING_MESSAGE,
           port: this.port,
         };
 
@@ -179,6 +185,9 @@ export class McpServer {
    * Stop the MCP server
    */
   async stop(): Promise<void> {
+    // Stop port monitoring if active
+    this.stopPortMonitoring();
+
     if (!this.isRunning || !this.taskManager) {
       return;
     }
@@ -219,5 +228,56 @@ export class McpServer {
       port: this.port,
       url: `http://0.0.0.0:${this.port}`,
     };
+  }
+
+  /**
+   * Start monitoring the port for availability
+   */
+  private startPortMonitoring(): void {
+    if (this.portMonitorInterval) {
+      return; // Already monitoring
+    }
+
+    logger.info(`Starting MCP server port monitoring for port ${this.port}...`);
+
+    this.portMonitorInterval = setInterval(async () => {
+      try {
+        const analysis = await analyzePortUsage(this.port, "mcp");
+        logger.debug(
+          `MCP server port monitoring check for ${this.port}:`,
+          analysis,
+        );
+
+        if (analysis.action !== "use") {
+          return; // Port is still not available
+        }
+
+        logger.info(
+          `Port ${this.port} is now available, starting MCP server...`,
+        );
+        this.stopPortMonitoring();
+
+        try {
+          await this.start();
+        } catch (error) {
+          logger.error("Failed to start MCP server after monitoring:", error);
+          // Restart monitoring if server start fails
+          this.startPortMonitoring();
+        }
+      } catch (error) {
+        logger.error("Error during MCP server port monitoring:", error);
+      }
+    }, PORT_MONITOR_INTERVAL_MS);
+  }
+
+  /**
+   * Stop monitoring the port
+   */
+  private stopPortMonitoring(): void {
+    if (this.portMonitorInterval) {
+      clearInterval(this.portMonitorInterval);
+      this.portMonitorInterval = undefined;
+      logger.info("MCP Server: Stopped port monitoring");
+    }
   }
 }

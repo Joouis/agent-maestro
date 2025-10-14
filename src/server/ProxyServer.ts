@@ -6,6 +6,10 @@ import * as vscode from "vscode";
 
 import { ExtensionController } from "../core/controller";
 import { DEFAULT_CONFIG } from "../utils/config";
+import {
+  ANOTHER_INSTANCE_RUNNING_MESSAGE,
+  PORT_MONITOR_INTERVAL_MS,
+} from "../utils/constant";
 import { logger } from "../utils/logger";
 import { analyzePortUsage } from "../utils/portUtils";
 import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
@@ -16,11 +20,6 @@ import { registerLmRoutes } from "./routes/lmRoutes";
 import { registerOpenaiRoutes } from "./routes/openaiRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
-
-const PORT_MONITOR_INTERVAL_MS = 60_000; // 1 minute
-
-export const ANOTHER_INSTANCE_RUNNING_MESSAGE =
-  "Another instance is already running, monitoring for availability";
 
 export class ProxyServer {
   private app: OpenAPIHono;
@@ -145,8 +144,7 @@ export class ProxyServer {
 
   async start(): Promise<{ started: boolean; reason: string; port?: number }> {
     if (this.isRunning) {
-      logger.warn("Server is already running");
-      return { started: false, reason: "Server is already running" };
+      return { started: false, reason: "Proxy server is already running" };
     }
 
     // Analyze the current port usage
@@ -182,7 +180,7 @@ export class ProxyServer {
           `${analysis.message}. API available at http://0.0.0.0:${this.port}/openapi.json`,
         );
         // Start monitoring for when the port becomes available
-        await this.startPortMonitoring();
+        this.startPortMonitoring();
         return {
           started: false,
           reason: ANOTHER_INSTANCE_RUNNING_MESSAGE,
@@ -245,27 +243,41 @@ export class ProxyServer {
     return `http://0.0.0.0:${this.port}/openapi.json`;
   }
 
-  private async startPortMonitoring() {
+  private startPortMonitoring(): void {
     if (this.portMonitorInterval) {
       return; // Monitoring is already active
     }
 
-    this.portMonitorInterval = setInterval(async () => {
-      const analysis = await analyzePortUsage(this.port, "proxy");
-      if (analysis.action !== "use") {
-        return; // Port is still not available
-      }
+    logger.info(
+      `Starting proxy server port monitoring for port ${this.port}...`,
+    );
 
-      logger.info("Port is now available. Attempting to start server...");
+    this.portMonitorInterval = setInterval(async () => {
       try {
-        await this.start();
-        // If server started successfully, stop monitoring
-        if (this.isRunning) {
-          clearInterval(this.portMonitorInterval);
-          this.portMonitorInterval = undefined;
+        const analysis = await analyzePortUsage(this.port, "proxy");
+        logger.debug(
+          `Proxy server port monitoring check for ${this.port}:`,
+          analysis,
+        );
+
+        if (analysis.action !== "use") {
+          return; // Port is still not available
+        }
+
+        logger.info(
+          `Port ${this.port} is now available, starting proxy server...`,
+        );
+        this.stopPortMonitoring();
+
+        try {
+          await this.start();
+        } catch (error) {
+          logger.error("Failed to start proxy server after monitoring:", error);
+          // Restart monitoring if server start fails
+          this.startPortMonitoring();
         }
       } catch (error) {
-        logger.error("Failed to start server during monitoring:", error);
+        logger.error("Error during proxy server port monitoring:", error);
       }
     }, PORT_MONITOR_INTERVAL_MS);
   }

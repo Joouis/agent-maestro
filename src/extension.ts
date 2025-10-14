@@ -5,10 +5,7 @@ import * as vscode from "vscode";
 
 import { ExtensionController } from "./core/controller";
 import { McpServer } from "./server/McpServer";
-import {
-  ANOTHER_INSTANCE_RUNNING_MESSAGE,
-  ProxyServer,
-} from "./server/ProxyServer";
+import { ProxyServer } from "./server/ProxyServer";
 import {
   chatModelsCache,
   getChatModelsQuickPickItems,
@@ -18,6 +15,7 @@ import {
   performClaudeCodeSelfCheck,
 } from "./utils/claude";
 import { readConfiguration } from "./utils/config";
+import { ANOTHER_INSTANCE_RUNNING_MESSAGE } from "./utils/constant";
 import { logger } from "./utils/logger";
 import {
   addAgentMaestroMcpConfig,
@@ -197,10 +195,14 @@ export async function activate(context: vscode.ExtensionContext) {
               `Agent Maestro MCP Server started successfully on port ${result.port}`,
             );
           } else {
-            // vscode.window.showInformationMessage(
-            //   `MCP Server startup: ${result.reason}`,
-            // );
-            logger.error(`MCP Server startup failed: ${result.reason}`);
+            // Don't show error message for "another instance running" case
+            if (result.reason === ANOTHER_INSTANCE_RUNNING_MESSAGE) {
+              logger.info(`MCP server startup skipped: ${result.reason}`);
+            } else {
+              vscode.window.showInformationMessage(
+                `MCP Server startup: ${result.reason}`,
+              );
+            }
           }
         } catch (error) {
           logger.error("Failed to start MCP server:", error);
