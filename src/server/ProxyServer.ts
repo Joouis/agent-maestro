@@ -17,6 +17,8 @@ import { registerOpenaiRoutes } from "./routes/openaiRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 
+const PORT_MONITOR_INTERVAL_MS = 60_000; // 1 minute
+
 export class ProxyServer {
   private app: OpenAPIHono;
   private controller: ExtensionController;
@@ -268,7 +270,7 @@ export class ProxyServer {
           logger.error("Failed to start server during monitoring:", error);
         }
       }
-    }, 60000); // Check every minute
+    }, PORT_MONITOR_INTERVAL_MS);
   }
 
   private stopPortMonitoring() {
