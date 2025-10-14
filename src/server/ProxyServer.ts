@@ -249,12 +249,6 @@ export class ProxyServer {
     }
 
     this.portMonitorInterval = setInterval(async () => {
-      if (this.isRunning) {
-        clearInterval(this.portMonitorInterval);
-        this.portMonitorInterval = undefined;
-        return;
-      }
-
       const analysis = await analyzePortUsage(this.port, "proxy");
       if (analysis.action === "use") {
         // Port is now available, try to start the server
