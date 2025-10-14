@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.3.4 - 2025.10.14
+
+- Ensure proxy server availability through automatic port monitoring
+- Improved Claude model handling to prioritize user-configured models over hardcoded defaults
+
 ## v2.3.3 - 2025.10.02
 
 - **Seamlessly support Claude Code native extension** by self-check and extra config
