@@ -168,8 +168,11 @@ export class McpTaskManager {
           const { message } = (event as TaskEvent<RooCodeEventName.Message>)
             .data;
 
-          if (message.say === "text" && run[taskId].status === "created") {
-            run[taskId].status = "running";
+          if (message.say === "text") {
+            if (run[taskId].status === "created") {
+              run[taskId].status = "running";
+            }
+            run[taskId].result = message.text ?? "";
           }
 
           if (message.say === "completion_result" && !message.partial) {
