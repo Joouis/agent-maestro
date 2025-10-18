@@ -187,7 +187,6 @@ export class McpTaskManager {
             run[taskId].status = "completed";
             await updateRunAndStream(taskId);
           }
-          // return;
         }
         // Handle TaskAborted event
         else if (event.name === RooCodeEventName.TaskAborted) {
