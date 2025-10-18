@@ -142,6 +142,7 @@ export class McpServer {
             });
 
             logger.info(`MCP Tool Execute Roo Tasks completed.`);
+            logger.debug(`Task Results:\n${JSON.stringify(taskResults)}`);
 
             return {
               type: "text",
