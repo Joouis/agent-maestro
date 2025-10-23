@@ -30,7 +30,6 @@ Turn VS Code into your compliant AI playground with powerful API compatibility a
 Agent Maestro assumes you already installed one of the supported AI coding extensions:
 
 - [Roo Code](https://marketplace.visualstudio.com/items?itemName=RooVeterinaryInc.roo-cline) or its variants for comprehensive API control
-- [KiloCode](https://marketplace.visualstudio.com/items?itemName=kilocode.kilo-code) - **✅ Fully tested and supported** (v4.103.1)
 - [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) for personal development routines.
 - [Codex](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt) for personal development routines.
 
@@ -150,33 +149,19 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 
 ```json
 {
-  "agent-maestro.defaultRooIdentifier": "kilocode.kilo-code",
+  "agent-maestro.defaultRooIdentifier": "roo-cline",
   "agent-maestro.proxyServerPort": 23333,
   "agent-maestro.mcpServerPort": 23334
 }
 ```
 
-**Example configurations for different extensions:**
-
-```json
-// For KiloCode (recommended - fully tested)
-{
-  "agent-maestro.defaultRooIdentifier": "kilocode.kilo-code"
-}
-
-// For RooCode/Cline
-{
-  "agent-maestro.defaultRooIdentifier": "roo-cline"
-}
-```
-
 **Available Settings:**
 
-|| Setting | Description | Default | KiloCode Value |
-|| ------------------------------------ | ---------------------------- | ------------- | -------------- |
-|| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"roo-cline"` | `"kilocode.kilo-code"` |
-|| `agent-maestro.proxyServerPort` | Proxy server port | `23333` | `23333` |
-|| `agent-maestro.mcpServerPort` | MCP server port | `23334` | `23334` |
+| Setting                              | Description                  | Default       |
+| ------------------------------------ | ---------------------------- | ------------- |
+| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"roo-cline"` |
+| `agent-maestro.proxyServerPort`      | Proxy server port            | `23333`       |
+| `agent-maestro.mcpServerPort`        | MCP server port              | `23334`       |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
 
