@@ -2,12 +2,12 @@
 
 ## Overview
 
-The `Agent Maestro: Fix GitHub Copilot Chat - Enable Additional Models` command automatically removes the `x-onbehalf-extension-id` header from the GitHub Copilot Chat extension to enable support for additional AI models.
+The `Agent Maestro: Fix GitHub Copilot Chat - Model is not supported error` command automatically removes the `x-onbehalf-extension-id` header from the GitHub Copilot Chat extension to enable support for additional AI models.
 
 ## How to Use
 
 1. Open VS Code Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux)
-2. Search for and select: `Agent Maestro: Fix GitHub Copilot Chat - Enable Additional Models`
+2. Search for and select: `Agent Maestro: Fix GitHub Copilot Chat - Model is not supported error`
 3. Review the warning message and click "Yes, Proceed"
 4. Wait for the process to complete (progress is shown in a notification)
 5. When prompted, click "Reload Now" to restart VS Code
