@@ -51,6 +51,20 @@ Configure Codex to use VS Code's language models with a single command `Agent Ma
 
 This automatically creates or updates `~/.codex/config.toml` with Agent Maestro endpoint and sets up `GPT-5-Codex` as the recommended model.
 
+### GitHub Copilot Chat Model Enhancement
+
+Enable additional models in GitHub Copilot Chat with the `Agent Maestro: Fix GitHub Copilot Chat - Enable Additional Models` command. ([ref](https://github.com/cline/cline/issues/2186#issuecomment-2727010228))
+
+This feature:
+
+- Automatically locates your GitHub Copilot Chat extension
+- Creates a timestamped backup before making changes
+- Removes the `x-onbehalf-extension-id` header restriction
+- Verifies the fix was applied successfully
+- Prompts you to reload VS Code for changes to take effect
+
+**Note**: This modification may be overwritten when the Copilot Chat extension updates. Simply run the command again after updates if needed.
+
 ### Usage
 
 1. **Explore API Capabilities**: Access the complete OpenAPI specification at [`http://localhost:23333/openapi.json`](http://localhost:23333/openapi.json).
@@ -79,6 +93,7 @@ This automatically creates or updates `~/.codex/config.toml` with Agent Maestro 
 
    - `Agent Maestro: Configure Claude Code Settings` - One-click Claude Code setup
    - `Agent Maestro: Configure Codex Settings` - One-click Codex setup
+   - `Agent Maestro: Fix GitHub Copilot Chat - Enable Additional Models` - Remove header restriction to enable additional models
 
 3. **Development Resources**:
    - **API Documentation**: Complete reference in [`docs/roo-code/`](docs/roo-code/README.md)
