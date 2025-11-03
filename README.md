@@ -53,7 +53,7 @@ This automatically creates or updates `~/.codex/config.toml` with Agent Maestro 
 
 ### GitHub Copilot Chat Model Enhancement
 
-Enable additional models in GitHub Copilot Chat with the `Agent Maestro: Fix GitHub Copilot Chat - Enable Additional Models` command. ([ref](https://github.com/cline/cline/issues/2186#issuecomment-2727010228))
+Enable additional models in GitHub Copilot Chat with the `Agent Maestro: Fix GitHub Copilot Chat - Model is not supported error` command. ([ref](https://github.com/cline/cline/issues/2186#issuecomment-2727010228))
 
 This feature:
 
