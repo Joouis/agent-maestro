@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.6 - 2025.11.03
+
+- New **"Fix GitHub Copilot Chat - Enable Additional Models"** command to fix "Model is not supported for this request" error by removing header restrictions ([reference](https://github.com/cline/cline/issues/2186#issuecomment-2727010228))
+
 ## v2.3.5 - 2025.10.18
 
 - Fixed issue where responses from the "Execute Roo Tasks" MCP tool were being truncated
