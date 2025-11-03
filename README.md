@@ -93,7 +93,7 @@ This feature:
 
    - `Agent Maestro: Configure Claude Code Settings` - One-click Claude Code setup
    - `Agent Maestro: Configure Codex Settings` - One-click Codex setup
-   - `Agent Maestro: Fix GitHub Copilot Chat - Enable Additional Models` - Remove header restriction to enable additional models
+   - `Agent Maestro: Fix GitHub Copilot Chat - Model is not supported error` - Remove header restriction to enable additional models
 
 3. **Development Resources**:
    - **API Documentation**: Complete reference in [`docs/roo-code/`](docs/roo-code/README.md)
