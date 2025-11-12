@@ -10,7 +10,6 @@ import { logger } from "../../utils/logger";
 import {
   AnthropicCountTokensResponseSchema,
   AnthropicErrorResponseSchema,
-  AnthropicMessageCreateParamsSchema,
   AnthropicMessageResponseSchema,
 } from "../schemas/anthropic";
 import {
@@ -106,7 +105,12 @@ const messagesRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: AnthropicMessageCreateParamsSchema,
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .any()
+            .describe(
+              "Anthropic Messages API request body. See https://docs.anthropic.com/en/api/messages for schema details.",
+            ),
         },
       },
     },
@@ -164,7 +168,12 @@ const countTokensRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: AnthropicMessageCreateParamsSchema,
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .any()
+            .describe(
+              "Anthropic Messages API request body. See https://docs.claude.com/en/api/messages-count-tokens for schema details.",
+            ),
         },
       },
     },

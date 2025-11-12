@@ -178,6 +178,9 @@ const ModelResponseProperties = z.looseObject({
 
 /**
  * POST /chat/completions request body
+ *
+ * Note: This schema is currently not used in the route handler to support API schema changes
+ * without requiring immediate updates.
  */
 export const CreateChatCompletionRequest = ModelResponseProperties.extend({
   messages: z.array(ChatCompletionRequestMessage).min(1),

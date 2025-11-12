@@ -10,6 +10,12 @@ export const AnthropicErrorResponseSchema = z
   })
   .openapi("AnthropicErrorResponse");
 
+/**
+ * POST /v1/messages request body
+ *
+ * Note: This schema is currently not used in the route handler to support API schema changes
+ * without requiring immediate updates.
+ */
 export const AnthropicMessageCreateParamsSchema = z.looseObject({
   model: z.string().describe("The model to use for the request"),
   messages: z
