@@ -6,11 +6,7 @@ import * as vscode from "vscode";
 
 import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
-import {
-  CommonResponseError,
-  CreateChatCompletionResponse,
-  CreateChatCompletionStreamResponse,
-} from "../schemas/openai";
+import { CommonResponseError } from "../schemas/openai";
 import {
   convertOpenAIChatCompletionToolToVSCode,
   convertOpenAIMessagesToVSCode,
@@ -30,7 +26,7 @@ const chatCompletionsRoute = createRoute({
         "application/json": {
           // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .looseObject({})
+            .object()
             .describe(
               "OpenAI Chat Completion request body. See https://platform.openai.com/docs/api-reference/chat/create for schema details.",
             ),
@@ -43,10 +39,20 @@ const chatCompletionsRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: CreateChatCompletionResponse,
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .object()
+            .describe(
+              "OpenAI Chat Completion response body. See https://platform.openai.com/docs/api-reference/chat/create for schema details.",
+            ),
         },
         "text/event-stream": {
-          schema: CreateChatCompletionStreamResponse,
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .object()
+            .describe(
+              "OpenAI Chat Completion response body. See https://platform.openai.com/docs/api-reference/chat/create for schema details.",
+            ),
         },
       },
       description: "Successfully created chat completion",

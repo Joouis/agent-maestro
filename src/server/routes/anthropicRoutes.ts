@@ -7,11 +7,7 @@ import * as vscode from "vscode";
 import { getChatModelClient } from "../../utils/chatModels";
 import { getClaudeConfiguredModels } from "../../utils/claude";
 import { logger } from "../../utils/logger";
-import {
-  AnthropicCountTokensResponseSchema,
-  AnthropicErrorResponseSchema,
-  AnthropicMessageResponseSchema,
-} from "../schemas/anthropic";
+import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
   convertAnthropicMessagesToVSCode,
   convertAnthropicSystemToVSCode,
@@ -107,7 +103,7 @@ const messagesRoute = createRoute({
         "application/json": {
           // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .looseObject({})
+            .object()
             .describe(
               "Anthropic Messages API request body. See https://docs.anthropic.com/en/api/messages for schema details.",
             ),
@@ -120,7 +116,12 @@ const messagesRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: AnthropicMessageResponseSchema,
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .object()
+            .describe(
+              "Anthropic Messages API response body. See https://docs.anthropic.com/en/api/messages for schema details.",
+            ),
         },
         "text/event-stream": {
           schema: z
@@ -170,7 +171,7 @@ const countTokensRoute = createRoute({
         "application/json": {
           // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .looseObject({})
+            .object()
             .describe(
               "Anthropic Messages API request body. See https://docs.claude.com/en/api/messages-count-tokens for schema details.",
             ),
@@ -183,7 +184,12 @@ const countTokensRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: AnthropicCountTokensResponseSchema,
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .object()
+            .describe(
+              "Anthropic Messages API response body. See https://docs.claude.com/en/api/messages-count-tokens for schema details.",
+            ),
         },
       },
       description: "Successfully counted input tokens",
