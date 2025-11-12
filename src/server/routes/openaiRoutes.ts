@@ -30,7 +30,7 @@ const chatCompletionsRoute = createRoute({
         "application/json": {
           // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .any()
+            .looseObject({})
             .describe(
               "OpenAI Chat Completion request body. See https://platform.openai.com/docs/api-reference/chat/create for schema details.",
             ),

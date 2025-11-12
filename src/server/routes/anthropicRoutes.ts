@@ -107,7 +107,7 @@ const messagesRoute = createRoute({
         "application/json": {
           // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .any()
+            .looseObject({})
             .describe(
               "Anthropic Messages API request body. See https://docs.anthropic.com/en/api/messages for schema details.",
             ),
@@ -170,7 +170,7 @@ const countTokensRoute = createRoute({
         "application/json": {
           // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .any()
+            .looseObject({})
             .describe(
               "Anthropic Messages API request body. See https://docs.claude.com/en/api/messages-count-tokens for schema details.",
             ),
