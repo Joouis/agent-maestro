@@ -1,7 +1,7 @@
 import {
   FinishReason,
-  type GenerateContentResponse,
   type Part,
+  type GenerateContentResponse as _GenerateContentResponse,
 } from "@google/genai";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { Context } from "hono";
@@ -17,6 +17,19 @@ import {
   convertGeminiToolConfigToVSCode,
   convertGeminiToolsToVSCode,
 } from "../utils/gemini";
+
+/**
+ * Extract data-only properties from GenerateContentResponse class
+ * Omits methods like text, data, functionCalls, etc.
+ */
+type GenerateContentResponse = Pick<
+  _GenerateContentResponse,
+  | "candidates"
+  | "usageMetadata"
+  | "modelVersion"
+  | "promptFeedback"
+  | "responseId"
+>;
 
 // ============================================================================
 // Shared Helper Functions
@@ -120,15 +133,11 @@ const generateContentRoute = createRoute({
     body: {
       content: {
         "application/json": {
+          // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .object({
-              contents: z.array(z.any()).optional(),
-              systemInstruction: z.any().optional(),
-              tools: z.array(z.any()).optional(),
-              generationConfig: z.any().optional(),
-            })
+            .object()
             .describe(
-              "Gemini GenerateContent request body. See https://ai.google.dev/api/generate-content for schema details.",
+              "Gemini GenerateContent request body. See https://ai.google.dev/api/generate-content#request-body for schema details.",
             ),
         },
       },
@@ -138,23 +147,15 @@ const generateContentRoute = createRoute({
     200: {
       content: {
         "application/json": {
+          // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .object({
-              candidates: z.array(z.any()).optional(),
-              usageMetadata: z.any().optional(),
-              modelVersion: z.string().optional(),
-            })
+            .object()
             .describe(
-              "Gemini GenerateContent response body. See https://ai.google.dev/api/generate-content for schema details.",
+              "Gemini GenerateContent response body. See https://ai.google.dev/api/generate-content#v1beta.GenerateContentResponse for schema details.",
             ),
         },
-        "text/event-stream": {
-          schema: z
-            .string()
-            .describe("Server-sent events stream for streaming responses"),
-        },
       },
-      description: "Successfully generated content",
+      description: "Successfully generated content (non-streaming)",
     },
     400: {
       content: {
@@ -197,15 +198,11 @@ const streamGenerateContentRoute = createRoute({
     body: {
       content: {
         "application/json": {
+          // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .object({
-              contents: z.array(z.any()).optional(),
-              systemInstruction: z.any().optional(),
-              tools: z.array(z.any()).optional(),
-              generationConfig: z.any().optional(),
-            })
+            .object()
             .describe(
-              "Gemini GenerateContent request body. See https://ai.google.dev/api/generate-content for schema details.",
+              "Gemini GenerateContent request body. See https://ai.google.dev/api/generate-content#request-body_1 for schema details.",
             ),
         },
       },
@@ -217,7 +214,9 @@ const streamGenerateContentRoute = createRoute({
         "text/event-stream": {
           schema: z
             .string()
-            .describe("Server-sent events stream for streaming responses"),
+            .describe(
+              "Server-sent events stream for streaming responses. See https://ai.google.dev/api/generate-content#v1beta.GenerateContentResponse for schema details.",
+            ),
         },
       },
       description: "Successfully generated content stream",
@@ -263,15 +262,11 @@ const countTokensRoute = createRoute({
     body: {
       content: {
         "application/json": {
+          // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .object({
-              contents: z.array(z.any()).optional(),
-              systemInstruction: z.any().optional(),
-              tools: z.array(z.any()).optional(),
-              generationConfig: z.any().optional(),
-            })
+            .object()
             .describe(
-              "Gemini CountTokens request body. See https://ai.google.dev/api/count-tokens for schema details.",
+              "Gemini CountTokens request body. See https://ai.google.dev/api/tokens#request-body for schema details.",
             ),
         },
       },
@@ -281,16 +276,11 @@ const countTokensRoute = createRoute({
     200: {
       content: {
         "application/json": {
+          // Skip schema validation to support API schema changes without requiring immediate updates.
           schema: z
-            .object({
-              totalTokens: z.number().describe("Total token count"),
-              cachedContentTokenCount: z
-                .number()
-                .optional()
-                .describe("Cached content token count"),
-            })
+            .object()
             .describe(
-              "Gemini CountTokens response body. See https://ai.google.dev/api/count-tokens for schema details.",
+              "Gemini CountTokens response body. See https://ai.google.dev/api/tokens#response-body for schema details.",
             ),
         },
       },
@@ -329,12 +319,11 @@ const countTokensRoute = createRoute({
 
 export function registerGeminiRoutes(app: OpenAPIHono) {
   // POST /v1beta/models/{model}:generateContent
-  app.openapi(generateContentRoute, async (c: Context): Promise<Response> => {
+  app.openapi(generateContentRoute, async (c: Context) => {
     try {
       // Parse request
       const { model: modelId } = c.req.param();
       const requestBody = await c.req.json();
-      const { generationConfig } = requestBody;
 
       logger.debug(
         `/v1beta/models/${modelId}:generateContent payload:`,
@@ -376,151 +365,42 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         cancellationToken,
       );
 
-      // 4. Check if streaming is requested
-      const isStreaming = generationConfig?.stream || false;
-
-      // 5. Non-streaming response
-      if (!isStreaming) {
-        const { parts, accumulatedText } =
-          await processVSCodeStreamToGeminiParts(
-            response.stream as AsyncIterable<
-              vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
-            >,
-          );
-
-        // Count output tokens
-        const outputTokenCount = accumulatedText
-          ? await client.countTokens(accumulatedText)
-          : 0;
-
-        const geminiResponse: GenerateContentResponse = {
-          candidates: [
-            {
-              content: {
-                parts,
-                role: "model",
-              },
-              finishReason: FinishReason.STOP,
-              index: 0,
-            },
-          ],
-          usageMetadata: {
-            promptTokenCount: inputTokenCount,
-            candidatesTokenCount: outputTokenCount,
-            totalTokenCount: inputTokenCount + outputTokenCount,
-          },
-        };
-
-        logger.debug(
-          "generateContent response:",
-          JSON.stringify(geminiResponse, null, 2),
-        );
-
-        return c.json(geminiResponse);
-      }
-
-      // 6. Streaming response
-      return streamSSE(
-        c,
-        async (stream) => {
-          try {
-            const streamParts: Part[] = [];
-            let accumulatedText = "";
-
-            for await (const chunk of response.stream) {
-              if (chunk instanceof vscode.LanguageModelTextPart) {
-                // Accumulate text
-                let lastPart = streamParts.at(-1);
-                if (!lastPart || !("text" in lastPart)) {
-                  lastPart = { text: "" };
-                  streamParts.push(lastPart);
-                }
-                lastPart.text += chunk.value;
-                accumulatedText += chunk.value;
-
-                // Send streaming chunk
-                const streamChunk: GenerateContentResponse = {
-                  candidates: [
-                    {
-                      content: {
-                        parts: [{ text: chunk.value }],
-                        role: "model",
-                      },
-                      index: 0,
-                    },
-                  ],
-                };
-
-                await stream.writeSSE({
-                  data: JSON.stringify(streamChunk),
-                });
-              } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-                const functionCallPart: Part = {
-                  functionCall: {
-                    id: chunk.callId,
-                    name: chunk.name,
-                    args: chunk.input as Record<string, unknown>,
-                  },
-                };
-                streamParts.push(functionCallPart);
-                accumulatedText += JSON.stringify(chunk);
-
-                // Send function call chunk
-                const streamChunk: GenerateContentResponse = {
-                  candidates: [
-                    {
-                      content: {
-                        parts: [functionCallPart],
-                        role: "model",
-                      },
-                      index: 0,
-                    },
-                  ],
-                };
-
-                await stream.writeSSE({
-                  data: JSON.stringify(streamChunk),
-                });
-              }
-            }
-
-            // Send final chunk with usage metadata
-            const outputTokenCount = accumulatedText
-              ? await client.countTokens(accumulatedText)
-              : 0;
-
-            const finalChunk: GenerateContentResponse = {
-              candidates: [
-                {
-                  content: {
-                    parts: streamParts,
-                    role: "model",
-                  },
-                  finishReason: FinishReason.STOP,
-                  index: 0,
-                },
-              ],
-              usageMetadata: {
-                promptTokenCount: inputTokenCount,
-                candidatesTokenCount: outputTokenCount,
-                totalTokenCount: inputTokenCount + outputTokenCount,
-              },
-            };
-
-            await stream.writeSSE({
-              data: JSON.stringify(finalChunk),
-            });
-
-            logger.info("Streaming generateContent completed");
-          } catch (streamError) {
-            logger.error("Error in streaming:", streamError);
-            throw streamError;
-          }
-        },
-        async (error, _stream) => {
-          logger.error("Stream error occurred:", error);
-        },
+      // 4. Process response (always non-streaming for generateContent)
+      const { parts, accumulatedText } = await processVSCodeStreamToGeminiParts(
+        response.stream as AsyncIterable<
+          vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
+        >,
       );
+
+      // Count output tokens
+      const outputTokenCount = accumulatedText
+        ? await client.countTokens(accumulatedText)
+        : 0;
+
+      const geminiResponse: GenerateContentResponse = {
+        candidates: [
+          {
+            content: {
+              parts,
+              role: "model",
+            },
+            finishReason: FinishReason.STOP,
+            index: 0,
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: inputTokenCount,
+          candidatesTokenCount: outputTokenCount,
+          totalTokenCount: inputTokenCount + outputTokenCount,
+        },
+      };
+
+      logger.debug(
+        "generateContent response:",
+        JSON.stringify(geminiResponse, null, 2),
+      );
+
+      return c.json(geminiResponse, 200);
     } catch (error) {
       logger.error("Gemini API generateContent request failed:", error);
       return c.json(
@@ -657,10 +537,6 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                 ? await client.countTokens(accumulatedText)
                 : 0;
 
-              const finishReason = streamParts.some((p) => p.functionCall)
-                ? "FUNCTION_CALL"
-                : "STOP";
-
               const finalChunk: GenerateContentResponse = {
                 candidates: [
                   {
@@ -668,7 +544,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                       parts: streamParts,
                       role: "model",
                     },
-                    finishReason,
+                    finishReason: FinishReason.STOP,
                     index: 0,
                   },
                 ],

@@ -136,7 +136,7 @@ export const convertGeminiSystemInstructionToVSCode = (
   // Single Part format
   if ("text" in instruction || "functionCall" in instruction) {
     const part = convertGeminiPartToVSCodePart(instruction as Part);
-    if (part) {
+    if (part && part instanceof vscode.LanguageModelTextPart) {
       return [vscode.LanguageModelChatMessage.User([part])];
     }
     return [];
@@ -144,8 +144,15 @@ export const convertGeminiSystemInstructionToVSCode = (
 
   // Array of Parts format
   if (Array.isArray(instruction)) {
+    // Handle PartUnion[] which can contain string | Part
     const parts = instruction
-      .map(convertGeminiPartToVSCodePart)
+      .map((item) => {
+        // If item is a string Part, convert to Part object
+        if (typeof item === "string") {
+          return convertGeminiPartToVSCodePart({ text: item });
+        }
+        return convertGeminiPartToVSCodePart(item as Part);
+      })
       .filter(
         (p) => p !== null && p instanceof vscode.LanguageModelTextPart,
       ) as vscode.LanguageModelTextPart[];
@@ -179,6 +186,10 @@ export const convertGeminiToolsToVSCode = (
   for (const tool of tools) {
     if (tool.functionDeclarations) {
       for (const funcDecl of tool.functionDeclarations) {
+        // Skip function declarations without a name
+        if (!funcDecl.name) {
+          continue;
+        }
         vsCodeTools.push({
           name: funcDecl.name,
           description: funcDecl.description || "",
