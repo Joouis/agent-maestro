@@ -44,6 +44,7 @@
     "proxy",
     "api"
   ],
+  "type": "module",
   "main": "./dist/extension.js",
   "contributes": {
     "configuration": {
@@ -153,6 +154,7 @@
   ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.57.0",
+    "@google/genai": "^1.29.1",
     "@hono/node-server": "^1.17.1",
     "@hono/zod-openapi": "^1.0.2",
     "axios": "^1.9.0",

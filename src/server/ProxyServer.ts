@@ -15,6 +15,7 @@ import { analyzePortUsage } from "../utils/portUtils";
 import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
 import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
+import { registerGeminiRoutes } from "./routes/geminiRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
 import { registerOpenaiRoutes } from "./routes/openaiRoutes";
@@ -57,6 +58,9 @@ export class ProxyServer {
     // OpenAI-compatible messages endpoint
     this.app.route("/api/openai", this.getApiOpenAiRoutes());
 
+    // Gemini-compatible API endpoint
+    this.app.route("/api/gemini", this.getApiGeminiRoutes());
+
     // GET /openapi.json - OpenAPI specification
     this.app.doc("/openapi.json", this.getOpenApiDocTpl());
   }
@@ -83,6 +87,12 @@ export class ProxyServer {
   private getApiOpenAiRoutes(): OpenAPIHono {
     const routes = new OpenAPIHono();
     registerOpenaiRoutes(routes);
+    return routes;
+  }
+
+  private getApiGeminiRoutes(): OpenAPIHono {
+    const routes = new OpenAPIHono();
+    registerGeminiRoutes(routes);
     return routes;
   }
 
@@ -125,6 +135,16 @@ export class ProxyServer {
           name: "Anthropic API",
           description:
             "Anthropic-compatible API endpoints using VSCode Language Models",
+        },
+        {
+          name: "OpenAI API",
+          description:
+            "OpenAI-compatible API endpoints using VSCode Language Models",
+        },
+        {
+          name: "Google Gemini API",
+          description:
+            "Gemini-compatible API endpoints using VSCode Language Models",
         },
         {
           name: "MCP Configuration",
