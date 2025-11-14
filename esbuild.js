@@ -1,6 +1,6 @@
-const esbuild = require("esbuild");
-const fs = require("fs");
-const path = require("path");
+import esbuild from "esbuild";
+import fs from "fs";
+import path from "path";
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
@@ -36,7 +36,7 @@ async function main() {
     sourcemap: !production,
     sourcesContent: false,
     platform: "node",
-    outfile: "dist/extension.js",
+    outfile: "dist/extension.cjs",
     metafile: !production,
     external: ["vscode", "@valibot/to-json-schema", "effect", "sury"],
     logLevel: "debug",

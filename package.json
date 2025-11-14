@@ -45,7 +45,7 @@
     "api"
   ],
   "type": "module",
-  "main": "./dist/extension.js",
+  "main": "./dist/extension.cjs",
   "contributes": {
     "configuration": {
       "type": "object",
