@@ -118,7 +118,7 @@ export class McpTaskManager {
   ): Promise<void> {
     let taskId = "";
 
-    const updateRunAndStream = async (id: string) => {
+    const updateRunAndStream = async (_id: string) => {
       if (streamContent) {
         await streamContent({
           type: "text",

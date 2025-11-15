@@ -39,7 +39,7 @@ async function main() {
     outfile: "dist/extension.cjs",
     metafile: !production,
     external: ["vscode", "@valibot/to-json-schema", "effect", "sury"],
-    logLevel: "debug",
+    logLevel: "info",
     plugins: [
       /* add to the end of plugins array */
       esbuildProblemMatcherPlugin,

@@ -348,7 +348,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           });
           accumulatedText += JSON.stringify(chunk);
         }
-        // Now chunk has reasoning part (vscode_reasoning_done), so we skip it
+        // Now chunk could be reasoning part (vscode_reasoning_done), so we skip it
       }
 
       // Count output tokens
@@ -503,7 +503,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                     data: JSON.stringify(streamChunk),
                   });
                 }
-                // Now chunk has reasoning part (vscode_reasoning_done), so we skip it
+                // Now chunk could be reasoning part (vscode_reasoning_done), so we skip it
               }
 
               // Send final chunk with usage metadata
