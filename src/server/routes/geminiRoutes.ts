@@ -1,8 +1,4 @@
-import {
-  FinishReason,
-  type Part,
-  type GenerateContentResponse as _GenerateContentResponse,
-} from "@google/genai";
+import { FinishReason, type Part } from "@google/genai";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -12,6 +8,7 @@ import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import {
   GeminiErrorResponseSchema,
+  GenerateContentResponse,
   GenereateContentRequest,
 } from "../schemas/gemini";
 import {
@@ -20,19 +17,6 @@ import {
   convertGeminiToolConfigToVSCode,
   convertGeminiToolsToVSCode,
 } from "../utils/gemini";
-
-/**
- * Extract data-only properties from GenerateContentResponse class
- * Omits methods like text, data, functionCalls, etc.
- */
-type GenerateContentResponse = Pick<
-  _GenerateContentResponse,
-  | "candidates"
-  | "usageMetadata"
-  | "modelVersion"
-  | "promptFeedback"
-  | "responseId"
->;
 
 // ============================================================================
 // Shared Helper Functions
@@ -368,11 +352,8 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             },
           });
           accumulatedText += JSON.stringify(chunk);
-        } else {
-          const text = JSON.stringify(chunk);
-          parts.push({ text });
-          accumulatedText += text;
         }
+        // Now chunk has reasoning part (vscode_reasoning_done), so we skip it
       }
 
       // Count output tokens
@@ -477,28 +458,22 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           c,
           async (stream) => {
             try {
-              const streamParts: Part[] = [];
               let accumulatedText = "";
 
               for await (const chunk of response.stream) {
                 if (chunk instanceof vscode.LanguageModelTextPart) {
-                  // Accumulate text
-                  let lastPart = streamParts.at(-1);
-                  if (!lastPart || !("text" in lastPart)) {
-                    lastPart = { text: "" };
-                    streamParts.push(lastPart);
-                  }
-                  lastPart.text += chunk.value;
-                  accumulatedText += chunk.value;
+                  const text = chunk.value;
+                  accumulatedText += text;
 
                   // Send streaming chunk
                   const streamChunk: GenerateContentResponse = {
                     candidates: [
                       {
                         content: {
-                          parts: [{ text: chunk.value }],
+                          parts: [{ text }],
                           role: "model",
                         },
+                        finishReason: FinishReason.STOP,
                         index: 0,
                       },
                     ],
@@ -515,7 +490,6 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                       args: chunk.input as Record<string, unknown>,
                     },
                   };
-                  streamParts.push(functionCallPart);
                   accumulatedText += JSON.stringify(chunk);
 
                   // Send function call chunk
@@ -526,6 +500,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                           parts: [functionCallPart],
                           role: "model",
                         },
+                        finishReason: FinishReason.STOP,
                         index: 0,
                       },
                     ],
@@ -543,21 +518,13 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                 : 0;
 
               const finalChunk: GenerateContentResponse = {
-                candidates: [
-                  {
-                    content: {
-                      parts: streamParts,
-                      role: "model",
-                    },
-                    finishReason: FinishReason.STOP,
-                    index: 0,
-                  },
-                ],
+                candidates: [],
                 usageMetadata: {
                   promptTokenCount: inputTokenCount,
                   candidatesTokenCount: outputTokenCount,
                   totalTokenCount: inputTokenCount + outputTokenCount,
                 },
+                modelVersion: modelId,
               };
 
               await stream.writeSSE({

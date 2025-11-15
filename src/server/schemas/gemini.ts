@@ -4,6 +4,7 @@ import {
   type SafetySetting,
   type Tool,
   type ToolConfig,
+  type GenerateContentResponse as _GenerateContentResponse,
 } from "@google/genai";
 import { z } from "@hono/zod-openapi";
 
@@ -26,3 +27,16 @@ export interface GenereateContentRequest {
   generationConfig?: GenerationConfig;
   cachedContent?: string;
 }
+
+/**
+ * Extract data-only properties from GenerateContentResponse class
+ * Omits methods like text, data, functionCalls, etc.
+ */
+export type GenerateContentResponse = Pick<
+  _GenerateContentResponse,
+  | "candidates"
+  | "promptFeedback"
+  | "usageMetadata"
+  | "modelVersion"
+  | "responseId"
+>;
