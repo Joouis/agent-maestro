@@ -8,8 +8,8 @@ import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import {
   GeminiErrorResponseSchema,
+  GenerateContentRequest,
   GenerateContentResponse,
-  GenereateContentRequest,
 } from "../schemas/gemini";
 import {
   convertGeminiContentsToVSCode,
@@ -30,7 +30,7 @@ const prepareGeminiRequest = async ({
   requestBody,
   client,
 }: {
-  requestBody: GenereateContentRequest;
+  requestBody: GenerateContentRequest;
   client: vscode.LanguageModelChat;
 }) => {
   const { systemInstruction, contents, tools, generationConfig, toolConfig } =

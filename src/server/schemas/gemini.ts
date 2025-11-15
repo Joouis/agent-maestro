@@ -18,7 +18,7 @@ export const GeminiErrorResponseSchema = z
   })
   .openapi("GeminiErrorResponse");
 
-export interface GenereateContentRequest {
+export interface GenerateContentRequest {
   contents: Content[];
   tools?: Tool[];
   toolConfig?: ToolConfig;
