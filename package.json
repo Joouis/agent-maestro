@@ -176,7 +176,7 @@
     "@typescript-eslint/parser": "^8.31.1",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "^3.2.1",
+    "@vscode/vsce": "^3.7.0",
     "esbuild": "^0.25.3",
     "eslint": "^9.25.1",
     "husky": "^9.1.7",
