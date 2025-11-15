@@ -78,7 +78,7 @@ const generateContentRoute = createRoute({
   tags: ["Google Gemini API"],
   summary: "Generate content with Gemini-compatible API",
   description:
-    "Generate content using the Gemini-compatible API interface, powered by VSCode Language Models. Supports both streaming and non-streaming responses.",
+    "Generate content using the Gemini-compatible API interface, powered by VSCode Language Models. Always returns non-streaming responses.",
   request: {
     params: z.object({
       modelWithMethod: z
@@ -335,14 +335,9 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
 
       for await (const chunk of response.stream) {
         if (chunk instanceof vscode.LanguageModelTextPart) {
-          // Accumulate text in last text part or create new one
-          let lastPart = parts.at(-1);
-          if (!lastPart || !("text" in lastPart)) {
-            lastPart = { text: "" };
-            parts.push(lastPart);
-          }
-          lastPart.text += chunk.value;
-          accumulatedText += chunk.value;
+          const text = chunk.value;
+          parts.push({ text });
+          accumulatedText += text;
         } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
           parts.push({
             functionCall: {
@@ -508,6 +503,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                     data: JSON.stringify(streamChunk),
                   });
                 }
+                // Now chunk has reasoning part (vscode_reasoning_done), so we skip it
               }
 
               // Send final chunk with usage metadata
