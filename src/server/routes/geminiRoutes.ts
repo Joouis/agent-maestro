@@ -473,7 +473,6 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                           parts: [{ text }],
                           role: "model",
                         },
-                        finishReason: FinishReason.STOP,
                         index: 0,
                       },
                     ],
@@ -500,7 +499,6 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                           parts: [functionCallPart],
                           role: "model",
                         },
-                        finishReason: FinishReason.STOP,
                         index: 0,
                       },
                     ],
@@ -518,7 +516,12 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                 : 0;
 
               const finalChunk: GenerateContentResponse = {
-                candidates: [],
+                candidates: [
+                  {
+                    finishReason: FinishReason.STOP,
+                    index: 0,
+                  },
+                ],
                 usageMetadata: {
                   promptTokenCount: inputTokenCount,
                   candidatesTokenCount: outputTokenCount,
