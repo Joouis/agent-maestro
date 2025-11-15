@@ -1,7 +1,7 @@
 import {
   type Content,
-  type ContentUnion,
   type FunctionCallingConfig,
+  FunctionCallingConfigMode,
   type Part,
   type Tool,
 } from "@google/genai";
@@ -15,24 +15,23 @@ const convertGeminiPartToVSCodePart = (
 ):
   | vscode.LanguageModelTextPart
   | vscode.LanguageModelToolCallPart
-  | vscode.LanguageModelToolResultPart
-  | null => {
+  | vscode.LanguageModelToolResultPart => {
   // Text part
   if (part.text !== undefined) {
     return new vscode.LanguageModelTextPart(part.text);
   }
 
   // Function call (tool use)
-  if (part.functionCall) {
+  if (part.functionCall?.name) {
     return new vscode.LanguageModelToolCallPart(
-      part.functionCall.id || `call_${Date.now()}`,
-      part.functionCall.name || "unknown",
+      part.functionCall.id || `function_call_${Date.now()}`,
+      part.functionCall.name,
       (part.functionCall.args || {}) as object,
     );
   }
 
   // Function response (tool result)
-  if (part.functionResponse) {
+  if (part.functionResponse?.id) {
     const responseText = part.functionResponse.response
       ? JSON.stringify(part.functionResponse.response)
       : "";
@@ -63,13 +62,8 @@ const convertGeminiPartToVSCodePart = (
     return new vscode.LanguageModelTextPart(JSON.stringify(part.inlineData));
   }
 
-  // File data - represent as text
-  if (part.fileData) {
-    return new vscode.LanguageModelTextPart(JSON.stringify(part.fileData));
-  }
-
-  // Unknown part type
-  return null;
+  // Unknown part type - represent as text to avoid data loss
+  return new vscode.LanguageModelTextPart(JSON.stringify(part));
 };
 
 /**
@@ -78,13 +72,7 @@ const convertGeminiPartToVSCodePart = (
 export const convertGeminiContentToVSCode = (
   content: Content,
 ): vscode.LanguageModelChatMessage => {
-  const parts = (content.parts || [])
-    .map(convertGeminiPartToVSCodePart)
-    .filter((p) => p !== null) as Array<
-    | vscode.LanguageModelTextPart
-    | vscode.LanguageModelToolCallPart
-    | vscode.LanguageModelToolResultPart
-  >;
+  const parts = (content.parts || []).map(convertGeminiPartToVSCodePart);
 
   // Default to empty text if no valid parts
   if (parts.length === 0) {
@@ -95,14 +83,18 @@ export const convertGeminiContentToVSCode = (
   const role = content.role || "user";
   if (role === "model") {
     return vscode.LanguageModelChatMessage.Assistant(
-      parts as Array<
+      parts.filter(
+        (p) => !(p instanceof vscode.LanguageModelToolResultPart),
+      ) as Array<
         vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
       >,
     );
   }
 
   return vscode.LanguageModelChatMessage.User(
-    parts as Array<
+    parts.filter(
+      (p) => !(p instanceof vscode.LanguageModelToolCallPart),
+    ) as Array<
       vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart
     >,
   );
@@ -122,53 +114,15 @@ export const convertGeminiContentsToVSCode = (
  * System instructions are treated as User messages in VSCode LM API
  */
 export const convertGeminiSystemInstructionToVSCode = (
-  instruction?: ContentUnion,
+  instruction?: Content,
 ): vscode.LanguageModelChatMessage[] => {
-  if (!instruction) {
-    return [];
-  }
+  const parts = (instruction?.parts || [])
+    .map(convertGeminiPartToVSCodePart)
+    .filter((p) => !(p instanceof vscode.LanguageModelToolCallPart)) as Array<
+    vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart
+  >;
 
-  // String format
-  if (typeof instruction === "string") {
-    return [vscode.LanguageModelChatMessage.User(instruction)];
-  }
-
-  // Single Part format
-  if ("text" in instruction || "functionCall" in instruction) {
-    const part = convertGeminiPartToVSCodePart(instruction as Part);
-    if (part && part instanceof vscode.LanguageModelTextPart) {
-      return [vscode.LanguageModelChatMessage.User([part])];
-    }
-    return [];
-  }
-
-  // Array of Parts format
-  if (Array.isArray(instruction)) {
-    // Handle PartUnion[] which can contain string | Part
-    const parts = instruction
-      .map((item) => {
-        // If item is a string Part, convert to Part object
-        if (typeof item === "string") {
-          return convertGeminiPartToVSCodePart({ text: item });
-        }
-        return convertGeminiPartToVSCodePart(item as Part);
-      })
-      .filter(
-        (p) => p !== null && p instanceof vscode.LanguageModelTextPart,
-      ) as vscode.LanguageModelTextPart[];
-
-    if (parts.length > 0) {
-      return [vscode.LanguageModelChatMessage.User(parts)];
-    }
-    return [];
-  }
-
-  // Content format
-  if ("parts" in instruction || "role" in instruction) {
-    return [convertGeminiContentToVSCode(instruction as Content)];
-  }
-
-  return [];
+  return parts.length > 0 ? [vscode.LanguageModelChatMessage.User(parts)] : [];
 };
 
 /**
@@ -208,16 +162,16 @@ export const convertGeminiToolsToVSCode = (
 export const convertGeminiToolConfigToVSCode = (
   config?: FunctionCallingConfig,
 ): vscode.LanguageModelChatToolMode | undefined => {
-  if (!config || !config.mode) {
+  if (!config?.mode) {
     return undefined;
   }
 
   switch (config.mode) {
-    case "AUTO":
+    case FunctionCallingConfigMode.AUTO:
+    case FunctionCallingConfigMode.VALIDATED:
       return vscode.LanguageModelChatToolMode.Auto;
-    case "ANY":
+    case FunctionCallingConfigMode.ANY:
       return vscode.LanguageModelChatToolMode.Required;
-    case "NONE":
     default:
       return undefined;
   }

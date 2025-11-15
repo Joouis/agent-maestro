@@ -10,7 +10,10 @@ import * as vscode from "vscode";
 
 import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
-import { GeminiErrorResponseSchema } from "../schemas/gemini";
+import {
+  GeminiErrorResponseSchema,
+  GenereateContentRequest,
+} from "../schemas/gemini";
 import {
   convertGeminiContentsToVSCode,
   convertGeminiSystemInstructionToVSCode,
@@ -43,10 +46,11 @@ const prepareGeminiRequest = async ({
   requestBody,
   client,
 }: {
-  requestBody: any;
+  requestBody: GenereateContentRequest;
   client: vscode.LanguageModelChat;
 }) => {
-  const { systemInstruction, contents, tools, generationConfig } = requestBody;
+  const { systemInstruction, contents, tools, generationConfig, toolConfig } =
+    requestBody;
 
   // Convert to VSCode messages
   const vsCodeLmMessages: vscode.LanguageModelChatMessage[] = [
@@ -67,7 +71,9 @@ const prepareGeminiRequest = async ({
       "Gemini-compatible API endpoint using VS Code Language Model API",
     modelOptions: generationConfig,
     tools: convertGeminiToolsToVSCode(tools),
-    toolMode: convertGeminiToolConfigToVSCode(generationConfig?.toolConfig),
+    toolMode: convertGeminiToolConfigToVSCode(
+      toolConfig?.functionCallingConfig,
+    ),
   };
 
   return {
@@ -78,57 +84,24 @@ const prepareGeminiRequest = async ({
   };
 };
 
-/**
- * Process VSCode stream chunks into Gemini Part[] format
- * Used by both streaming and non-streaming generateContent
- */
-const processVSCodeStreamToGeminiParts = async (
-  stream: AsyncIterable<
-    vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
-  >,
-) => {
-  const parts: Part[] = [];
-  let accumulatedText = "";
-
-  for await (const chunk of stream) {
-    if (chunk instanceof vscode.LanguageModelTextPart) {
-      // Accumulate text in last text part or create new one
-      let lastPart = parts.at(-1);
-      if (!lastPart || !("text" in lastPart)) {
-        lastPart = { text: "" };
-        parts.push(lastPart);
-      }
-      lastPart.text += chunk.value;
-      accumulatedText += chunk.value;
-    } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-      parts.push({
-        functionCall: {
-          id: chunk.callId,
-          name: chunk.name,
-          args: chunk.input as Record<string, unknown>,
-        },
-      });
-      accumulatedText += JSON.stringify(chunk);
-    }
-  }
-
-  return { parts, accumulatedText };
-};
-
 // ============================================================================
 // OpenAPI Route Definitions
 // ============================================================================
 
 const generateContentRoute = createRoute({
   method: "post",
-  path: "/v1beta/models/{model}:generateContent",
+  path: "/v1beta/models/:modelWithMethod{[^/\\:]+\\:generateContent}",
   tags: ["Google Gemini API"],
   summary: "Generate content with Gemini-compatible API",
   description:
     "Generate content using the Gemini-compatible API interface, powered by VSCode Language Models. Supports both streaming and non-streaming responses.",
   request: {
     params: z.object({
-      model: z.string().describe("Model ID (e.g., gemini-2.0-flash)"),
+      modelWithMethod: z
+        .string()
+        .describe(
+          "Model ID with method (e.g., gemini-2.5-pro:generateContent)",
+        ),
     }),
     body: {
       content: {
@@ -186,14 +159,18 @@ const generateContentRoute = createRoute({
 
 const streamGenerateContentRoute = createRoute({
   method: "post",
-  path: "/v1beta/models/{model}:streamGenerateContent",
+  path: "/v1beta/models/:modelWithMethod{[^/\\:]+\\:streamGenerateContent}",
   tags: ["Google Gemini API"],
   summary: "Stream generate content with Gemini-compatible API",
   description:
     "Stream generate content using the Gemini-compatible API interface, powered by VSCode Language Models. Always returns Server-Sent Events stream.",
   request: {
     params: z.object({
-      model: z.string().describe("Model ID (e.g., gemini-2.0-flash)"),
+      modelWithMethod: z
+        .string()
+        .describe(
+          "Model ID with method (e.g., gemini-2.5-pro:streamGenerateContent)",
+        ),
     }),
     body: {
       content: {
@@ -250,14 +227,16 @@ const streamGenerateContentRoute = createRoute({
 
 const countTokensRoute = createRoute({
   method: "post",
-  path: "/v1beta/models/{model}:countTokens",
+  path: "/v1beta/models/:modelWithMethod{[^/\\:]+\\:countTokens}",
   tags: ["Google Gemini API"],
   summary: "Count tokens with Gemini-compatible API",
   description:
     "Count input tokens using the Gemini-compatible API interface, powered by VSCode Language Models.",
   request: {
     params: z.object({
-      model: z.string().describe("Model ID (e.g., gemini-2.0-flash)"),
+      modelWithMethod: z
+        .string()
+        .describe("Model ID with method (e.g., gemini-2.5-pro:countTokens)"),
     }),
     body: {
       content: {
@@ -322,7 +301,8 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
   app.openapi(generateContentRoute, async (c: Context) => {
     try {
       // Parse request
-      const { model: modelId } = c.req.param();
+      const { modelWithMethod } = c.req.param();
+      const modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:generateContent"
       const requestBody = await c.req.json();
 
       logger.debug(
@@ -350,7 +330,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         `Received generateContent call with model: ${client.name} (${client.vendor}/${client.family})`,
       );
 
-      // 2. Prepare request (SHARED)
+      // 2. Prepare request
       const {
         vsCodeLmMessages,
         inputTokenCount,
@@ -358,7 +338,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         lmRequestOptions,
       } = await prepareGeminiRequest({ requestBody, client });
 
-      // 3. Send request to VSCode LM API (SHARED)
+      // 3. Send request to VSCode LM API
       const response = await client.sendRequest(
         vsCodeLmMessages,
         lmRequestOptions,
@@ -366,11 +346,34 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       );
 
       // 4. Process response (always non-streaming for generateContent)
-      const { parts, accumulatedText } = await processVSCodeStreamToGeminiParts(
-        response.stream as AsyncIterable<
-          vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
-        >,
-      );
+      const parts: Part[] = [];
+      let accumulatedText = "";
+
+      for await (const chunk of response.stream) {
+        if (chunk instanceof vscode.LanguageModelTextPart) {
+          // Accumulate text in last text part or create new one
+          let lastPart = parts.at(-1);
+          if (!lastPart || !("text" in lastPart)) {
+            lastPart = { text: "" };
+            parts.push(lastPart);
+          }
+          lastPart.text += chunk.value;
+          accumulatedText += chunk.value;
+        } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+          parts.push({
+            functionCall: {
+              id: chunk.callId,
+              name: chunk.name,
+              args: chunk.input as Record<string, unknown>,
+            },
+          });
+          accumulatedText += JSON.stringify(chunk);
+        } else {
+          const text = JSON.stringify(chunk);
+          parts.push({ text });
+          accumulatedText += text;
+        }
+      }
 
       // Count output tokens
       const outputTokenCount = accumulatedText
@@ -393,6 +396,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           candidatesTokenCount: outputTokenCount,
           totalTokenCount: inputTokenCount + outputTokenCount,
         },
+        modelVersion: modelId,
       };
 
       logger.debug(
@@ -423,7 +427,8 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
     async (c: Context): Promise<Response> => {
       try {
         // Parse request
-        const { model: modelId } = c.req.param();
+        const { modelWithMethod } = c.req.param();
+        const modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:streamGenerateContent"
         const requestBody = await c.req.json();
 
         logger.debug(
@@ -452,7 +457,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           `Received streamGenerateContent call with model: ${client.name} (${client.vendor}/${client.family})`,
         );
 
-        // 2. Prepare request (SHARED)
+        // 2. Prepare request
         const {
           vsCodeLmMessages,
           inputTokenCount,
@@ -460,7 +465,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           lmRequestOptions,
         } = await prepareGeminiRequest({ requestBody, client });
 
-        // 3. Send request to VSCode LM API (SHARED)
+        // 3. Send request to VSCode LM API
         const response = await client.sendRequest(
           vsCodeLmMessages,
           lmRequestOptions,
@@ -592,7 +597,8 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
   app.openapi(countTokensRoute, async (c: Context) => {
     try {
       // Parse request
-      const { model: modelId } = c.req.param();
+      const { modelWithMethod } = c.req.param();
+      const modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:countTokens"
       const requestBody = await c.req.json();
 
       logger.debug(
@@ -620,7 +626,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         `Received countTokens call with model: ${client.name} (${client.vendor}/${client.family})`,
       );
 
-      // 2. Prepare request and get token count (SHARED)
+      // 2. Prepare request and get token count
       const { inputTokenCount } = await prepareGeminiRequest({
         requestBody,
         client,

@@ -1,3 +1,10 @@
+import {
+  type Content,
+  type GenerationConfig,
+  type SafetySetting,
+  type Tool,
+  type ToolConfig,
+} from "@google/genai";
 import { z } from "@hono/zod-openapi";
 
 export const GeminiErrorResponseSchema = z
@@ -9,3 +16,13 @@ export const GeminiErrorResponseSchema = z
     }),
   })
   .openapi("GeminiErrorResponse");
+
+export interface GenereateContentRequest {
+  contents: Content[];
+  tools?: Tool[];
+  toolConfig?: ToolConfig;
+  safetySettings?: SafetySetting[];
+  systemInstruction?: Content;
+  generationConfig?: GenerationConfig;
+  cachedContent?: string;
+}
