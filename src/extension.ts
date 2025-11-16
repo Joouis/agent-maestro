@@ -415,7 +415,9 @@ export async function activate(context: vscode.ExtensionContext) {
             // File doesn't exist, continue with creation
           }
 
-          const modelOptions = await getChatModelsQuickPickItems();
+          const modelOptions = await getChatModelsQuickPickItems({
+            priorityFamily: "claude",
+          });
 
           if (modelOptions.length === 0) {
             vscode.window.showErrorMessage(
@@ -528,7 +530,10 @@ export async function activate(context: vscode.ExtensionContext) {
             // File doesn't exist, continue with creation
           }
 
-          const modelOptions = await getChatModelsQuickPickItems("gpt-5-codex");
+          const modelOptions = await getChatModelsQuickPickItems({
+            recommendedModelId: "gpt-5-codex",
+            priorityFamily: "openai",
+          });
 
           if (modelOptions.length === 0) {
             vscode.window.showErrorMessage(
@@ -674,7 +679,9 @@ wire_api = "chat"
             // File doesn't exist, continue with creation
           }
 
-          const modelOptions = await getChatModelsQuickPickItems("gemini");
+          const modelOptions = await getChatModelsQuickPickItems({
+            priorityFamily: "gemini",
+          });
 
           if (modelOptions.length === 0) {
             vscode.window.showErrorMessage(

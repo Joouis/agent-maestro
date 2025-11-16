@@ -79,33 +79,74 @@ const chatModelToQuickPickItem = (model: vscode.LanguageModelChat) => ({
   modelId: model.id,
 });
 
-export const getChatModelsQuickPickItems = async (recommended?: string) => {
+export type ModelFamily = "claude" | "gemini" | "openai" | "other";
+
+export interface GetChatModelsOptions {
+  recommendedModelId?: string;
+  priorityFamily?: "claude" | "gemini" | "openai";
+}
+
+function getFamilyOrder(
+  priorityFamily?: "claude" | "gemini" | "openai",
+): ModelFamily[] {
+  const defaultOrder: ModelFamily[] = ["claude", "openai", "gemini", "other"];
+
+  if (!priorityFamily) {
+    return defaultOrder;
+  }
+
+  // Move priority family to front, but keep "other" always at the end
+  return [
+    priorityFamily,
+    ...defaultOrder.filter((f) => f !== priorityFamily && f !== "other"),
+    "other",
+  ];
+}
+
+function getFamilyLabel(family: ModelFamily): string {
+  const labels: Record<ModelFamily, string> = {
+    claude: "Claude",
+    openai: "OpenAI",
+    gemini: "Gemini",
+    other: "Other",
+  };
+  return labels[family];
+}
+
+export const getChatModelsQuickPickItems = async (
+  options?: GetChatModelsOptions,
+) => {
   // Get available models from cache first, fallback to direct API call
   let allModels = await chatModelsCache.getChatModels();
   if (allModels.length === 0) {
     return [];
   }
 
-  const claudeModels = [];
-  const geminiModels = [];
-  const restModels = [];
-  let recommendedModel = null;
+  const modelGroups: Record<ModelFamily, vscode.LanguageModelChat[]> = {
+    claude: [],
+    gemini: [],
+    openai: [],
+    other: [],
+  };
+  let recommendedModel: vscode.LanguageModelChat | null = null;
 
+  // Categorize models into families
   for (const m of allModels) {
-    if (recommended && m.id === recommended) {
+    if (options?.recommendedModelId && m.id === options.recommendedModelId) {
       recommendedModel = m;
     }
 
-    if (m.id.toLocaleLowerCase().includes("claude")) {
-      claudeModels.push(m);
-    } else if (m.id.toLocaleLowerCase().includes("gemini")) {
-      geminiModels.push(m);
+    if (m.family.includes("claude")) {
+      modelGroups.claude.push(m);
+    } else if (m.family.includes("gemini")) {
+      modelGroups.gemini.push(m);
+    } else if (m.family.includes("gpt")) {
+      modelGroups.openai.push(m);
     } else {
-      restModels.push(m);
+      modelGroups.other.push(m);
     }
   }
 
-  // Show model selection for ANTHROPIC_MODEL
   const modelOptions = [];
 
   // Add recommended model at the top if found
@@ -123,27 +164,22 @@ export const getChatModelsQuickPickItems = async (recommended?: string) => {
     );
   }
 
-  // Add the rest of the models in their categories
-  modelOptions.push(
-    {
-      kind: vscode.QuickPickItemKind.Separator,
-      label: "Claude",
-      modelId: "",
-    },
-    ...claudeModels.map(chatModelToQuickPickItem),
-    {
-      kind: vscode.QuickPickItemKind.Separator,
-      label: "OpenAI",
-      modelId: "",
-    },
-    ...restModels.map(chatModelToQuickPickItem),
-    {
-      kind: vscode.QuickPickItemKind.Separator,
-      label: "Gemini",
-      modelId: "",
-    },
-    ...geminiModels.map(chatModelToQuickPickItem),
-  );
+  // Add model families in order based on priority
+  const familyOrder = getFamilyOrder(options?.priorityFamily);
+
+  for (const family of familyOrder) {
+    const models = modelGroups[family];
+    if (models.length > 0) {
+      modelOptions.push(
+        {
+          kind: vscode.QuickPickItemKind.Separator,
+          label: getFamilyLabel(family),
+          modelId: "",
+        },
+        ...models.map(chatModelToQuickPickItem),
+      );
+    }
+  }
 
   return modelOptions;
 };
