@@ -369,6 +369,7 @@ wire_api = "chat"
             GOOGLE_GEMINI_BASE_URL: `http://localhost:${proxyPort}/api/gemini`,
             GEMINI_API_KEY: "Powered by Agent Maestro",
             GEMINI_MODEL: selectedModel.modelId,
+            GEMINI_TELEMETRY_ENABLED: "false",
           },
           ["GEMINI_API_KEY"], // Preserve existing GEMINI_API_KEY if it exists
         );
