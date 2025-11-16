@@ -1,5 +1,5 @@
 /** @type {import("@changesets/types").ChangelogFunctions} */
-module.exports = {
+export default {
   // We're not using dependency updates:
   getDependencyReleaseLine: () => Promise.resolve(""),
 

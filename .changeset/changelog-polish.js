@@ -1,4 +1,5 @@
-const fs = require("fs");
+import fs from "fs";
+
 const path = "CHANGELOG.md";
 let text = fs.readFileSync(path, "utf8");
 

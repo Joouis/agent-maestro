@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.4.0 - 2025.11.16
+
+- **Gemini CLI integration** with one-click setup command and **Gemini-compatible** API endpoints
+  - `POST /api/gemini/v1beta/models/{model}:generateContent` - Generate content
+  - `POST /api/gemini/v1beta/models/{model}:streamGenerateContent` - Streaming generation
+  - `POST /api/gemini/v1beta/models/{model}:countTokens` - Token counting
+- Skip schema validation for Anthropic and OpenAI routes
+
 ## v2.3.6 - 2025.11.03
 
 - New **"Fix GitHub Copilot Chat - Enable Additional Models"** command to fix "Model is not supported for this request" error by removing header restrictions ([reference](https://github.com/cline/cline/issues/2186#issuecomment-2727010228))
@@ -32,7 +40,7 @@
 
 ## v2.3.0 - 2025.09.25
 
-- Added **OpenAI-compatible** `POST /chat/completions` endpoint
+- Add **OpenAI-compatible** `POST /chat/completions` endpoint
 - New **"Configure Codex Settings" command** for one-click setup; `GPT-5-Codex` is now the recommended top model
 - Updated scope of `agent-maestro.defaultRooIdentifier`, `agent-maestro.proxyServerPort`, and `agent-maestro.mcpServerPort` to support workspace-level config via VS Code `settings.json`
 - Added support for configuring user settings in Claude Code
