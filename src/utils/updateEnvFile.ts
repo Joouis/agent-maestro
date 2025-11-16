@@ -45,7 +45,7 @@ export async function updateEnvFile(
 
   // Modify existing key lines
   const newLines = lines.map((line) => {
-    const match = line.match(/^([^#=\s]+)\s*=\s*(.*)$/);
+    const match = line.match(/^([^#=\s]+)\s*=/);
     if (!match) {
       return line;
     } // keep comments/blank lines
