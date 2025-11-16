@@ -378,6 +378,45 @@ wire_api = "chat"
           ["GEMINI_API_KEY"], // Preserve existing GEMINI_API_KEY if it exists
         );
 
+        // Create or update settings.json to skip auth selection on first launch
+        const geminiDir = path.dirname(envFilePath);
+        const settingsJsonPath = path.join(geminiDir, "settings.json");
+
+        let settingsContent = {
+          security: {
+            auth: {
+              selectedType: "gemini-api-key",
+            },
+          },
+        };
+
+        try {
+          const existingSettingsContent = fs.readFileSync(
+            settingsJsonPath,
+            "utf8",
+          );
+          const existingSettings = JSON.parse(existingSettingsContent);
+
+          // Preserve existing settings and update selectedType
+          settingsContent = {
+            ...existingSettings,
+            security: {
+              ...existingSettings?.security,
+              auth: {
+                ...existingSettings?.security?.auth,
+                selectedType: "gemini-api-key",
+              },
+            },
+          };
+        } catch (error) {
+          // File doesn't exist, use default settings
+        }
+
+        fs.writeFileSync(
+          settingsJsonPath,
+          JSON.stringify(settingsContent, null, 2),
+        );
+
         vscode.window.showInformationMessage(
           `Gemini CLI settings ${fileExists ? "updated" : "created"} successfully! The settings point to Agent Maestro proxy server for Gemini-compatible API.`,
         );
@@ -385,6 +424,7 @@ wire_api = "chat"
         logger.info(
           `Gemini CLI settings ${fileExists ? "updated" : "created"}: ${envFilePath}`,
         );
+        logger.info(`Gemini CLI settings.json created: ${settingsJsonPath}`);
       }, "Failed to configure Gemini CLI settings"),
     ),
   ];

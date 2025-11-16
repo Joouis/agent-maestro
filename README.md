@@ -66,8 +66,19 @@ This automatically creates or updates the `.env` file with:
 - `GOOGLE_GEMINI_BASE_URL`: Agent Maestro Gemini endpoint
 - `GEMINI_API_KEY`: Default authentication token (preserved if already set)
 - `GEMINI_MODEL`: Your selected model from available VS Code language models
+- `GEMINI_TELEMETRY_ENABLED`: Disable temeletry by default
 
-**That's it!** You can now use Gemini CLI with VS Code's built-in language models.
+Additionally, it creates or updates `settings.json` in the same folder to skip the authentication method selection on first launch:
+
+```json
+{
+  "security": {
+    "auth": {
+      "selectedType": "gemini-api-key"
+    }
+  }
+}
+```
 
 ### GitHub Copilot Chat Model Enhancement
 
