@@ -303,7 +303,7 @@ wire_api = "chat"
 
         if (settingsType.label === "User Settings") {
           // Use user's home directory
-          envFilePath = path.join(os.homedir(), ".env");
+          envFilePath = path.join(os.homedir(), ".gemini", ".env");
         } else {
           // Use project directory
           const workspaceRoot =
@@ -315,7 +315,7 @@ wire_api = "chat"
             return;
           }
 
-          envFilePath = path.join(workspaceRoot, ".env");
+          envFilePath = path.join(workspaceRoot, ".gemini", ".env");
         }
 
         // Check if .env file exists and confirm override
