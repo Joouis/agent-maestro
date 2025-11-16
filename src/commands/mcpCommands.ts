@@ -49,17 +49,20 @@ export function registerMcpCommands(
       }, "Failed to stop MCP server"),
     ),
 
-    vscode.commands.registerCommand("agent-maestro.getMcpServerStatus", () => {
-      if (!mcpServer) {
-        vscode.window.showErrorMessage("MCP server not initialized");
-        return;
-      }
+    vscode.commands.registerCommand(
+      "agent-maestro.getMcpServerStatus",
+      createCommandHandler(() => {
+        if (!mcpServer) {
+          vscode.window.showErrorMessage("MCP server not initialized");
+          return;
+        }
 
-      const status = mcpServer.getStatus();
-      vscode.window.showInformationMessage(
-        `MCP Server Status: ${status.isRunning ? "Running" : "Stopped"} | Port: ${status.port} | URL: ${status.url}`,
-      );
-    }),
+        const status = mcpServer.getStatus();
+        vscode.window.showInformationMessage(
+          `MCP Server Status: ${status.isRunning ? "Running" : "Stopped"} | Port: ${status.port} | URL: ${status.url}`,
+        );
+      }, "Failed to get MCP server status"),
+    ),
 
     vscode.commands.registerCommand(
       "agent-maestro.installMcpConfig",

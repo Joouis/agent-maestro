@@ -76,7 +76,7 @@ export function registerProxyCommands(
 
     vscode.commands.registerCommand(
       "agent-maestro.getProxyServerStatus",
-      () => {
+      createCommandHandler(() => {
         if (!proxy) {
           vscode.window.showErrorMessage("Proxy server not initialized");
           return;
@@ -86,7 +86,7 @@ export function registerProxyCommands(
         vscode.window.showInformationMessage(
           `Server Status: ${status.isRunning ? "Running" : "Stopped"} | Port: ${status.port} | URL: ${status.url}`,
         );
-      },
+      }, "Failed to get proxy server status"),
     ),
   ];
 
