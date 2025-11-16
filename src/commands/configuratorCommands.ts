@@ -181,7 +181,11 @@ export function registerConfiguratorCommands(
     vscode.commands.registerCommand(
       "agent-maestro.configureCodex",
       createCommandHandler(async () => {
-        const codexConfigPath = `${os.homedir()}/.codex/config.toml`;
+        const codexConfigPath = path.join(
+          os.homedir(),
+          ".codex",
+          "config.toml",
+        );
 
         // Check if config file exists and confirm override
         let fileExists = false;

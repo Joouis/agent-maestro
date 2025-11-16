@@ -1,4 +1,5 @@
 import { promises as fs } from "fs";
+import { dirname } from "path";
 
 /**
  * Updates or creates a .env file with the specified key-value pairs.
@@ -71,6 +72,10 @@ export async function updateEnvFile(
       newLines.push(`${key}=${updates[key]}`);
     }
   }
+
+  // Ensure parent directory exists before writing
+  const dir = dirname(path);
+  await fs.mkdir(dir, { recursive: true });
 
   await fs.writeFile(path, newLines.join("\n"), "utf8");
 }
