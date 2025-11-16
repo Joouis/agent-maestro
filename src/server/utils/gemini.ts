@@ -35,10 +35,9 @@ const convertGeminiPartToVSCodePart = (
     const responseText = part.functionResponse.response
       ? JSON.stringify(part.functionResponse.response)
       : "";
-    return new vscode.LanguageModelToolResultPart(
-      part.functionResponse.id || "",
-      [new vscode.LanguageModelTextPart(responseText)],
-    );
+    return new vscode.LanguageModelToolResultPart(part.functionResponse.id, [
+      new vscode.LanguageModelTextPart(responseText),
+    ]);
   }
 
   // Inline data (images, etc.) - try to use LanguageModelDataPart if available
@@ -147,7 +146,8 @@ export const convertGeminiToolsToVSCode = (
         vsCodeTools.push({
           name: funcDecl.name,
           description: funcDecl.description || "",
-          inputSchema: funcDecl.parameters || {},
+          inputSchema:
+            funcDecl.parameters || funcDecl.parametersJsonSchema || {},
         });
       }
     }
