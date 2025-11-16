@@ -28,6 +28,7 @@ import {
   getAvailableExtensions,
 } from "./utils/mcpConfig";
 import { getSystemInfo } from "./utils/systemInfo";
+import { updateEnvFile } from "./utils/updateEnvFile";
 
 let controller: ExtensionController;
 let proxy: ProxyServer;
@@ -599,6 +600,123 @@ wire_api = "chat"
           logger.error("Error configuring Codex settings:", error);
           vscode.window.showErrorMessage(
             `Failed to configure Codex settings: ${(error as Error).message}`,
+          );
+        }
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "agent-maestro.configureGeminiCli",
+      async () => {
+        try {
+          // Ask user whether to configure user settings or project settings
+          const settingsType = await vscode.window.showQuickPick(
+            [
+              {
+                label: "User Settings",
+                description:
+                  "Personal global settings for all projects (~/.env)",
+              },
+              {
+                label: "Project Settings",
+                description:
+                  "Team-shared project settings in source control (.env)",
+              },
+            ],
+            {
+              title: "Configure Gemini CLI Settings",
+              placeHolder: "Choose where to save Gemini CLI settings",
+            },
+          );
+
+          if (!settingsType) {
+            return;
+          }
+
+          let envFilePath: string;
+
+          if (settingsType.label === "User Settings") {
+            // Use user's home directory
+            envFilePath = path.join(os.homedir(), ".env");
+          } else {
+            // Use project directory
+            const workspaceRoot =
+              vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+              vscode.window.showErrorMessage(
+                "No workspace folder found. Please open a workspace to configure project Gemini CLI settings.",
+              );
+              return;
+            }
+
+            envFilePath = path.join(workspaceRoot, ".env");
+          }
+
+          // Check if .env file exists and confirm override
+          let fileExists = false;
+          try {
+            fs.accessSync(envFilePath);
+            fileExists = true;
+
+            const shouldOverride = await vscode.window.showQuickPick(
+              ["Yes", "No"],
+              {
+                title: "Gemini CLI Settings Found",
+                placeHolder:
+                  ".env file already exists. Do you want to update it?",
+              },
+            );
+
+            if (shouldOverride !== "Yes") {
+              return;
+            }
+          } catch (error) {
+            // File doesn't exist, continue with creation
+          }
+
+          const modelOptions = await getChatModelsQuickPickItems("gemini");
+
+          if (modelOptions.length === 0) {
+            vscode.window.showErrorMessage(
+              "No available chat model provided by VS Code LM API.",
+            );
+            return;
+          }
+
+          const selectedModel = await vscode.window.showQuickPick(
+            modelOptions,
+            {
+              title: "Select model",
+              placeHolder: "Choose which model to use with Gemini CLI",
+            },
+          );
+
+          if (!selectedModel?.modelId) {
+            return;
+          }
+
+          // Update .env file with the three required variables
+          await updateEnvFile(
+            envFilePath,
+            {
+              GOOGLE_GEMINI_BASE_URL: `http://localhost:${proxyPort}/api/gemini`,
+              GEMINI_API_KEY: "Powered by Agent Maestro",
+              GEMINI_MODEL: selectedModel.modelId,
+            },
+            ["GEMINI_API_KEY"], // Preserve existing GEMINI_API_KEY if it exists
+          );
+
+          vscode.window.showInformationMessage(
+            `Gemini CLI settings ${fileExists ? "updated" : "created"} successfully! The settings point to Agent Maestro proxy server for Gemini-compatible API.`,
+          );
+
+          logger.info(
+            `Gemini CLI settings ${fileExists ? "updated" : "created"}: ${envFilePath}`,
+          );
+        } catch (error) {
+          logger.error("Error configuring Gemini CLI settings:", error);
+          vscode.window.showErrorMessage(
+            `Failed to configure Gemini CLI settings: ${(error as Error).message}`,
           );
         }
       },

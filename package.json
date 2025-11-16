@@ -142,6 +142,11 @@
         "category": "Agent Maestro"
       },
       {
+        "command": "agent-maestro.configureGeminiCli",
+        "title": "Configure Gemini CLI Settings",
+        "category": "Agent Maestro"
+      },
+      {
         "command": "agent-maestro.fixCopilotChatModelNotSupported",
         "title": "Fix GitHub Copilot Chat - Model is not supported error",
         "category": "Agent Maestro"
