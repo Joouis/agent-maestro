@@ -1,5 +1,27 @@
 import { promises as fs } from "fs";
 
+/**
+ * Updates or creates a .env file with the specified key-value pairs.
+ *
+ * @param path - The path to the .env file
+ * @param updates - Record of key-value pairs to update or add
+ * @param preserveKeys - Keys that should NOT be overwritten if they already exist in the file (their existing values will be preserved)
+ * @returns Promise that resolves when the file has been written
+ * @throws Error if file cannot be read or written (except ENOENT which creates a new file)
+ *
+ * @remarks
+ * - If the file doesn't exist, it will be created
+ * - Existing comments and blank lines are preserved
+ * - Keys in `updates` but not in `preserveKeys` will be updated or added
+ * - Keys in both `updates` and `preserveKeys` will only be added if they don't exist
+ *
+ * @example
+ * // Update or create .env file, preserving existing API_KEY if present
+ * await updateEnvFile('/path/to/.env', {
+ *   API_ENDPOINT: 'http://localhost:3000',
+ *   API_KEY: 'default-key'
+ * }, ['API_KEY']);
+ */
 export async function updateEnvFile(
   path: string,
   updates: Record<string, string>,
