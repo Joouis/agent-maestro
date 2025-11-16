@@ -66,7 +66,7 @@ This automatically creates or updates the `.env` file with:
 - `GOOGLE_GEMINI_BASE_URL`: Agent Maestro Gemini endpoint
 - `GEMINI_API_KEY`: Default authentication token (preserved if already set)
 - `GEMINI_MODEL`: Your selected model from available VS Code language models
-- `GEMINI_TELEMETRY_ENABLED`: Disable temeletry by default
+- `GEMINI_TELEMETRY_ENABLED`: Disable telemetry by default
 
 Additionally, it creates or updates `settings.json` in the same folder to skip the authentication method selection on first launch:
 
