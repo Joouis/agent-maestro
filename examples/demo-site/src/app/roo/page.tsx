@@ -9,6 +9,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MessageList } from "./components/MessageList";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { useApiConfig } from "./hooks/useApiConfig";
+import { useAutoApprove } from "./hooks/useAutoApprove";
 import { useChat } from "./hooks/useChat";
 import { useModes } from "./hooks/useModes";
 import { useProfiles } from "./hooks/useProfiles";
@@ -47,6 +48,16 @@ export default function RooPage() {
   });
 
   const { profiles, isLoading: isLoadingProfiles } = useProfiles({
+    apiBaseUrl: apiConfig.baseUrl,
+    extensionId: selectedExtension,
+  });
+
+  const {
+    settings: autoApproveSettings,
+    isLoading: isLoadingAutoApprove,
+    isUpdating: isUpdatingAutoApprove,
+    updateSettings: updateAutoApproveSettings,
+  } = useAutoApprove({
     apiBaseUrl: apiConfig.baseUrl,
     extensionId: selectedExtension,
   });
@@ -119,6 +130,10 @@ export default function RooPage() {
           apiBaseUrl={apiConfig.baseUrl}
           profiles={profiles}
           isLoadingProfiles={isLoadingProfiles}
+          autoApproveSettings={autoApproveSettings}
+          onUpdateAutoApprove={updateAutoApproveSettings}
+          isLoadingAutoApprove={isLoadingAutoApprove}
+          isUpdatingAutoApprove={isUpdatingAutoApprove}
         />
 
         <StatusIndicator show={showStatus} message={statusMessage} />

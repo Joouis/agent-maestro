@@ -717,6 +717,130 @@ const getModesRoute = createRoute({
   },
 });
 
+// GET /roo/auto-approve - Get auto-approve settings
+const getAutoApproveRoute = createRoute({
+  method: "get",
+  path: "/roo/auto-approve",
+  tags: ["Configuration"],
+  summary: "Get auto-approve settings",
+  description:
+    "Retrieves the current auto-approve settings from RooCode configuration",
+  request: {
+    query: z.object({
+      extensionId: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            autoApprovalEnabled: z.boolean(),
+            alwaysAllowReadOnly: z.boolean(),
+            alwaysAllowWrite: z.boolean(),
+            alwaysAllowExecute: z.boolean(),
+            alwaysAllowBrowser: z.boolean(),
+            alwaysAllowMcp: z.boolean(),
+            alwaysAllowModeSwitch: z.boolean(),
+            alwaysAllowSubtasks: z.boolean(),
+          }),
+        },
+      },
+      description: "Auto-approve settings retrieved successfully",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+          }),
+        },
+      },
+      description: "Extension not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+// PUT /roo/auto-approve - Update auto-approve settings
+const updateAutoApproveRoute = createRoute({
+  method: "put",
+  path: "/roo/auto-approve",
+  tags: ["Configuration"],
+  summary: "Update auto-approve settings",
+  description: "Updates the auto-approve settings in RooCode configuration",
+  request: {
+    query: z.object({
+      extensionId: z.string().optional(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            autoApprovalEnabled: z.boolean().optional(),
+            alwaysAllowReadOnly: z.boolean().optional(),
+            alwaysAllowWrite: z.boolean().optional(),
+            alwaysAllowExecute: z.boolean().optional(),
+            alwaysAllowBrowser: z.boolean().optional(),
+            alwaysAllowMcp: z.boolean().optional(),
+            alwaysAllowModeSwitch: z.boolean().optional(),
+            alwaysAllowSubtasks: z.boolean().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+            settings: z.object({
+              autoApprovalEnabled: z.boolean(),
+              alwaysAllowReadOnly: z.boolean(),
+              alwaysAllowWrite: z.boolean(),
+              alwaysAllowExecute: z.boolean(),
+              alwaysAllowBrowser: z.boolean(),
+              alwaysAllowMcp: z.boolean(),
+              alwaysAllowModeSwitch: z.boolean(),
+              alwaysAllowSubtasks: z.boolean(),
+            }),
+          }),
+        },
+      },
+      description: "Settings updated successfully",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+          }),
+        },
+      },
+      description: "Extension not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+          }),
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
 export function registerRooRoutes(
   app: OpenAPIHono,
   controller: ExtensionController,
@@ -1410,6 +1534,175 @@ export function registerRooRoutes(
       return c.json({ modes: allModes }, 200);
     } catch (error) {
       logger.error("Error retrieving modes:", error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // GET /api/v1/roo/auto-approve - Get auto-approve settings
+  app.openapi(getAutoApproveRoute, async (c) => {
+    try {
+      const { extensionId } = c.req.valid("query");
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          {
+            message: `RooCode extension ${extensionId || "default"} is not available`,
+          },
+          404,
+        );
+      }
+
+      const config = adapter.getConfiguration();
+
+      const response = {
+        autoApprovalEnabled: Boolean(config.autoApprovalEnabled ?? false),
+        alwaysAllowReadOnly: Boolean(config.alwaysAllowReadOnly ?? false),
+        alwaysAllowWrite: Boolean(config.alwaysAllowWrite ?? false),
+        alwaysAllowExecute: Boolean(config.alwaysAllowExecute ?? false),
+        alwaysAllowBrowser: Boolean(config.alwaysAllowBrowser ?? false),
+        alwaysAllowMcp: Boolean(config.alwaysAllowMcp ?? false),
+        alwaysAllowModeSwitch: Boolean(config.alwaysAllowModeSwitch ?? false),
+        alwaysAllowSubtasks: Boolean(config.alwaysAllowSubtasks ?? false),
+      };
+
+      return c.json(response, 200);
+    } catch (error) {
+      logger.error("Error retrieving auto-approve settings:", error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // PUT /api/v1/roo/auto-approve - Update auto-approve settings
+  const updateAutoApproveRoute = createRoute({
+    method: "put",
+    path: "/roo/auto-approve",
+    tags: ["Configuration"],
+    summary: "Update auto-approve settings",
+    description: "Updates the auto-approve settings in RooCode configuration",
+    request: {
+      query: z.object({
+        extensionId: z.string().optional(),
+      }),
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              autoApprovalEnabled: z.boolean().optional(),
+              alwaysAllowReadOnly: z.boolean().optional(),
+              alwaysAllowWrite: z.boolean().optional(),
+              alwaysAllowExecute: z.boolean().optional(),
+              alwaysAllowBrowser: z.boolean().optional(),
+              alwaysAllowMcp: z.boolean().optional(),
+              alwaysAllowModeSwitch: z.boolean().optional(),
+              alwaysAllowSubtasks: z.boolean().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              message: z.string(),
+              settings: z.object({
+                autoApprovalEnabled: z.boolean(),
+                alwaysAllowReadOnly: z.boolean(),
+                alwaysAllowWrite: z.boolean(),
+                alwaysAllowExecute: z.boolean(),
+                alwaysAllowBrowser: z.boolean(),
+                alwaysAllowMcp: z.boolean(),
+                alwaysAllowModeSwitch: z.boolean(),
+                alwaysAllowSubtasks: z.boolean(),
+              }),
+            }),
+          },
+        },
+        description: "Settings updated successfully",
+      },
+      404: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              message: z.string(),
+            }),
+          },
+        },
+        description: "Extension not found",
+      },
+      500: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              message: z.string(),
+            }),
+          },
+        },
+        description: "Internal server error",
+      },
+    },
+  });
+
+  app.openapi(updateAutoApproveRoute, async (c) => {
+    try {
+      const { extensionId } = c.req.valid("query");
+      const body = c.req.valid("json");
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          {
+            message: `RooCode extension ${extensionId || "default"} is not available`,
+          },
+          404,
+        );
+      }
+
+      // Update the configuration with provided values
+      await adapter.setConfiguration(body);
+
+      // Get the updated configuration
+      const updatedConfig = adapter.getConfiguration();
+
+      logger.info(
+        `Updated auto-approve settings for ${extensionId || "default"}`,
+      );
+
+      const response = {
+        message: "Auto-approve settings updated successfully",
+        settings: {
+          autoApprovalEnabled: Boolean(
+            updatedConfig.autoApprovalEnabled ?? false,
+          ),
+          alwaysAllowReadOnly: Boolean(
+            updatedConfig.alwaysAllowReadOnly ?? false,
+          ),
+          alwaysAllowWrite: Boolean(updatedConfig.alwaysAllowWrite ?? false),
+          alwaysAllowExecute: Boolean(
+            updatedConfig.alwaysAllowExecute ?? false,
+          ),
+          alwaysAllowBrowser: Boolean(
+            updatedConfig.alwaysAllowBrowser ?? false,
+          ),
+          alwaysAllowMcp: Boolean(updatedConfig.alwaysAllowMcp ?? false),
+          alwaysAllowModeSwitch: Boolean(
+            updatedConfig.alwaysAllowModeSwitch ?? false,
+          ),
+          alwaysAllowSubtasks: Boolean(
+            updatedConfig.alwaysAllowSubtasks ?? false,
+          ),
+        },
+      };
+
+      return c.json(response, 200);
+    } catch (error) {
+      logger.error("Error updating auto-approve settings:", error);
       const message =
         error instanceof Error ? error.message : "Unknown error occurred";
       return c.json({ message }, 500);
