@@ -166,6 +166,7 @@ export const useChat = (options: UseChatOptions = {}) => {
     showStatus: statusManager.showStatus,
     selectedMode: chatState.selectedMode,
     selectedExtension: chatState.selectedExtension,
+    currentTaskId: chatState.currentTaskId,
 
     // Refs
     textareaRef,
@@ -177,5 +178,6 @@ export const useChat = (options: UseChatOptions = {}) => {
     setInputValue: chatState.setInputValue,
     setSelectedMode: chatState.setSelectedMode,
     setSelectedExtension: chatState.setSelectedExtension,
+    setCurrentTaskId: chatState.setCurrentTaskId,
   };
 };

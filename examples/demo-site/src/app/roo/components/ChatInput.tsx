@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 
 import type { AutoApproveSettings } from "../hooks/useAutoApprove";
+import type { HistoryItem } from "../hooks/useTaskHistory";
 import {
   autoResizeTextarea,
   focusTextarea,
@@ -11,6 +12,7 @@ import { AutoApproveSettingsComponent } from "./AutoApproveSettings";
 import { ExtensionSelector } from "./ExtensionSelector";
 import { ModeSelector } from "./ModeSelector";
 import { ProfileSelector } from "./ProfileSelector";
+import { TaskListPanel } from "./TaskListPanel";
 
 interface Mode {
   slug: string;
@@ -52,6 +54,18 @@ interface ChatInputProps {
   isLoadingAutoApprove?: boolean;
   isUpdatingAutoApprove?: boolean;
   autoApproveError?: string | null;
+  // Task management props
+  taskHistory?: HistoryItem[];
+  currentTaskId?: string | null;
+  isLoadingTasks?: boolean;
+  taskError?: string | null;
+  onRefreshTasks?: () => void;
+  onSelectTask?: (taskId: string) => void;
+  onCancelTask?: (taskId: string) => void;
+  onResumeTask?: (taskId: string) => void;
+  onNewChat?: () => void;
+  totalTaskCount?: number;
+  currentWorkspace?: string;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -75,6 +89,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   isLoadingAutoApprove = false,
   isUpdatingAutoApprove = false,
   autoApproveError = null,
+  taskHistory = [],
+  currentTaskId = null,
+  isLoadingTasks = false,
+  taskError = null,
+  onRefreshTasks,
+  onSelectTask,
+  onCancelTask,
+  onResumeTask,
+  onNewChat,
+  totalTaskCount,
+  currentWorkspace,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -128,6 +153,44 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             disabled={disabled || hasMessages}
             apiBaseUrl={apiBaseUrl}
           />
+          {onRefreshTasks && onSelectTask && onCancelTask && onResumeTask && (
+            <TaskListPanel
+              tasks={taskHistory}
+              currentTaskId={currentTaskId}
+              isLoading={isLoadingTasks}
+              error={taskError}
+              onRefresh={onRefreshTasks}
+              onSelectTask={onSelectTask}
+              onCancelTask={onCancelTask}
+              onResumeTask={onResumeTask}
+              disabled={disabled}
+              totalTaskCount={totalTaskCount}
+              currentWorkspace={currentWorkspace}
+            />
+          )}
+          {onNewChat && hasMessages && (
+            <button
+              type="button"
+              onClick={onNewChat}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-white bg-blue-500 border border-blue-600 rounded-lg hover:bg-blue-600 transition-colors"
+              title="Start a new chat"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              <span>New</span>
+            </button>
+          )}
         </div>
 
         {/* Auto-approve settings - above input on mobile */}
@@ -183,6 +246,44 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               disabled={disabled || hasMessages}
               apiBaseUrl={apiBaseUrl}
             />
+            {onRefreshTasks && onSelectTask && onCancelTask && onResumeTask && (
+              <TaskListPanel
+                tasks={taskHistory}
+                currentTaskId={currentTaskId}
+                isLoading={isLoadingTasks}
+                error={taskError}
+                onRefresh={onRefreshTasks}
+                onSelectTask={onSelectTask}
+                onCancelTask={onCancelTask}
+                onResumeTask={onResumeTask}
+                disabled={disabled}
+                totalTaskCount={totalTaskCount}
+                currentWorkspace={currentWorkspace}
+              />
+            )}
+            {onNewChat && hasMessages && (
+              <button
+                type="button"
+                onClick={onNewChat}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-white bg-blue-500 border border-blue-600 rounded-lg hover:bg-blue-600 transition-colors"
+                title="Start a new chat"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+                <span>New Chat</span>
+              </button>
+            )}
           </div>
         </div>
 
