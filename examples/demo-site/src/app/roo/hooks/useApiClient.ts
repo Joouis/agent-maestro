@@ -1,12 +1,19 @@
-import { useCallback } from "react";
-import {
-  API_ENDPOINTS,
-  ACTION_TYPES,
-  SUGGESTION_ACTIONS,
-} from "../utils/constants";
-import type { ActionType } from "../types/chat";
+import { useCallback, useMemo } from "react";
 
-export const useApiClient = () => {
+import type { ActionType } from "../types/chat";
+import {
+  ACTION_TYPES,
+  DEFAULT_API_BASE_URL,
+  SUGGESTION_ACTIONS,
+  createApiEndpoints,
+} from "../utils/constants";
+
+export const useApiClient = (apiBaseUrl: string | null = null) => {
+  const endpoints = useMemo(
+    () => createApiEndpoints(apiBaseUrl || DEFAULT_API_BASE_URL),
+    [apiBaseUrl],
+  );
+
   const sendTaskAction = useCallback(
     async (taskId: string, suggestion: string): Promise<boolean> => {
       const action: ActionType =
@@ -15,7 +22,7 @@ export const useApiClient = () => {
           : ACTION_TYPES.REJECT;
 
       try {
-        const response = await fetch(API_ENDPOINTS.TASK_ACTION(taskId), {
+        const response = await fetch(endpoints.TASK_ACTION(taskId), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -29,7 +36,7 @@ export const useApiClient = () => {
         return false;
       }
     },
-    [],
+    [endpoints],
   );
 
   const sendMessage = useCallback(
@@ -39,9 +46,7 @@ export const useApiClient = () => {
       extensionId: string,
       taskId?: string,
     ): Promise<Response> => {
-      const url = taskId
-        ? API_ENDPOINTS.TASK_MESSAGE(taskId)
-        : API_ENDPOINTS.TASK;
+      const url = taskId ? endpoints.TASK_MESSAGE(taskId) : endpoints.TASK;
 
       const body = { text: message, configuration: { mode }, extensionId };
 
@@ -59,7 +64,7 @@ export const useApiClient = () => {
 
       return response;
     },
-    [],
+    [endpoints],
   );
 
   const createSSEReader = useCallback((response: Response) => {

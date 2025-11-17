@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
+
 import type { Message } from "../types/chat";
 import { DEFAULT_MODE } from "../utils/constants";
 
@@ -10,7 +11,7 @@ export const useChatState = () => {
   const [showTyping, setShowTyping] = useState(false);
   const [selectedMode, setSelectedMode] = useState(DEFAULT_MODE);
   const [selectedExtension, setSelectedExtension] = useState(
-    "rooveterinaryinc.roo-cline",
+    "", // Will be set by ExtensionSelector after detecting available extensions
   );
 
   const addMessage = useCallback((message: Message) => {

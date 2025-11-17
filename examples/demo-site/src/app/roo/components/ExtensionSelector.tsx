@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { API_ENDPOINTS } from "../utils/constants";
+import React, { useEffect, useState } from "react";
+
+import { DEFAULT_API_BASE_URL, createApiEndpoints } from "../utils/constants";
 
 interface Extension {
   isInstalled: boolean;
@@ -17,12 +18,14 @@ interface ExtensionSelectorProps {
   selectedExtension: string;
   onExtensionChange: (extensionId: string) => void;
   disabled: boolean;
+  apiBaseUrl?: string | null;
 }
 
 export const ExtensionSelector: React.FC<ExtensionSelectorProps> = ({
   selectedExtension,
   onExtensionChange,
   disabled,
+  apiBaseUrl = null,
 }) => {
   const [extensions, setExtensions] = useState<
     Array<{ id: string; name: string; version: string }>
@@ -35,7 +38,10 @@ export const ExtensionSelector: React.FC<ExtensionSelectorProps> = ({
     const fetchExtensions = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch(API_ENDPOINTS.INFO);
+        const endpoints = createApiEndpoints(
+          apiBaseUrl || DEFAULT_API_BASE_URL,
+        );
+        const response = await fetch(endpoints.INFO);
         if (!response.ok) {
           throw new Error(`Failed to fetch extensions: ${response.statusText}`);
         }
@@ -81,7 +87,7 @@ export const ExtensionSelector: React.FC<ExtensionSelectorProps> = ({
     };
 
     fetchExtensions();
-  }, [selectedExtension, onExtensionChange]);
+  }, [selectedExtension, onExtensionChange, apiBaseUrl]);
 
   const selectedExtensionData = extensions.find(
     (ext) => ext.id === selectedExtension,

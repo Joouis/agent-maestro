@@ -1,22 +1,28 @@
 import { useCallback, useRef } from "react";
-import { useChatState } from "./useChatState";
-import { useStatusManager } from "./useStatusManager";
-import { useApiClient } from "./useApiClient";
-import { useMessageHandler } from "./useMessageHandler";
+
 import {
   createMessage,
-  isApprovalAction,
   focusTextarea,
+  isApprovalAction,
   resetTextarea,
 } from "../utils/chatHelpers";
 import { STATUS_MESSAGES, SUGGESTION_ACTIONS } from "../utils/constants";
+import { useApiClient } from "./useApiClient";
+import { useChatState } from "./useChatState";
+import { useMessageHandler } from "./useMessageHandler";
+import { useStatusManager } from "./useStatusManager";
 
-export const useChat = () => {
+interface UseChatOptions {
+  apiBaseUrl?: string | null;
+}
+
+export const useChat = (options: UseChatOptions = {}) => {
+  const { apiBaseUrl = null } = options;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const chatState = useChatState();
   const statusManager = useStatusManager();
-  const apiClient = useApiClient();
+  const apiClient = useApiClient(apiBaseUrl);
 
   const focusTextareaHelper = useCallback(() => {
     focusTextarea(textareaRef.current);
