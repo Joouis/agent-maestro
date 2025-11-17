@@ -7,10 +7,19 @@ interface UseProvidersOptions {
   extensionId?: string;
 }
 
+interface Provider {
+  id: string;
+  name: string;
+  description: string;
+  isConfigured: boolean;
+  isCurrent: boolean;
+  configStatus?: string;
+}
+
 interface ProvidersData {
   currentProvider?: string;
   currentModel?: string;
-  providers: string[];
+  providers: Provider[];
 }
 
 export const useProviders = (options: UseProvidersOptions = {}) => {

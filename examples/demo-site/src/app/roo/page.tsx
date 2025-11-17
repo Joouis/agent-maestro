@@ -8,6 +8,7 @@ import { ConnectionSetup } from "./components/ConnectionSetup";
 import { MessageList } from "./components/MessageList";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { useApiConfig } from "./hooks/useApiConfig";
+import { useAutoApprove } from "./hooks/useAutoApprove";
 import { useChat } from "./hooks/useChat";
 import { useModes } from "./hooks/useModes";
 import { useProviders } from "./hooks/useProviders";
@@ -51,6 +52,16 @@ export default function RooPage() {
     providers,
     isLoading: isLoadingProviders,
   } = useProviders({
+    apiBaseUrl: apiConfig.baseUrl,
+    extensionId: selectedExtension,
+  });
+
+  const {
+    settings: autoApproveSettings,
+    isLoading: isLoadingAutoApprove,
+    isUpdating: isUpdatingAutoApprove,
+    updateSettings: updateAutoApproveSettings,
+  } = useAutoApprove({
     apiBaseUrl: apiConfig.baseUrl,
     extensionId: selectedExtension,
   });
@@ -122,6 +133,10 @@ export default function RooPage() {
         currentModel={currentModel}
         providers={providers}
         isLoadingProviders={isLoadingProviders}
+        autoApproveSettings={autoApproveSettings}
+        onUpdateAutoApprove={updateAutoApproveSettings}
+        isLoadingAutoApprove={isLoadingAutoApprove}
+        isUpdatingAutoApprove={isUpdatingAutoApprove}
       />
 
       <StatusIndicator show={showStatus} message={statusMessage} />

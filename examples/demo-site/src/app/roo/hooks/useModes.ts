@@ -37,7 +37,7 @@ export const useModes = (options: UseModesOptions = {}) => {
         slug: mode.slug,
         name: mode.name,
         whenToUse: mode.whenToUse,
-        groups: mode.groups as any[],
+        groups: mode.groups as unknown as any[],
         source: "builtin" as const,
       }));
       setModes(fallbackModes);
@@ -91,7 +91,7 @@ export const useModes = (options: UseModesOptions = {}) => {
         slug: mode.slug,
         name: mode.name,
         whenToUse: mode.whenToUse,
-        groups: mode.groups as any[],
+        groups: mode.groups as unknown as any[],
         source: "builtin" as const,
       }));
       setModes(fallbackModes);

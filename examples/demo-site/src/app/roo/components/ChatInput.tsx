@@ -6,6 +6,7 @@ import {
   resetTextarea,
 } from "../utils/chatHelpers";
 import { UI_CONFIG } from "../utils/constants";
+import { AutoApproveSettingsComponent } from "./AutoApproveSettings";
 import { ExtensionSelector } from "./ExtensionSelector";
 import { ModeSelector } from "./ModeSelector";
 import { ProviderSelector } from "./ProviderSelector";
@@ -18,6 +19,26 @@ interface Mode {
   groups?: any[];
   source?: "builtin" | "custom";
   whenToUse?: string;
+}
+
+interface AutoApproveSettings {
+  autoApprovalEnabled: boolean;
+  alwaysAllowReadOnly: boolean;
+  alwaysAllowWrite: boolean;
+  alwaysAllowExecute: boolean;
+  alwaysAllowBrowser: boolean;
+  alwaysAllowMcp: boolean;
+  alwaysAllowModeSwitch: boolean;
+  alwaysAllowSubtasks: boolean;
+}
+
+interface Provider {
+  id: string;
+  name: string;
+  description: string;
+  isConfigured: boolean;
+  isCurrent: boolean;
+  configStatus?: string;
 }
 
 interface ChatInputProps {
@@ -36,8 +57,14 @@ interface ChatInputProps {
   apiBaseUrl?: string | null;
   currentProvider?: string;
   currentModel?: string;
-  providers?: string[];
+  providers?: Provider[];
   isLoadingProviders?: boolean;
+  autoApproveSettings?: AutoApproveSettings;
+  onUpdateAutoApprove?: (
+    settings: Partial<AutoApproveSettings>,
+  ) => Promise<boolean>;
+  isLoadingAutoApprove?: boolean;
+  isUpdatingAutoApprove?: boolean;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -58,6 +85,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   currentModel,
   providers = [],
   isLoadingProviders = false,
+  autoApproveSettings,
+  onUpdateAutoApprove,
+  isLoadingAutoApprove = false,
+  isUpdatingAutoApprove = false,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -115,6 +146,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           />
         </div>
 
+        {/* Auto-approve settings - above input on mobile */}
+        {autoApproveSettings && onUpdateAutoApprove && (
+          <div className="mb-3 sm:hidden">
+            <AutoApproveSettingsComponent
+              settings={autoApproveSettings}
+              onUpdateSettings={onUpdateAutoApprove}
+              isLoading={isLoadingAutoApprove}
+              isUpdating={isUpdatingAutoApprove}
+              disabled={disabled}
+            />
+          </div>
+        )}
+
         {/* Input Area */}
         <div className="flex gap-2 sm:gap-3 items-end">
           <textarea
@@ -158,6 +202,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             />
           </div>
         </div>
+
+        {/* Auto-approve settings - below input on desktop */}
+        {autoApproveSettings && onUpdateAutoApprove && (
+          <div className="hidden sm:block mt-3">
+            <AutoApproveSettingsComponent
+              settings={autoApproveSettings}
+              onUpdateSettings={onUpdateAutoApprove}
+              isLoading={isLoadingAutoApprove}
+              isUpdating={isUpdatingAutoApprove}
+              disabled={disabled}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

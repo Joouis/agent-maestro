@@ -37,7 +37,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
           slug: m.slug,
           name: m.name,
           whenToUse: m.whenToUse,
-          groups: m.groups as any[],
+          groups: m.groups as unknown as any[],
           source: "builtin" as const,
         }));
 
