@@ -12,6 +12,8 @@ import { useAutoApprove } from "./hooks/useAutoApprove";
 import { useChat } from "./hooks/useChat";
 import { useModes } from "./hooks/useModes";
 import { useProviders } from "./hooks/useProviders";
+import { useTaskActions } from "./hooks/useTaskActions";
+import { useTaskHistory } from "./hooks/useTaskHistory";
 
 export default function RooPage() {
   const [isHydrated, setIsHydrated] = useState(false);
@@ -28,6 +30,7 @@ export default function RooPage() {
     showStatus,
     selectedMode,
     selectedExtension,
+    currentTaskId,
 
     // Refs
     // textareaRef, // Managed internally by useChat
@@ -39,6 +42,7 @@ export default function RooPage() {
     setInputValue,
     setSelectedMode,
     setSelectedExtension,
+    setCurrentTaskId,
   } = useChat({ apiBaseUrl: apiConfig.baseUrl });
 
   const { modes, isLoading: isLoadingModes } = useModes({
@@ -65,6 +69,56 @@ export default function RooPage() {
     apiBaseUrl: apiConfig.baseUrl,
     extensionId: selectedExtension,
   });
+
+  const {
+    tasks: taskHistory,
+    totalTaskCount,
+    isLoading: isLoadingTasks,
+    error: taskError,
+    refetch: refetchTasks,
+  } = useTaskHistory({
+    apiBaseUrl: apiConfig.baseUrl,
+    extensionId: selectedExtension,
+    autoFetch: true,
+    filterByWorkspace: apiConfig.workspace || undefined, // Filter to current workspace
+  });
+
+  const { cancelTask, resumeTask } = useTaskActions({
+    apiBaseUrl: apiConfig.baseUrl,
+    extensionId: selectedExtension,
+  });
+
+  // Task management handlers
+  const handleSelectTask = React.useCallback(
+    (taskId: string) => {
+      // For now, just set the current task ID
+      // In the future, this could load the task's conversation history
+      setCurrentTaskId(taskId);
+    },
+    [setCurrentTaskId],
+  );
+
+  const handleCancelTask = React.useCallback(
+    async (taskId: string) => {
+      const result = await cancelTask(taskId);
+      if (result.success) {
+        // Refresh task list after cancellation
+        refetchTasks();
+      }
+    },
+    [cancelTask, refetchTasks],
+  );
+
+  const handleResumeTask = React.useCallback(
+    async (taskId: string) => {
+      const result = await resumeTask(taskId);
+      if (result.success) {
+        setCurrentTaskId(taskId);
+        refetchTasks();
+      }
+    },
+    [resumeTask, setCurrentTaskId, refetchTasks],
+  );
 
   // Handle hydration to avoid SSR mismatch
   useEffect(() => {
@@ -137,6 +191,17 @@ export default function RooPage() {
         onUpdateAutoApprove={updateAutoApproveSettings}
         isLoadingAutoApprove={isLoadingAutoApprove}
         isUpdatingAutoApprove={isUpdatingAutoApprove}
+        taskHistory={taskHistory}
+        currentTaskId={currentTaskId}
+        isLoadingTasks={isLoadingTasks}
+        taskError={taskError}
+        onRefreshTasks={refetchTasks}
+        onSelectTask={handleSelectTask}
+        onCancelTask={handleCancelTask}
+        onResumeTask={handleResumeTask}
+        onNewChat={handleNewChat}
+        totalTaskCount={totalTaskCount}
+        currentWorkspace={apiConfig.workspace}
       />
 
       <StatusIndicator show={showStatus} message={statusMessage} />

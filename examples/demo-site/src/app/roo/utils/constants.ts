@@ -18,6 +18,8 @@ export const createApiEndpoints = (baseUrl: string = DEFAULT_API_BASE_URL) => {
 
   return {
     TASK: `${rooApiBase}/task`,
+    TASKS: `${rooApiBase}/tasks`,
+    TASK_DETAIL: (taskId: string) => `${rooApiBase}/task/${taskId}`,
     TASK_MESSAGE: (taskId: string) => `${rooApiBase}/task/${taskId}/message`,
     TASK_ACTION: (taskId: string) => `${rooApiBase}/task/${taskId}/action`,
     INFO: `${infoApiBase}/info`,
