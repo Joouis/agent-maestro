@@ -43,6 +43,8 @@ export default function RooPage() {
     setSelectedMode,
     setSelectedExtension,
     setCurrentTaskId,
+    clearMessages,
+    addMessage,
   } = useChat({ apiBaseUrl: apiConfig.baseUrl });
 
   const { modes, isLoading: isLoadingModes } = useModes({
@@ -76,6 +78,7 @@ export default function RooPage() {
     isLoading: isLoadingTasks,
     error: taskError,
     refetch: refetchTasks,
+    fetchTaskDetail,
   } = useTaskHistory({
     apiBaseUrl: apiConfig.baseUrl,
     extensionId: selectedExtension,
@@ -90,12 +93,42 @@ export default function RooPage() {
 
   // Task management handlers
   const handleSelectTask = React.useCallback(
-    (taskId: string) => {
-      // For now, just set the current task ID
-      // In the future, this could load the task's conversation history
-      setCurrentTaskId(taskId);
+    async (taskId: string) => {
+      // Fetch task details and load conversation history
+      const taskDetail = await fetchTaskDetail(taskId);
+      if (taskDetail && taskDetail.conversationHistory) {
+        // Clear current messages
+        clearMessages();
+
+        // Convert conversation history to Message format
+        taskDetail.conversationHistory.forEach((item) => {
+          const isUser =
+            item.say === "user_feedback" || item.ask === "followup";
+          const content =
+            item.text ||
+            (item.say === "user_feedback" ? item.text || "" : "") ||
+            item.reasoning ||
+            "";
+
+          if (content) {
+            const message = {
+              id: `${taskId}-${item.ts}`,
+              content: content,
+              isUser: isUser,
+              timestamp: new Date(item.ts).toLocaleTimeString(),
+            };
+            addMessage(message);
+          }
+        });
+
+        // Set the current task ID for subsequent messages
+        setCurrentTaskId(taskId);
+      } else {
+        // Just set the task ID if we couldn't load history
+        setCurrentTaskId(taskId);
+      }
     },
-    [setCurrentTaskId],
+    [fetchTaskDetail, clearMessages, addMessage, setCurrentTaskId],
   );
 
   const handleCancelTask = React.useCallback(
@@ -201,7 +234,7 @@ export default function RooPage() {
         onResumeTask={handleResumeTask}
         onNewChat={handleNewChat}
         totalTaskCount={totalTaskCount}
-        currentWorkspace={apiConfig.workspace}
+        currentWorkspace={apiConfig.workspace || undefined}
       />
 
       <StatusIndicator show={showStatus} message={statusMessage} />

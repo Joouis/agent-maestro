@@ -16,6 +16,22 @@ export interface HistoryItem {
   workspace?: string;
 }
 
+export interface TaskConversationItem {
+  type: "say" | "ask";
+  say?: string;
+  ask?: string;
+  text?: string;
+  reasoning?: string;
+  images?: string[];
+  ts: number;
+}
+
+export interface TaskDetail {
+  historyItem: HistoryItem;
+  taskDirPath: string;
+  conversationHistory: TaskConversationItem[];
+}
+
 interface UseTaskHistoryOptions {
   apiBaseUrl?: string | null;
   extensionId?: string;
@@ -105,6 +121,42 @@ export const useTaskHistory = (options: UseTaskHistoryOptions = {}) => {
     }
   }, [fetchTaskHistory, autoFetch, extensionId]);
 
+  const fetchTaskDetail = useCallback(
+    async (taskId: string): Promise<TaskDetail | null> => {
+      if (!extensionId) {
+        return null;
+      }
+
+      const baseUrl = apiBaseUrl || DEFAULT_API_BASE_URL;
+      const endpoints = createApiEndpoints(baseUrl);
+
+      const detailUrl = new URL(endpoints.TASK_DETAIL(taskId));
+      detailUrl.searchParams.set("extensionId", extensionId);
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(detailUrl.toString(), {
+          method: "GET",
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json();
+          return data as TaskDetail;
+        }
+        return null;
+      } catch (err) {
+        console.error("Failed to fetch task detail:", err);
+        return null;
+      }
+    },
+    [apiBaseUrl, extensionId],
+  );
+
   return {
     tasks,
     allTasks,
@@ -112,5 +164,6 @@ export const useTaskHistory = (options: UseTaskHistoryOptions = {}) => {
     isLoading,
     error,
     refetch: fetchTaskHistory,
+    fetchTaskDetail,
   };
 };

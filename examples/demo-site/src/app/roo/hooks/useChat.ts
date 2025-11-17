@@ -179,5 +179,7 @@ export const useChat = (options: UseChatOptions = {}) => {
     setSelectedMode: chatState.setSelectedMode,
     setSelectedExtension: chatState.setSelectedExtension,
     setCurrentTaskId: chatState.setCurrentTaskId,
+    clearMessages: chatState.clearMessages,
+    addMessage: chatState.addMessage,
   };
 };
