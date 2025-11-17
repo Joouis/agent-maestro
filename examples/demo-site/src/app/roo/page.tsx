@@ -1,13 +1,22 @@
 "use client";
 
-import React from "react";
-import { useChat } from "./hooks/useChat";
+import React, { useEffect, useState } from "react";
+
 import { ChatHeader } from "./components/ChatHeader";
-import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
+import { ConnectionSetup } from "./components/ConnectionSetup";
+import { MessageList } from "./components/MessageList";
 import { StatusIndicator } from "./components/StatusIndicator";
+import { useApiConfig } from "./hooks/useApiConfig";
+import { useChat } from "./hooks/useChat";
+import { useModes } from "./hooks/useModes";
+import { useProviders } from "./hooks/useProviders";
 
 export default function RooPage() {
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  const apiConfig = useApiConfig();
+
   const {
     // State
     messages,
@@ -20,7 +29,7 @@ export default function RooPage() {
     selectedExtension,
 
     // Refs
-    textareaRef,
+    // textareaRef, // Managed internally by useChat
 
     // Actions
     handleNewChat,
@@ -29,11 +38,66 @@ export default function RooPage() {
     setInputValue,
     setSelectedMode,
     setSelectedExtension,
-  } = useChat();
+  } = useChat({ apiBaseUrl: apiConfig.baseUrl });
+
+  const { modes, isLoading: isLoadingModes } = useModes({
+    apiBaseUrl: apiConfig.baseUrl,
+    extensionId: selectedExtension,
+  });
+
+  const {
+    currentProvider,
+    currentModel,
+    providers,
+    isLoading: isLoadingProviders,
+  } = useProviders({
+    apiBaseUrl: apiConfig.baseUrl,
+    extensionId: selectedExtension,
+  });
+
+  // Handle hydration to avoid SSR mismatch
+  useEffect(() => {
+    setIsHydrated(true);
+
+    // Auto-reconnect if we have a saved URL
+    if (apiConfig.baseUrl && !apiConfig.isConnected) {
+      apiConfig.reconnect();
+    }
+  }, []);
+
+  // Show loading state during hydration
+  if (!isHydrated) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600">
+        <div className="text-white text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  // Show connection setup if not connected
+  if (!apiConfig.isConnected) {
+    return (
+      <ConnectionSetup
+        onConnect={apiConfig.connect}
+        isChecking={apiConfig.isChecking}
+        error={apiConfig.error}
+        savedUrl={apiConfig.baseUrl}
+        lastConnected={apiConfig.lastConnected}
+      />
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-500 to-purple-600">
-      <ChatHeader onNewChat={handleNewChat} hasMessages={messages.length > 0} />
+      <ChatHeader
+        onNewChat={handleNewChat}
+        hasMessages={messages.length > 0}
+        isConnected={apiConfig.isConnected}
+        connectionUrl={apiConfig.baseUrl}
+        onDisconnect={apiConfig.disconnect}
+        workspace={apiConfig.workspace}
+        agentMaestroVersion={apiConfig.agentMaestroVersion}
+      />
 
       <MessageList
         messages={messages}
@@ -51,6 +115,13 @@ export default function RooPage() {
         selectedExtension={selectedExtension}
         onExtensionChange={setSelectedExtension}
         hasMessages={messages.length > 0}
+        modes={modes}
+        isLoadingModes={isLoadingModes}
+        apiBaseUrl={apiConfig.baseUrl}
+        currentProvider={currentProvider}
+        currentModel={currentModel}
+        providers={providers}
+        isLoadingProviders={isLoadingProviders}
       />
 
       <StatusIndicator show={showStatus} message={statusMessage} />

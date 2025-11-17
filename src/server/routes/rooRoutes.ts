@@ -673,6 +673,95 @@ const setActiveProfileRoute = createRoute({
   },
 });
 
+// GET /roo/modes - Get available modes including custom modes
+const getModesRoute = createRoute({
+  method: "get",
+  path: "/roo/modes",
+  tags: ["Configuration"],
+  summary: "Get available modes",
+  description:
+    "Retrieves all available modes including custom modes from RooCode configuration",
+  request: {
+    query: z.object({
+      extensionId: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            modes: z.array(
+              z.object({
+                slug: z.string(),
+                name: z.string(),
+                roleDefinition: z.string().optional(),
+                customInstructions: z.string().optional(),
+                groups: z.array(z.any()).optional(),
+                source: z.enum(["builtin", "custom"]),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "Modes retrieved successfully",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+const getProvidersRoute = createRoute({
+  method: "get",
+  path: "/roo/providers",
+  tags: ["Configuration"],
+  summary: "Get available API providers",
+  description:
+    "Retrieves the current API provider, model, and detailed configuration for all available providers",
+  request: {
+    query: z.object({
+      extensionId: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            currentProvider: z.string().optional(),
+            currentModel: z.string().optional(),
+            providers: z.array(
+              z.object({
+                id: z.string(),
+                name: z.string(),
+                description: z.string(),
+                isConfigured: z.boolean(),
+                isCurrent: z.boolean(),
+                configStatus: z.string(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "Providers retrieved successfully",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
 export function registerRooRoutes(
   app: OpenAPIHono,
   controller: ExtensionController,
@@ -1295,6 +1384,196 @@ export function registerRooRoutes(
         `Error setting active profile ${c.req.param("name")}:`,
         error,
       );
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // GET /api/v1/roo/modes - Get available modes including custom modes
+  app.openapi(getModesRoute, async (c) => {
+    try {
+      const { extensionId } = c.req.query();
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
+      }
+
+      const config = adapter.getConfiguration();
+
+      // Default built-in modes
+      const builtinModes = [
+        { slug: "code", name: "Code", source: "builtin" as const },
+        { slug: "architect", name: "Architect", source: "builtin" as const },
+        { slug: "ask", name: "Ask", source: "builtin" as const },
+        { slug: "debug", name: "Debug", source: "builtin" as const },
+        {
+          slug: "orchestrator",
+          name: "Orchestrator",
+          source: "builtin" as const,
+        },
+      ];
+
+      // Get custom modes from configuration if available
+      const customModes: Array<{
+        slug: string;
+        name: string;
+        roleDefinition?: string;
+        customInstructions?: string;
+        groups?: any[];
+        source: "custom";
+      }> = [];
+
+      // Check if config has customModes property (from RooCodeSettings)
+      if (config && typeof config === "object" && "customModes" in config) {
+        const configCustomModes = (config as any).customModes;
+        if (Array.isArray(configCustomModes)) {
+          for (const mode of configCustomModes) {
+            customModes.push({
+              slug: mode.slug || mode.name?.toLowerCase().replace(/\s+/g, "-"),
+              name: mode.name || mode.slug,
+              roleDefinition: mode.roleDefinition,
+              customInstructions: mode.customInstructions,
+              groups: mode.groups,
+              source: "custom" as const,
+            });
+          }
+        }
+      }
+
+      // Combine built-in and custom modes
+      const allModes = [...builtinModes, ...customModes];
+
+      logger.info(
+        `Retrieved ${allModes.length} modes (${builtinModes.length} builtin, ${customModes.length} custom)`,
+      );
+
+      return c.json({ modes: allModes }, 200);
+    } catch (error) {
+      logger.error("Error retrieving modes:", error);
+      const message =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      return c.json({ message }, 500);
+    }
+  });
+
+  // GET /api/v1/roo/providers - Get available API providers with configuration status
+  app.openapi(getProvidersRoute, async (c) => {
+    try {
+      const { extensionId } = c.req.query();
+
+      const adapter = controller.getRooAdapter(extensionId);
+      if (!adapter?.isActive) {
+        return c.json(
+          { message: `RooCode extension ${extensionId} is not available` },
+          500,
+        );
+      }
+
+      const config = adapter.getConfiguration();
+
+      // Provider metadata with display names and descriptions
+      const providerMetadata: Record<
+        string,
+        { name: string; description: string }
+      > = {
+        anthropic: { name: "Anthropic", description: "Claude models" },
+        openai: { name: "OpenAI", description: "GPT models" },
+        ollama: { name: "Ollama", description: "Local models" },
+        lmstudio: { name: "LM Studio", description: "Local models" },
+        openrouter: {
+          name: "OpenRouter",
+          description: "Multi-provider gateway",
+        },
+        gemini: { name: "Google Gemini", description: "Gemini models" },
+        bedrock: { name: "AWS Bedrock", description: "AWS AI service" },
+        vertex: { name: "Google Vertex", description: "Google Cloud AI" },
+        "vscode-lm": {
+          name: "VS Code LM",
+          description: "VS Code language models",
+        },
+        "gemini-cli": {
+          name: "Gemini CLI",
+          description: "Gemini CLI integration",
+        },
+        "openai-native": {
+          name: "OpenAI Native",
+          description: "Native OpenAI API",
+        },
+        mistral: { name: "Mistral", description: "Mistral AI models" },
+        moonshot: { name: "Moonshot", description: "Moonshot AI" },
+        deepseek: { name: "DeepSeek", description: "DeepSeek AI models" },
+        doubao: { name: "Doubao", description: "ByteDance AI" },
+        groq: { name: "Groq", description: "Groq hardware-accelerated" },
+        xai: { name: "xAI", description: "Grok models" },
+        litellm: { name: "LiteLLM", description: "LiteLLM proxy" },
+        huggingface: {
+          name: "Hugging Face",
+          description: "HuggingFace models",
+        },
+        cerebras: { name: "Cerebras", description: "Cerebras AI" },
+        sambanova: { name: "SambaNova", description: "SambaNova AI" },
+        fireworks: { name: "Fireworks", description: "Fireworks AI" },
+        chutes: { name: "Chutes", description: "Chutes AI" },
+        "qwen-code": { name: "Qwen Code", description: "Qwen Code models" },
+      };
+
+      // Get current provider from configuration
+      let currentProvider: string | undefined;
+      let currentModel: string | undefined;
+
+      if (config && typeof config === "object") {
+        if ("apiProvider" in config) {
+          currentProvider = (config as any).apiProvider;
+        }
+        if ("apiModelId" in config) {
+          currentModel = (config as any).apiModelId;
+        }
+      }
+
+      // Get active profile name
+      const activeProfileName = adapter.getActiveProfile();
+
+      // Get all profiles and list each profile as a separate provider entry
+      const profileNames = adapter.getProfiles();
+      const providersList = profileNames.map((profileName) => {
+        const profileEntry = adapter.getProfileEntry(profileName);
+        const providerId = profileEntry?.apiProvider || "unknown";
+        const metadata = providerMetadata[providerId];
+        const isActive = profileName === activeProfileName;
+
+        return {
+          id: profileEntry?.id || profileName,
+          name: profileName,
+          description: metadata?.name || providerId,
+          isConfigured: true,
+          isCurrent: isActive,
+          configStatus: isActive
+            ? currentModel
+              ? `Active (${currentModel})`
+              : "Active"
+            : "Configured",
+        };
+      });
+
+      logger.info(
+        `Retrieved ${providersList.length} profiles as providers. Active: ${activeProfileName || "not set"}, Current provider: ${currentProvider || "not set"}, Model: ${currentModel || "not set"}`,
+      );
+
+      return c.json(
+        {
+          currentProvider,
+          currentModel,
+          providers: providersList,
+        },
+        200,
+      );
+    } catch (error) {
+      logger.error("Error retrieving providers:", error);
       const message =
         error instanceof Error ? error.message : "Unknown error occurred";
       return c.json({ message }, 500);

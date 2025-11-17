@@ -8,15 +8,25 @@ const getPort = () => {
 };
 
 const PORT = getPort();
-export const API_BASE_URL = `http://localhost:${PORT}/api/v1/roo`;
-const INFO_API_BASE_URL = `http://localhost:${PORT}/api/v1`;
+export const DEFAULT_API_BASE_URL = `http://localhost:${PORT}`;
 
-export const API_ENDPOINTS = {
-  TASK: `${API_BASE_URL}/task`,
-  TASK_MESSAGE: (taskId: string) => `${API_BASE_URL}/task/${taskId}/message`,
-  TASK_ACTION: (taskId: string) => `${API_BASE_URL}/task/${taskId}/action`,
-  INFO: `${INFO_API_BASE_URL}/info`,
-} as const;
+// Dynamic API endpoint factory - uses stored URL or falls back to default
+export const createApiEndpoints = (baseUrl: string = DEFAULT_API_BASE_URL) => {
+  const cleanUrl = baseUrl.replace(/\/+$/, "");
+  const rooApiBase = `${cleanUrl}/api/v1/roo`;
+  const infoApiBase = `${cleanUrl}/api/v1`;
+
+  return {
+    TASK: `${rooApiBase}/task`,
+    TASK_MESSAGE: (taskId: string) => `${rooApiBase}/task/${taskId}/message`,
+    TASK_ACTION: (taskId: string) => `${rooApiBase}/task/${taskId}/action`,
+    INFO: `${infoApiBase}/info`,
+  };
+};
+
+// Legacy support - will be replaced by dynamic endpoints
+export const API_BASE_URL = `${DEFAULT_API_BASE_URL}/api/v1/roo`;
+export const API_ENDPOINTS = createApiEndpoints(DEFAULT_API_BASE_URL);
 
 export const SUGGESTION_ACTIONS = {
   APPROVE: "Approve",
