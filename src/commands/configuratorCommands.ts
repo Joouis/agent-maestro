@@ -360,7 +360,7 @@ wire_api = "chat"
         }
 
         const modelOptions = await getChatModelsQuickPickItems({
-          recommendedModelId: "gemini-3-pro-preview",
+          recommendedModelId: "gemini-2.5-pro",
           priorityFamily: "gemini",
         });
 
