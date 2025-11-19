@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.4.1 - 2025.11.19
+
+- Gemini CLI configuration now detects `.env` files at workspace root and warns that project settings will take precedence over user settings
+- Recommended model `gemini-2.5-pro` is now prioritized in the Gemini model selection UI
+- Improved error handling in `streamGenerateContent` API, enabling the Gemini CLI to display more accurate and descriptive error messages
+
 ## v2.4.0 - 2025.11.16
 
 - **Gemini CLI integration** with one-click setup command and **Gemini-compatible** API endpoints
