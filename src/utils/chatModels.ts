@@ -134,9 +134,7 @@ export const getChatModelsQuickPickItems = async (
   for (const m of allModels) {
     if (options?.recommendedModelId && m.id === options.recommendedModelId) {
       recommendedModel = m;
-    }
-
-    if (m.family.includes("claude")) {
+    } else if (m.family.includes("claude")) {
       modelGroups.claude.push(m);
     } else if (m.family.includes("gemini")) {
       modelGroups.gemini.push(m);

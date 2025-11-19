@@ -416,5 +416,4 @@ Potential endpoints to add later:
 
 - [Gemini API Documentation](https://ai.google.dev/api)
 - [Gemini Generate Content](https://ai.google.dev/api/generate-content)
-- [LiteLLM Gemini Pass-Through](docs/tutorials/litellm_gemini_cli.md)
 - [@google/genai Package](https://www.npmjs.com/package/@google/genai)
