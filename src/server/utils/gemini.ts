@@ -23,6 +23,7 @@ const convertGeminiPartToVSCodePart = (
 
   // Function call (tool use)
   if (part.functionCall?.name) {
+    // [Question] How to handle thoughtSignature? (https://ai.google.dev/gemini-api/docs/thought-signatures)
     return new vscode.LanguageModelToolCallPart(
       part.functionCall.id || `function_call_${Date.now()}`,
       part.functionCall.name,
