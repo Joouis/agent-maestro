@@ -59,12 +59,14 @@ export const useProfiles = (options: UseProfilesOptions = {}) => {
         const data = await response.json();
 
         // Transform profiles to include isActive flag
-        const profiles = (data.profiles || []).map((profile: any) => ({
-          id: profile.id,
-          name: profile.name,
-          apiProvider: profile.apiProvider,
-          isActive: data.activeProfile?.id === profile.id,
-        }));
+        const profiles = (data.profiles || []).map(
+          (profile: { id: string; name: string; apiProvider?: string }) => ({
+            id: profile.id,
+            name: profile.name,
+            apiProvider: profile.apiProvider,
+            isActive: data.activeProfile?.id === profile.id,
+          }),
+        );
 
         setProfilesData({
           profiles,

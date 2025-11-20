@@ -1,17 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  DEFAULT_API_BASE_URL,
-  MODES,
-  createApiEndpoints,
-} from "../utils/constants";
+import { DEFAULT_API_BASE_URL, MODES } from "../utils/constants";
 
 interface Mode {
   slug: string;
   name: string;
   roleDefinition?: string;
   customInstructions?: string;
-  groups?: any[];
+  groups?: readonly unknown[];
   source?: "builtin" | "custom";
   whenToUse?: string;
 }
@@ -37,7 +33,7 @@ export const useModes = (options: UseModesOptions = {}) => {
         slug: mode.slug,
         name: mode.name,
         whenToUse: mode.whenToUse,
-        groups: mode.groups as any[],
+        groups: mode.groups,
         source: "builtin" as const,
       }));
       setModes(fallbackModes);
@@ -91,7 +87,7 @@ export const useModes = (options: UseModesOptions = {}) => {
         slug: mode.slug,
         name: mode.name,
         whenToUse: mode.whenToUse,
-        groups: mode.groups as any[],
+        groups: mode.groups,
         source: "builtin" as const,
       }));
       setModes(fallbackModes);

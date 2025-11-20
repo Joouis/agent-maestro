@@ -84,15 +84,7 @@ export default function RooPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-500 to-purple-600">
-      <ChatHeader
-        onNewChat={handleNewChat}
-        hasMessages={messages.length > 0}
-        isConnected={apiConfig.isConnected}
-        connectionUrl={apiConfig.baseUrl}
-        onDisconnect={apiConfig.disconnect}
-        workspace={apiConfig.workspace}
-        agentMaestroVersion={apiConfig.agentMaestroVersion}
-      />
+      <ChatHeader onNewChat={handleNewChat} hasMessages={messages.length > 0} />
 
       <MessageList
         messages={messages}
@@ -112,7 +104,6 @@ export default function RooPage() {
         hasMessages={messages.length > 0}
         modes={modes}
         isLoadingModes={isLoadingModes}
-        apiBaseUrl={apiConfig.baseUrl}
         profiles={profiles}
         isLoadingProfiles={isLoadingProfiles}
       />

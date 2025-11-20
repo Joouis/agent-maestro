@@ -7,7 +7,7 @@ interface Mode {
   name: string;
   roleDefinition?: string;
   customInstructions?: string;
-  groups?: any[];
+  groups?: readonly unknown[];
   source?: "builtin" | "custom";
   whenToUse?: string;
 }
@@ -37,7 +37,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
           slug: m.slug,
           name: m.name,
           whenToUse: m.whenToUse,
-          groups: m.groups as any[],
+          groups: m.groups,
           source: "builtin" as const,
         }));
 
@@ -45,7 +45,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
     (mode) => mode.slug === selectedMode,
   );
 
-  const formatGroups = (groups: readonly any[]): string => {
+  const formatGroups = (groups: readonly unknown[]): string => {
     return groups
       .map((group) => {
         if (typeof group === "string") {

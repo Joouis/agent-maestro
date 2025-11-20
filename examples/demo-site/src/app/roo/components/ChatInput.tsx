@@ -15,7 +15,7 @@ interface Mode {
   name: string;
   roleDefinition?: string;
   customInstructions?: string;
-  groups?: any[];
+  groups?: readonly unknown[];
   source?: "builtin" | "custom";
   whenToUse?: string;
 }
@@ -40,7 +40,6 @@ interface ChatInputProps {
   hasMessages: boolean;
   modes?: Mode[];
   isLoadingModes?: boolean;
-  apiBaseUrl?: string | null;
   profiles?: Profile[];
   isLoadingProfiles?: boolean;
 }
@@ -58,7 +57,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   hasMessages,
   modes,
   isLoadingModes,
-  apiBaseUrl,
   profiles = [],
   isLoadingProfiles = false,
 }) => {
