@@ -20,6 +20,13 @@ interface Mode {
   whenToUse?: string;
 }
 
+interface Profile {
+  id: string;
+  name: string;
+  apiProvider?: string;
+  isActive: boolean;
+}
+
 interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -34,10 +41,8 @@ interface ChatInputProps {
   modes?: Mode[];
   isLoadingModes?: boolean;
   apiBaseUrl?: string | null;
-  currentProvider?: string;
-  currentModel?: string;
-  providers?: string[];
-  isLoadingProviders?: boolean;
+  profiles?: Profile[];
+  isLoadingProfiles?: boolean;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -54,10 +59,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   modes,
   isLoadingModes,
   apiBaseUrl,
-  currentProvider,
-  currentModel,
-  providers = [],
-  isLoadingProviders = false,
+  profiles = [],
+  isLoadingProfiles = false,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -101,17 +104,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             isLoadingModes={isLoadingModes}
           />
           <ProviderSelector
-            currentProvider={currentProvider}
-            currentModel={currentModel}
-            providers={providers}
-            isLoading={isLoadingProviders}
+            profiles={profiles}
+            isLoading={isLoadingProfiles}
             disabled={disabled}
           />
           <ExtensionSelector
             selectedExtension={selectedExtension}
             onExtensionChange={onExtensionChange}
             disabled={disabled || hasMessages}
-            apiBaseUrl={apiBaseUrl}
           />
         </div>
 
@@ -144,17 +144,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               isLoadingModes={isLoadingModes}
             />
             <ProviderSelector
-              currentProvider={currentProvider}
-              currentModel={currentModel}
-              providers={providers}
-              isLoading={isLoadingProviders}
+              profiles={profiles}
+              isLoading={isLoadingProfiles}
               disabled={disabled}
             />
             <ExtensionSelector
               selectedExtension={selectedExtension}
               onExtensionChange={onExtensionChange}
               disabled={disabled || hasMessages}
-              apiBaseUrl={apiBaseUrl}
             />
           </div>
         </div>
