@@ -543,7 +543,15 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             const errorChunk: GenerateContentResponse = {
               candidates: [
                 {
-                  finishReason: FinishReason.FINISH_REASON_UNSPECIFIED,
+                  content: {
+                    parts: [
+                      {
+                        text: String(error),
+                      },
+                    ],
+                    role: "model",
+                  },
+                  finishReason: FinishReason.OTHER,
                   index: 0,
                 },
               ],

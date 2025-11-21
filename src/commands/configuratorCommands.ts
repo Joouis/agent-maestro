@@ -280,17 +280,34 @@ wire_api = "chat"
     vscode.commands.registerCommand(
       "agent-maestro.configureGeminiCli",
       createCommandHandler(async () => {
+        const workspaceRootUri = vscode.workspace.workspaceFolders?.[0]?.uri;
+
+        let projectEnvExists = false;
+        if (workspaceRootUri) {
+          try {
+            const envUri = vscode.Uri.joinPath(workspaceRootUri, ".env");
+            await vscode.workspace.fs.stat(envUri);
+            projectEnvExists = true;
+          } catch (error) {
+            // .env doesn't exist
+          }
+        }
+
         // Ask user whether to configure user settings or project settings
         const settingsType = await vscode.window.showQuickPick(
           [
             {
-              label: "User Settings",
-              description: "Personal global settings for all projects (~/.env)",
-            },
-            {
               label: "Project Settings",
               description:
-                "Team-shared project settings in source control (.env)",
+                "Team-shared project settings in source control (.gemini/.env)",
+            },
+            {
+              label: "User Settings",
+              description:
+                "Personal global settings for all projects (~/.gemini/.env)",
+              detail: projectEnvExists
+                ? "$(warning) Note: A .env file exists at workspace root. Gemini CLI will prioritize it over user settings."
+                : undefined,
             },
           ],
           {
@@ -310,16 +327,14 @@ wire_api = "chat"
           envFilePath = path.join(os.homedir(), ".gemini", ".env");
         } else {
           // Use project directory
-          const workspaceRoot =
-            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-          if (!workspaceRoot) {
+          if (!workspaceRootUri) {
             vscode.window.showErrorMessage(
               "No workspace folder found. Please open a workspace to configure project Gemini CLI settings.",
             );
             return;
           }
 
-          envFilePath = path.join(workspaceRoot, ".gemini", ".env");
+          envFilePath = path.join(workspaceRootUri.fsPath, ".gemini", ".env");
         }
 
         // Check if .env file exists and confirm override
@@ -345,6 +360,7 @@ wire_api = "chat"
         }
 
         const modelOptions = await getChatModelsQuickPickItems({
+          recommendedModelId: "gemini-2.5-pro",
           priorityFamily: "gemini",
         });
 

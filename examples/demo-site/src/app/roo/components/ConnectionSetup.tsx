@@ -252,29 +252,6 @@ export const ConnectionSetup: React.FC<ConnectionSetupProps> = ({
             {error}
           </div>
         )}
-
-        <div className="mt-6 pt-4 border-t border-gray-200">
-          <p className="text-xs text-gray-500 text-center">
-            Need a tunnel? Try{" "}
-            <a
-              href="https://ngrok.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-indigo-600 hover:underline"
-            >
-              ngrok
-            </a>{" "}
-            or{" "}
-            <a
-              href="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-indigo-600 hover:underline"
-            >
-              Cloudflare Tunnel
-            </a>
-          </p>
-        </div>
       </div>
     </div>
   );

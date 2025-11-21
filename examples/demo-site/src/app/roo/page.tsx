@@ -10,7 +10,7 @@ import { StatusIndicator } from "./components/StatusIndicator";
 import { useApiConfig } from "./hooks/useApiConfig";
 import { useChat } from "./hooks/useChat";
 import { useModes } from "./hooks/useModes";
-import { useProviders } from "./hooks/useProviders";
+import { useProfiles } from "./hooks/useProfiles";
 
 export default function RooPage() {
   const [isHydrated, setIsHydrated] = useState(false);
@@ -45,12 +45,7 @@ export default function RooPage() {
     extensionId: selectedExtension,
   });
 
-  const {
-    currentProvider,
-    currentModel,
-    providers,
-    isLoading: isLoadingProviders,
-  } = useProviders({
+  const { profiles, isLoading: isLoadingProfiles } = useProfiles({
     apiBaseUrl: apiConfig.baseUrl,
     extensionId: selectedExtension,
   });
@@ -118,10 +113,8 @@ export default function RooPage() {
         modes={modes}
         isLoadingModes={isLoadingModes}
         apiBaseUrl={apiConfig.baseUrl}
-        currentProvider={currentProvider}
-        currentModel={currentModel}
-        providers={providers}
-        isLoadingProviders={isLoadingProviders}
+        profiles={profiles}
+        isLoadingProfiles={isLoadingProfiles}
       />
 
       <StatusIndicator show={showStatus} message={statusMessage} />

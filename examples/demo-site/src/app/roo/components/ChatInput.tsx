@@ -15,9 +15,16 @@ interface Mode {
   name: string;
   roleDefinition?: string;
   customInstructions?: string;
-  groups?: any[];
+  groups?: readonly unknown[];
   source?: "builtin" | "custom";
   whenToUse?: string;
+}
+
+interface Profile {
+  id: string;
+  name: string;
+  apiProvider?: string;
+  isActive: boolean;
 }
 
 interface ChatInputProps {
@@ -34,10 +41,8 @@ interface ChatInputProps {
   modes?: Mode[];
   isLoadingModes?: boolean;
   apiBaseUrl?: string | null;
-  currentProvider?: string;
-  currentModel?: string;
-  providers?: string[];
-  isLoadingProviders?: boolean;
+  profiles?: Profile[];
+  isLoadingProfiles?: boolean;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -54,10 +59,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   modes,
   isLoadingModes,
   apiBaseUrl,
-  currentProvider,
-  currentModel,
-  providers = [],
-  isLoadingProviders = false,
+  profiles = [],
+  isLoadingProfiles = false,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -101,10 +104,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             isLoadingModes={isLoadingModes}
           />
           <ProviderSelector
-            currentProvider={currentProvider}
-            currentModel={currentModel}
-            providers={providers}
-            isLoading={isLoadingProviders}
+            profiles={profiles}
+            isLoading={isLoadingProfiles}
             disabled={disabled}
           />
           <ExtensionSelector
@@ -144,10 +145,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               isLoadingModes={isLoadingModes}
             />
             <ProviderSelector
-              currentProvider={currentProvider}
-              currentModel={currentModel}
-              providers={providers}
-              isLoading={isLoadingProviders}
+              profiles={profiles}
+              isLoading={isLoadingProfiles}
               disabled={disabled}
             />
             <ExtensionSelector
