@@ -7,13 +7,13 @@ interface Profile {
   isActive: boolean;
 }
 
-interface ProviderSelectorProps {
+interface ProfileSelectorProps {
   profiles: Profile[];
   isLoading: boolean;
   disabled: boolean;
 }
 
-export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
+export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
   profiles,
   isLoading,
   disabled,

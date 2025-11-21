@@ -15,7 +15,7 @@ interface ExtensionInfo {
 }
 
 interface ExtensionSelectorProps {
-  selectedExtension: string;
+  selectedExtension?: string;
   onExtensionChange: (extensionId: string) => void;
   disabled: boolean;
   apiBaseUrl?: string | null;

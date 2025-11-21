@@ -43,8 +43,23 @@ export const ConnectionSetup: React.FC<ConnectionSetupProps> = ({
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
-    await onConnect(url.trim());
+    const trimmedUrl = url.trim();
+
+    // Basic validation
+    if (!trimmedUrl) return;
+
+    try {
+      const parsed = new URL(trimmedUrl);
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        // Let parent handle error display for consistency
+        await onConnect(trimmedUrl);
+        return;
+      }
+    } catch {
+      // Invalid URL format - let parent handle error for consistent error display
+    }
+
+    await onConnect(trimmedUrl);
   };
 
   const handleQuickConnect = async (preset: string) => {

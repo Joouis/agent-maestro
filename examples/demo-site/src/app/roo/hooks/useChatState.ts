@@ -10,8 +10,10 @@ export const useChatState = () => {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [showTyping, setShowTyping] = useState(false);
   const [selectedMode, setSelectedMode] = useState(DEFAULT_MODE);
-  const [selectedExtension, setSelectedExtension] = useState(
-    "", // Will be set by ExtensionSelector after detecting available extensions
+  const [selectedExtension, setSelectedExtension] = useState<
+    string | undefined
+  >(
+    undefined, // Will be set by ExtensionSelector after detecting available extensions
   );
 
   const addMessage = useCallback((message: Message) => {

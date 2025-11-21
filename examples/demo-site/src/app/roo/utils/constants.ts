@@ -24,10 +24,6 @@ export const createApiEndpoints = (baseUrl: string = DEFAULT_API_BASE_URL) => {
   };
 };
 
-// Legacy support - will be replaced by dynamic endpoints
-export const API_BASE_URL = `${DEFAULT_API_BASE_URL}/api/v1/roo`;
-export const API_ENDPOINTS = createApiEndpoints(DEFAULT_API_BASE_URL);
-
 export const SUGGESTION_ACTIONS = {
   APPROVE: "Approve",
   REJECT: "Reject",

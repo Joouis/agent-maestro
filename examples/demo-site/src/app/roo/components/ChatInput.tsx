@@ -8,7 +8,7 @@ import {
 import { UI_CONFIG } from "../utils/constants";
 import { ExtensionSelector } from "./ExtensionSelector";
 import { ModeSelector } from "./ModeSelector";
-import { ProviderSelector } from "./ProviderSelector";
+import { ProfileSelector } from "./ProfileSelector";
 
 interface Mode {
   slug: string;
@@ -35,7 +35,7 @@ interface ChatInputProps {
   placeholder?: string;
   selectedMode: string;
   onModeChange: (mode: string) => void;
-  selectedExtension: string;
+  selectedExtension?: string;
   onExtensionChange: (extension: string) => void;
   hasMessages: boolean;
   modes?: Mode[];
@@ -103,7 +103,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             modes={modes}
             isLoadingModes={isLoadingModes}
           />
-          <ProviderSelector
+          <ProfileSelector
             profiles={profiles}
             isLoading={isLoadingProfiles}
             disabled={disabled}
@@ -144,7 +144,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               modes={modes}
               isLoadingModes={isLoadingModes}
             />
-            <ProviderSelector
+            <ProfileSelector
               profiles={profiles}
               isLoading={isLoadingProfiles}
               disabled={disabled}

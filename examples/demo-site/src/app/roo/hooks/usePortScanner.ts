@@ -38,7 +38,7 @@ export const usePortScanner = (): UsePortScannerResult => {
       try {
         const url = `http://localhost:${port}`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
 
         const response = await fetch(`${url}/api/v1/info`, {
           method: "GET",

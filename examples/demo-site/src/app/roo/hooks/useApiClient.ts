@@ -43,7 +43,7 @@ export const useApiClient = (apiBaseUrl: string | null = null) => {
     async (
       message: string,
       mode: string,
-      extensionId: string,
+      extensionId?: string,
       taskId?: string,
     ): Promise<Response> => {
       const url = taskId ? endpoints.TASK_MESSAGE(taskId) : endpoints.TASK;

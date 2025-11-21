@@ -47,6 +47,46 @@ cloudflared tunnel --url localhost:23333
 3. Click "Connect"
 4. Start controlling your RooCode tasks remotely!
 
+## Security Considerations
+
+⚠️ **IMPORTANT**: When deploying to production, consider these security best practices:
+
+### Reverse Proxy Security
+
+- **Never expose production reverse proxy URLs publicly** without proper authentication
+- Use ngrok's built-in authentication: `ngrok http 23333 --basic-auth="user:password"`
+- For Cloudflare Tunnel, enable [Access policies](https://developers.cloudflare.com/cloudflare-one/policies/access/) to restrict who can connect
+- Consider using IP allowlists if you know your deployment's IP addresses
+
+### CORS Configuration
+
+The default Vercel configuration doesn't include CORS headers, which means your API will only accept requests from the same origin. If you need to add CORS headers to `vercel.json`, be specific:
+
+```json
+{
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "https://your-specific-domain.vercel.app"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Never use `"value": "*"`** in production as it allows any website to make requests to your backend.
+
+### Best Practices
+
+- Rotate reverse proxy URLs regularly
+- Don't commit `.env` files with sensitive URLs
+- Use environment variables for production endpoints
+- Monitor your reverse proxy access logs for suspicious activity
+
 ## Architecture
 
 ```
