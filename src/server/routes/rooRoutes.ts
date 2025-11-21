@@ -10,6 +10,7 @@ import {
   addAgentMaestroMcpConfig,
   getAvailableExtensions,
 } from "../../utils/mcpConfig";
+import { filterRooSettings } from "../../utils/rooSettingsFilter";
 import {
   ImagesDataUriSchema,
   imagesDataUriErrorMessage,
@@ -1543,7 +1544,10 @@ export function registerRooRoutes(
       // Get full configuration - returns complete RooCodeSettings
       const settings = adapter.getConfiguration();
 
-      return c.json(settings, 200);
+      // Filter sensitive data before returning
+      const filteredSettings = filterRooSettings(settings);
+
+      return c.json(filteredSettings, 200);
     } catch (error) {
       logger.error("Error retrieving RooCode settings:", error);
       const message =
@@ -1556,7 +1560,7 @@ export function registerRooRoutes(
   app.openapi(updateSettingsRoute, async (c) => {
     try {
       const { extensionId } = c.req.valid("query");
-      const partialSettings = c.req.valid("json");
+      const partialSettings = await c.req.json();
 
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
@@ -1580,9 +1584,12 @@ export function registerRooRoutes(
       // Get updated configuration to return
       const finalSettings = adapter.getConfiguration();
 
+      // Filter sensitive data before returning
+      const filteredFinalSettings = filterRooSettings(finalSettings);
+
       logger.info(`Updated RooCode settings for ${extensionId || "default"}`);
 
-      return c.json(finalSettings, 200);
+      return c.json(filteredFinalSettings, 200);
     } catch (error) {
       logger.error("Error updating RooCode settings:", error);
       const message =
