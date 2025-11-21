@@ -84,11 +84,9 @@ export const useAutoApprove = (options: UseAutoApproveOptions = {}) => {
         // Extract only auto-approve related fields
         const autoApproveSettings = extractAutoApproveSettings(fullSettings);
         setSettings(autoApproveSettings);
-        setIsLoading(false);
-        return;
+      } else {
+        throw new Error("Failed to fetch settings");
       }
-
-      throw new Error("Failed to fetch settings");
     } catch (err) {
       console.warn("Failed to fetch auto-approve settings:", err);
       setError("Settings API unavailable");
