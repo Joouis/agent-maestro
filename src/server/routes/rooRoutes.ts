@@ -1,6 +1,6 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { ClineMessage, RooCodeEventName } from "@roo-code/types";
-import { isEqual } from "es-toolkit";
+import { isEqual, merge } from "es-toolkit";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
@@ -1576,7 +1576,7 @@ export function registerRooRoutes(
       const currentSettings = adapter.getConfiguration();
 
       // Merge with updates (shallow merge is fine, setConfiguration handles deep merge)
-      const updatedSettings = { ...currentSettings, ...partialSettings };
+      const updatedSettings = merge(currentSettings, partialSettings);
 
       // Update configuration
       await adapter.setConfiguration(updatedSettings);

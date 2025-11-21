@@ -48,15 +48,10 @@ export const ConnectionSetup: React.FC<ConnectionSetupProps> = ({
     // Basic validation
     if (!trimmedUrl) return;
 
-    try {
-      const parsed = new URL(trimmedUrl);
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        // Let parent handle error display for consistency
-        await onConnect(trimmedUrl);
-        return;
-      }
-    } catch {
-      // Invalid URL format - let parent handle error for consistent error display
+    const parsed = new URL(trimmedUrl);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      // Invalid protocol - don't proceed
+      return;
     }
 
     await onConnect(trimmedUrl);
