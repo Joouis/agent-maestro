@@ -717,14 +717,14 @@ const getModesRoute = createRoute({
   },
 });
 
-// GET /roo/auto-approve - Get auto-approve settings
-const getAutoApproveRoute = createRoute({
+// GET /roo/settings - Get RooCode settings
+const getSettingsRoute = createRoute({
   method: "get",
-  path: "/roo/auto-approve",
+  path: "/roo/settings",
   tags: ["Configuration"],
-  summary: "Get auto-approve settings",
+  summary: "Get RooCode settings",
   description:
-    "Retrieves the current auto-approve settings from RooCode configuration",
+    "Retrieves the complete RooCode configuration including global settings and provider settings",
   request: {
     query: z.object({
       extensionId: z.string().optional(),
@@ -734,19 +734,16 @@ const getAutoApproveRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: z.object({
-            autoApprovalEnabled: z.boolean(),
-            alwaysAllowReadOnly: z.boolean(),
-            alwaysAllowWrite: z.boolean(),
-            alwaysAllowExecute: z.boolean(),
-            alwaysAllowBrowser: z.boolean(),
-            alwaysAllowMcp: z.boolean(),
-            alwaysAllowModeSwitch: z.boolean(),
-            alwaysAllowSubtasks: z.boolean(),
+          // NOTE: Using z.object() as placeholder. This represents rooCodeSettingsSchema from @roo-code/types
+          // When @roo-code/types migrates from Zod v3 to v4, replace this with the actual schema import
+          // rooCodeSettingsSchema = globalSettingsSchema & providerSettingsSchema (100+ fields)
+          schema: z.object({}).openapi({
+            description:
+              "Complete RooCode settings (RooCodeSettings type from @roo-code/types). Includes global settings (autoApprovalEnabled, customInstructions, etc.) and provider settings (apiKey, modelId, etc.)",
           }),
         },
       },
-      description: "Auto-approve settings retrieved successfully",
+      description: "Complete RooCode settings retrieved successfully",
     },
     404: {
       content: {
@@ -769,13 +766,14 @@ const getAutoApproveRoute = createRoute({
   },
 });
 
-// PUT /roo/auto-approve - Update auto-approve settings
-const updateAutoApproveRoute = createRoute({
+// PUT /roo/settings - Update RooCode settings
+const updateSettingsRoute = createRoute({
   method: "put",
-  path: "/roo/auto-approve",
+  path: "/roo/settings",
   tags: ["Configuration"],
-  summary: "Update auto-approve settings",
-  description: "Updates the auto-approve settings in RooCode configuration",
+  summary: "Update RooCode settings",
+  description:
+    "Updates specific RooCode settings. Only provided fields will be updated.",
   request: {
     query: z.object({
       extensionId: z.string().optional(),
@@ -783,15 +781,11 @@ const updateAutoApproveRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: z.object({
-            autoApprovalEnabled: z.boolean().optional(),
-            alwaysAllowReadOnly: z.boolean().optional(),
-            alwaysAllowWrite: z.boolean().optional(),
-            alwaysAllowExecute: z.boolean().optional(),
-            alwaysAllowBrowser: z.boolean().optional(),
-            alwaysAllowMcp: z.boolean().optional(),
-            alwaysAllowModeSwitch: z.boolean().optional(),
-            alwaysAllowSubtasks: z.boolean().optional(),
+          // NOTE: Using z.object() as placeholder. This represents Partial<RooCodeSettings>
+          // When @roo-code/types migrates from Zod v3 to v4, replace with: rooCodeSettingsSchema.partial()
+          schema: z.object({}).openapi({
+            description:
+              "Partial RooCode settings to update. Any field from RooCodeSettings can be provided. Only specified fields will be updated.",
           }),
         },
       },
@@ -801,22 +795,15 @@ const updateAutoApproveRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: z.object({
-            message: z.string(),
-            settings: z.object({
-              autoApprovalEnabled: z.boolean(),
-              alwaysAllowReadOnly: z.boolean(),
-              alwaysAllowWrite: z.boolean(),
-              alwaysAllowExecute: z.boolean(),
-              alwaysAllowBrowser: z.boolean(),
-              alwaysAllowMcp: z.boolean(),
-              alwaysAllowModeSwitch: z.boolean(),
-              alwaysAllowSubtasks: z.boolean(),
-            }),
+          // NOTE: Using z.object() as placeholder. This represents rooCodeSettingsSchema
+          // When @roo-code/types migrates from Zod v3 to v4, replace with the actual schema
+          schema: z.object({}).openapi({
+            description:
+              "Complete updated RooCode settings (RooCodeSettings type)",
           }),
         },
       },
-      description: "Settings updated successfully",
+      description: "Settings updated successfully with full updated settings",
     },
     404: {
       content: {
@@ -831,9 +818,7 @@ const updateAutoApproveRoute = createRoute({
     500: {
       content: {
         "application/json": {
-          schema: z.object({
-            message: z.string(),
-          }),
+          schema: ErrorResponseSchema,
         },
       },
       description: "Internal server error",
@@ -1540,8 +1525,8 @@ export function registerRooRoutes(
     }
   });
 
-  // GET /api/v1/roo/auto-approve - Get auto-approve settings
-  app.openapi(getAutoApproveRoute, async (c) => {
+  // GET /api/v1/roo/settings - Get RooCode settings
+  app.openapi(getSettingsRoute, async (c) => {
     try {
       const { extensionId } = c.req.valid("query");
 
@@ -1555,104 +1540,23 @@ export function registerRooRoutes(
         );
       }
 
-      const config = adapter.getConfiguration();
+      // Get full configuration - returns complete RooCodeSettings
+      const settings = adapter.getConfiguration();
 
-      const response = {
-        autoApprovalEnabled: Boolean(config.autoApprovalEnabled ?? false),
-        alwaysAllowReadOnly: Boolean(config.alwaysAllowReadOnly ?? false),
-        alwaysAllowWrite: Boolean(config.alwaysAllowWrite ?? false),
-        alwaysAllowExecute: Boolean(config.alwaysAllowExecute ?? false),
-        alwaysAllowBrowser: Boolean(config.alwaysAllowBrowser ?? false),
-        alwaysAllowMcp: Boolean(config.alwaysAllowMcp ?? false),
-        alwaysAllowModeSwitch: Boolean(config.alwaysAllowModeSwitch ?? false),
-        alwaysAllowSubtasks: Boolean(config.alwaysAllowSubtasks ?? false),
-      };
-
-      return c.json(response, 200);
+      return c.json(settings, 200);
     } catch (error) {
-      logger.error("Error retrieving auto-approve settings:", error);
+      logger.error("Error retrieving RooCode settings:", error);
       const message =
         error instanceof Error ? error.message : "Unknown error occurred";
       return c.json({ message }, 500);
     }
   });
 
-  // PUT /api/v1/roo/auto-approve - Update auto-approve settings
-  const updateAutoApproveRoute = createRoute({
-    method: "put",
-    path: "/roo/auto-approve",
-    tags: ["Configuration"],
-    summary: "Update auto-approve settings",
-    description: "Updates the auto-approve settings in RooCode configuration",
-    request: {
-      query: z.object({
-        extensionId: z.string().optional(),
-      }),
-      body: {
-        content: {
-          "application/json": {
-            schema: z.object({
-              autoApprovalEnabled: z.boolean().optional(),
-              alwaysAllowReadOnly: z.boolean().optional(),
-              alwaysAllowWrite: z.boolean().optional(),
-              alwaysAllowExecute: z.boolean().optional(),
-              alwaysAllowBrowser: z.boolean().optional(),
-              alwaysAllowMcp: z.boolean().optional(),
-              alwaysAllowModeSwitch: z.boolean().optional(),
-              alwaysAllowSubtasks: z.boolean().optional(),
-            }),
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        content: {
-          "application/json": {
-            schema: z.object({
-              message: z.string(),
-              settings: z.object({
-                autoApprovalEnabled: z.boolean(),
-                alwaysAllowReadOnly: z.boolean(),
-                alwaysAllowWrite: z.boolean(),
-                alwaysAllowExecute: z.boolean(),
-                alwaysAllowBrowser: z.boolean(),
-                alwaysAllowMcp: z.boolean(),
-                alwaysAllowModeSwitch: z.boolean(),
-                alwaysAllowSubtasks: z.boolean(),
-              }),
-            }),
-          },
-        },
-        description: "Settings updated successfully",
-      },
-      404: {
-        content: {
-          "application/json": {
-            schema: z.object({
-              message: z.string(),
-            }),
-          },
-        },
-        description: "Extension not found",
-      },
-      500: {
-        content: {
-          "application/json": {
-            schema: z.object({
-              message: z.string(),
-            }),
-          },
-        },
-        description: "Internal server error",
-      },
-    },
-  });
-
-  app.openapi(updateAutoApproveRoute, async (c) => {
+  // PUT /api/v1/roo/settings - Update RooCode settings
+  app.openapi(updateSettingsRoute, async (c) => {
     try {
       const { extensionId } = c.req.valid("query");
-      const body = c.req.valid("json");
+      const partialSettings = c.req.valid("json");
 
       const adapter = controller.getRooAdapter(extensionId);
       if (!adapter?.isActive) {
@@ -1664,45 +1568,23 @@ export function registerRooRoutes(
         );
       }
 
-      // Update the configuration with provided values
-      await adapter.setConfiguration(body);
+      // Get current settings first
+      const currentSettings = adapter.getConfiguration();
 
-      // Get the updated configuration
-      const updatedConfig = adapter.getConfiguration();
+      // Merge with updates (shallow merge is fine, setConfiguration handles deep merge)
+      const updatedSettings = { ...currentSettings, ...partialSettings };
 
-      logger.info(
-        `Updated auto-approve settings for ${extensionId || "default"}`,
-      );
+      // Update configuration
+      await adapter.setConfiguration(updatedSettings);
 
-      const response = {
-        message: "Auto-approve settings updated successfully",
-        settings: {
-          autoApprovalEnabled: Boolean(
-            updatedConfig.autoApprovalEnabled ?? false,
-          ),
-          alwaysAllowReadOnly: Boolean(
-            updatedConfig.alwaysAllowReadOnly ?? false,
-          ),
-          alwaysAllowWrite: Boolean(updatedConfig.alwaysAllowWrite ?? false),
-          alwaysAllowExecute: Boolean(
-            updatedConfig.alwaysAllowExecute ?? false,
-          ),
-          alwaysAllowBrowser: Boolean(
-            updatedConfig.alwaysAllowBrowser ?? false,
-          ),
-          alwaysAllowMcp: Boolean(updatedConfig.alwaysAllowMcp ?? false),
-          alwaysAllowModeSwitch: Boolean(
-            updatedConfig.alwaysAllowModeSwitch ?? false,
-          ),
-          alwaysAllowSubtasks: Boolean(
-            updatedConfig.alwaysAllowSubtasks ?? false,
-          ),
-        },
-      };
+      // Get updated configuration to return
+      const finalSettings = adapter.getConfiguration();
 
-      return c.json(response, 200);
+      logger.info(`Updated RooCode settings for ${extensionId || "default"}`);
+
+      return c.json(finalSettings, 200);
     } catch (error) {
-      logger.error("Error updating auto-approve settings:", error);
+      logger.error("Error updating RooCode settings:", error);
       const message =
         error instanceof Error ? error.message : "Unknown error occurred";
       return c.json({ message }, 500);

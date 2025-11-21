@@ -21,6 +21,9 @@ importers:
       "@hono/zod-openapi":
         specifier: ^1.0.2
         version: 1.0.2(hono@4.8.9)(zod@4.0.10)
+      "@roo-code/types":
+        specifier: ^1.86.0
+        version: 1.86.0
       axios:
         specifier: ^1.9.0
         version: 1.9.0
@@ -46,9 +49,6 @@ importers:
       "@changesets/cli":
         specifier: ^2.29.4
         version: 2.29.4
-      "@roo-code/types":
-        specifier: ^1.45.0
-        version: 1.45.0
       "@trivago/prettier-plugin-sort-imports":
         specifier: ^5.2.2
         version: 5.2.2(prettier@3.5.3)
@@ -1008,10 +1008,10 @@ packages:
       }
     engines: { node: ">=14" }
 
-  "@roo-code/types@1.45.0":
+  "@roo-code/types@1.86.0":
     resolution:
       {
-        integrity: sha512-+rFJ9HcukDl59X9pI6lgZDtJHtKqHg6BIdS4LG759X+5MV7wvlNb4S+bQ3qKqIlBsQhH17bzIJCfsWZwjwxecw==,
+        integrity: sha512-JY6WF2X9TNlFFejxFmTbooGdYSVNhh1WSknKGXXAw/Qezle/iTUCXEzCCOOXBo0AgwviBaopsVNri+J9A/eVKA==,
       }
 
   "@sec-ant/readable-stream@0.4.1":
@@ -6602,7 +6602,7 @@ snapshots:
   "@pkgjs/parseargs@0.11.0":
     optional: true
 
-  "@roo-code/types@1.45.0":
+  "@roo-code/types@1.86.0":
     dependencies:
       zod: 3.25.76
 

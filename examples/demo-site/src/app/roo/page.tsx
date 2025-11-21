@@ -56,6 +56,7 @@ export default function RooPage() {
     settings: autoApproveSettings,
     isLoading: isLoadingAutoApprove,
     isUpdating: isUpdatingAutoApprove,
+    error: autoApproveError,
     updateSettings: updateAutoApproveSettings,
   } = useAutoApprove({
     apiBaseUrl: apiConfig.baseUrl,
@@ -134,6 +135,7 @@ export default function RooPage() {
           onUpdateAutoApprove={updateAutoApproveSettings}
           isLoadingAutoApprove={isLoadingAutoApprove}
           isUpdatingAutoApprove={isUpdatingAutoApprove}
+          autoApproveError={autoApproveError}
         />
 
         <StatusIndicator show={showStatus} message={statusMessage} />

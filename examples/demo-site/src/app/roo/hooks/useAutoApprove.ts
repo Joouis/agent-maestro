@@ -7,7 +7,7 @@ interface UseAutoApproveOptions {
   extensionId?: string;
 }
 
-interface AutoApproveSettings {
+export interface AutoApproveSettings {
   autoApprovalEnabled: boolean;
   alwaysAllowReadOnly: boolean;
   alwaysAllowWrite: boolean;
@@ -29,6 +29,23 @@ const defaultSettings: AutoApproveSettings = {
   alwaysAllowSubtasks: false,
 };
 
+// Helper to extract auto-approve settings from full RooCodeSettings
+function extractAutoApproveSettings(fullSettings: any): AutoApproveSettings {
+  return {
+    autoApprovalEnabled: Boolean(fullSettings.autoApprovalEnabled ?? false),
+    alwaysAllowReadOnly: Boolean(fullSettings.alwaysAllowReadOnly ?? false),
+    alwaysAllowWrite: Boolean(fullSettings.alwaysAllowWrite ?? false),
+    alwaysAllowExecute: Boolean(fullSettings.alwaysAllowExecute ?? false),
+    alwaysAllowBrowser: Boolean(fullSettings.alwaysAllowBrowser ?? false),
+    alwaysAllowMcp: Boolean(fullSettings.alwaysAllowMcp ?? false),
+    alwaysAllowModeSwitch: Boolean(fullSettings.alwaysAllowModeSwitch ?? false),
+    alwaysAllowSubtasks: Boolean(fullSettings.alwaysAllowSubtasks ?? false),
+  };
+}
+
+// API timeout constant
+const API_TIMEOUT_MS = 5000;
+
 export const useAutoApprove = (options: UseAutoApproveOptions = {}) => {
   const { apiBaseUrl = null, extensionId } = options;
   const [settings, setSettings] =
@@ -48,12 +65,12 @@ export const useAutoApprove = (options: UseAutoApproveOptions = {}) => {
     setError(null);
 
     const baseUrl = apiBaseUrl || DEFAULT_API_BASE_URL;
-    const url = new URL(`${baseUrl}/api/v1/roo/auto-approve`);
+    const url = new URL(`${baseUrl}/api/v1/roo/settings`);
     url.searchParams.set("extensionId", extensionId);
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
       const response = await fetch(url.toString(), {
         method: "GET",
@@ -63,16 +80,18 @@ export const useAutoApprove = (options: UseAutoApproveOptions = {}) => {
       clearTimeout(timeoutId);
 
       if (response.ok) {
-        const data = await response.json();
-        setSettings(data);
+        const fullSettings = await response.json();
+        // Extract only auto-approve related fields
+        const autoApproveSettings = extractAutoApproveSettings(fullSettings);
+        setSettings(autoApproveSettings);
         setIsLoading(false);
         return;
       }
 
-      throw new Error("Failed to fetch auto-approve settings");
+      throw new Error("Failed to fetch settings");
     } catch (err) {
       console.warn("Failed to fetch auto-approve settings:", err);
-      setError("Auto-approve API unavailable");
+      setError("Settings API unavailable");
       setSettings(defaultSettings);
     } finally {
       setIsLoading(false);
@@ -90,12 +109,12 @@ export const useAutoApprove = (options: UseAutoApproveOptions = {}) => {
       setError(null);
 
       const baseUrl = apiBaseUrl || DEFAULT_API_BASE_URL;
-      const url = new URL(`${baseUrl}/api/v1/roo/auto-approve`);
+      const url = new URL(`${baseUrl}/api/v1/roo/settings`);
       url.searchParams.set("extensionId", extensionId);
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
         const response = await fetch(url.toString(), {
           method: "PUT",
@@ -109,13 +128,15 @@ export const useAutoApprove = (options: UseAutoApproveOptions = {}) => {
         clearTimeout(timeoutId);
 
         if (response.ok) {
-          const data = await response.json();
-          setSettings(data.settings);
+          const fullSettings = await response.json();
+          // Extract auto-approve settings from returned full settings
+          const autoApproveSettings = extractAutoApproveSettings(fullSettings);
+          setSettings(autoApproveSettings);
           setIsUpdating(false);
           return true;
         }
 
-        throw new Error("Failed to update auto-approve settings");
+        throw new Error("Failed to update settings");
       } catch (err) {
         console.error("Failed to update auto-approve settings:", err);
         setError("Failed to update settings");

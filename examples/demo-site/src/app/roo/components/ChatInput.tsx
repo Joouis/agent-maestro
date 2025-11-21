@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 
+import type { AutoApproveSettings } from "../hooks/useAutoApprove";
 import {
   autoResizeTextarea,
   focusTextarea,
@@ -28,17 +29,6 @@ interface Profile {
   isActive: boolean;
 }
 
-interface AutoApproveSettings {
-  autoApprovalEnabled: boolean;
-  alwaysAllowReadOnly: boolean;
-  alwaysAllowWrite: boolean;
-  alwaysAllowExecute: boolean;
-  alwaysAllowBrowser: boolean;
-  alwaysAllowMcp: boolean;
-  alwaysAllowModeSwitch: boolean;
-  alwaysAllowSubtasks: boolean;
-}
-
 interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -61,6 +51,7 @@ interface ChatInputProps {
   ) => Promise<boolean>;
   isLoadingAutoApprove?: boolean;
   isUpdatingAutoApprove?: boolean;
+  autoApproveError?: string | null;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -83,6 +74,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onUpdateAutoApprove,
   isLoadingAutoApprove = false,
   isUpdatingAutoApprove = false,
+  autoApproveError = null,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -147,6 +139,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               isLoading={isLoadingAutoApprove}
               isUpdating={isUpdatingAutoApprove}
               disabled={disabled}
+              error={autoApproveError}
             />
           </div>
         )}
@@ -202,6 +195,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               isLoading={isLoadingAutoApprove}
               isUpdating={isUpdatingAutoApprove}
               disabled={disabled}
+              error={autoApproveError}
             />
           </div>
         )}

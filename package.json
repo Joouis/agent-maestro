@@ -164,6 +164,7 @@
     "@google/genai": "^1.29.1",
     "@hono/node-server": "^1.17.1",
     "@hono/zod-openapi": "^1.0.2",
+    "@roo-code/types": "^1.86.0",
     "axios": "^1.9.0",
     "es-toolkit": "^1.39.3",
     "fastmcp": "^3.5.0",
@@ -174,7 +175,6 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.4",
-    "@roo-code/types": "^1.45.0",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
