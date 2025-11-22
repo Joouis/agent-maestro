@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { DEFAULT_API_BASE_URL, createApiEndpoints } from "../utils/constants";
 
+const REQUEST_TIMEOUT_MS = 10000;
+
 export interface HistoryItem {
   id: string;
   number: number;
@@ -70,7 +72,10 @@ export const useTaskHistory = (options: UseTaskHistoryOptions = {}) => {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        REQUEST_TIMEOUT_MS,
+      );
 
       const response = await fetch(tasksUrl.toString(), {
         method: "GET",
@@ -115,6 +120,13 @@ export const useTaskHistory = (options: UseTaskHistoryOptions = {}) => {
     }
   }, [apiBaseUrl, extensionId, filterByWorkspace]);
 
+  // Clear error when extension is selected
+  useEffect(() => {
+    if (extensionId && error === "No extension selected") {
+      setError(null);
+    }
+  }, [extensionId, error]);
+
   useEffect(() => {
     if (autoFetch && extensionId) {
       fetchTaskHistory();
@@ -135,7 +147,10 @@ export const useTaskHistory = (options: UseTaskHistoryOptions = {}) => {
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          REQUEST_TIMEOUT_MS,
+        );
 
         const response = await fetch(detailUrl.toString(), {
           method: "GET",
@@ -147,8 +162,12 @@ export const useTaskHistory = (options: UseTaskHistoryOptions = {}) => {
         if (response.ok) {
           const data = await response.json();
           return data as TaskDetail;
+        } else {
+          console.error(
+            `Failed to fetch task detail: ${response.status} ${response.statusText}`,
+          );
+          return null;
         }
-        return null;
       } catch (err) {
         console.error("Failed to fetch task detail:", err);
         return null;

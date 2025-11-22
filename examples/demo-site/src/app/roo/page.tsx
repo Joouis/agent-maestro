@@ -91,37 +91,39 @@ export default function RooPage() {
   // Task management handlers
   const handleSelectTask = React.useCallback(
     async (taskId: string) => {
-      // Fetch task details and load conversation history
-      const taskDetail = await fetchTaskDetail(taskId);
-      if (taskDetail && taskDetail.conversationHistory) {
-        // Clear current messages
-        clearMessages();
+      try {
+        // Fetch task details and load conversation history
+        const taskDetail = await fetchTaskDetail(taskId);
+        if (taskDetail && taskDetail.conversationHistory) {
+          // Clear current messages
+          clearMessages();
 
-        // Convert conversation history to Message format
-        taskDetail.conversationHistory.forEach((item) => {
-          const isUser =
-            item.say === "user_feedback" || item.ask === "followup";
-          const content =
-            item.text ||
-            (item.say === "user_feedback" ? item.text || "" : "") ||
-            item.reasoning ||
-            "";
+          // Convert conversation history to Message format
+          taskDetail.conversationHistory.forEach((item) => {
+            const isUser =
+              item.say === "user_feedback" || item.ask === "followup";
+            const content = item.text || item.reasoning || "";
 
-          if (content) {
-            const message = {
-              id: `${taskId}-${item.ts}`,
-              content: content,
-              isUser: isUser,
-              timestamp: new Date(item.ts).toLocaleTimeString(),
-            };
-            addMessage(message);
-          }
-        });
+            if (content) {
+              const message = {
+                id: `${taskId}-${item.ts}`,
+                content,
+                isUser,
+                timestamp: new Date(item.ts).toLocaleTimeString(),
+              };
+              addMessage(message);
+            }
+          });
 
-        // Set the current task ID for subsequent messages
-        setCurrentTaskId(taskId);
-      } else {
-        // Just set the task ID if we couldn't load history
+          // Set the current task ID for subsequent messages
+          setCurrentTaskId(taskId);
+        } else {
+          // Just set the task ID if we couldn't load history
+          setCurrentTaskId(taskId);
+        }
+      } catch (error) {
+        console.error("Failed to load task conversation history:", error);
+        // Still set the task ID so user can continue with the task
         setCurrentTaskId(taskId);
       }
     },
@@ -130,10 +132,16 @@ export default function RooPage() {
 
   const handleCancelTask = React.useCallback(
     async (taskId: string) => {
-      const result = await cancelTask(taskId);
-      if (result.success) {
-        // Refresh task list after cancellation
-        refetchTasks();
+      try {
+        const result = await cancelTask(taskId);
+        if (result.success) {
+          // Refresh task list after cancellation
+          refetchTasks();
+        } else {
+          console.error("Failed to cancel task:", result.error);
+        }
+      } catch (error) {
+        console.error("Error cancelling task:", error);
       }
     },
     [cancelTask, refetchTasks],
@@ -141,10 +149,16 @@ export default function RooPage() {
 
   const handleResumeTask = React.useCallback(
     async (taskId: string) => {
-      const result = await resumeTask(taskId);
-      if (result.success) {
-        setCurrentTaskId(taskId);
-        refetchTasks();
+      try {
+        const result = await resumeTask(taskId);
+        if (result.success) {
+          setCurrentTaskId(taskId);
+          refetchTasks();
+        } else {
+          console.error("Failed to resume task:", result.error);
+        }
+      } catch (error) {
+        console.error("Error resuming task:", error);
       }
     },
     [resumeTask, setCurrentTaskId, refetchTasks],

@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 
 import { DEFAULT_API_BASE_URL, createApiEndpoints } from "../utils/constants";
 
+const REQUEST_TIMEOUT_MS = 10000;
+
 type TaskAction =
   | "cancel"
   | "resume"
@@ -41,7 +43,10 @@ export const useTaskActions = (options: UseTaskActionsOptions = {}) => {
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          REQUEST_TIMEOUT_MS,
+        );
 
         const response = await fetch(actionUrl.toString(), {
           method: "POST",
