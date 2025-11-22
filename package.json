@@ -160,7 +160,7 @@
     "onStartupFinished"
   ],
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.57.0",
+    "@anthropic-ai/sdk": "^0.70.1",
     "@google/genai": "^1.29.1",
     "@hono/node-server": "^1.17.1",
     "@hono/zod-openapi": "^1.0.2",

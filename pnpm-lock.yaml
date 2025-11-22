@@ -10,8 +10,8 @@ importers:
   .:
     dependencies:
       "@anthropic-ai/sdk":
-        specifier: ^0.57.0
-        version: 0.57.0
+        specifier: ^0.70.1
+        version: 0.70.1(zod@4.0.10)
       "@google/genai":
         specifier: ^1.29.1
         version: 1.29.1
@@ -105,12 +105,17 @@ importers:
         version: 5.8.3
 
 packages:
-  "@anthropic-ai/sdk@0.57.0":
+  "@anthropic-ai/sdk@0.70.1":
     resolution:
       {
-        integrity: sha512-z5LMy0MWu0+w2hflUgj4RlJr1R+0BxKXL7ldXTO8FasU8fu599STghO+QKwId2dAD0d464aHtU+ChWuRHw4FNw==,
+        integrity: sha512-AGEhifuvE22VxfQ5ROxViTgM8NuVQzEvqcN8bttR4AP24ythmNE/cL/SrOz79xiv7/osrsmCyErjsistJi7Z8A==,
       }
     hasBin: true
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
 
   "@asteasolutions/zod-to-openapi@8.0.0":
     resolution:
@@ -3650,6 +3655,13 @@ packages:
         integrity: sha512-mrqyZKfX5EhL7hvqcV6WG1yYjnjeuYDzDhhcAAUrq8Po85NBQBJP+ZDUT75qZQ98IkUoBqdkExkukOU7Ts2wrw==,
       }
 
+  json-schema-to-ts@3.1.1:
+    resolution:
+      {
+        integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==,
+      }
+    engines: { node: ">=16" }
+
   json-schema-traverse@0.4.1:
     resolution:
       {
@@ -5481,6 +5493,12 @@ packages:
       }
     engines: { node: ">=14.16" }
 
+  ts-algebra@2.0.0:
+    resolution:
+      {
+        integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==,
+      }
+
   ts-api-utils@2.1.0:
     resolution:
       {
@@ -5994,7 +6012,11 @@ packages:
       }
 
 snapshots:
-  "@anthropic-ai/sdk@0.57.0": {}
+  "@anthropic-ai/sdk@0.70.1(zod@4.0.10)":
+    dependencies:
+      json-schema-to-ts: 3.1.1
+    optionalDependencies:
+      zod: 4.0.10
 
   "@asteasolutions/zod-to-openapi@8.0.0(zod@4.0.10)":
     dependencies:
@@ -8395,6 +8417,11 @@ snapshots:
 
   json-parse-better-errors@1.0.2: {}
 
+  json-schema-to-ts@3.1.1:
+    dependencies:
+      "@babel/runtime": 7.27.6
+      ts-algebra: 2.0.0
+
   json-schema-traverse@0.4.1: {}
 
   json-schema-traverse@1.0.0: {}
@@ -9528,6 +9555,8 @@ snapshots:
     dependencies:
       "@tokenizer/token": 0.3.0
       ieee754: 1.2.1
+
+  ts-algebra@2.0.0: {}
 
   ts-api-utils@2.1.0(typescript@5.8.3):
     dependencies:

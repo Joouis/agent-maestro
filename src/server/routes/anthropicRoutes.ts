@@ -325,7 +325,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             content.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn",
           stop_sequence: null,
           usage: {
-            // cache_creation: null,
+            cache_creation: null,
             cache_creation_input_tokens: null,
             cache_read_input_tokens: null,
             input_tokens: inputTokenCount,
@@ -366,6 +366,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                 stop_reason: null,
                 stop_sequence: null,
                 usage: {
+                  cache_creation: null,
                   input_tokens: inputTokenCount,
                   output_tokens: 1,
                   cache_creation_input_tokens: null,
