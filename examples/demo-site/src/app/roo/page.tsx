@@ -94,12 +94,12 @@ export default function RooPage() {
       try {
         // Fetch task details and load conversation history
         const taskDetail = await fetchTaskDetail(taskId);
-        if (taskDetail && taskDetail.conversationHistory) {
+        if (taskDetail && taskDetail.messages) {
           // Clear current messages
           clearMessages();
 
           // Convert conversation history to Message format
-          taskDetail.conversationHistory.forEach((item) => {
+          taskDetail.messages.forEach((item) => {
             const isUser =
               item.say === "user_feedback" || item.ask === "followup";
             const content = item.text || item.reasoning || "";

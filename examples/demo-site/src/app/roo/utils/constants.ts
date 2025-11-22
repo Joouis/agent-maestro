@@ -14,7 +14,7 @@ export const DEFAULT_API_BASE_URL = `http://localhost:${PORT}`;
 export const createApiEndpoints = (baseUrl: string = DEFAULT_API_BASE_URL) => {
   const cleanUrl = baseUrl.replace(/\/+$/, "");
   const rooApiBase = `${cleanUrl}/api/v1/roo`;
-  const infoApiBase = `${cleanUrl}/api/v1`;
+  const commonApiBase = `${cleanUrl}/api/v1`;
 
   return {
     TASK: `${rooApiBase}/task`,
@@ -22,7 +22,8 @@ export const createApiEndpoints = (baseUrl: string = DEFAULT_API_BASE_URL) => {
     TASK_DETAIL: (taskId: string) => `${rooApiBase}/task/${taskId}`,
     TASK_MESSAGE: (taskId: string) => `${rooApiBase}/task/${taskId}/message`,
     TASK_ACTION: (taskId: string) => `${rooApiBase}/task/${taskId}/action`,
-    INFO: `${infoApiBase}/info`,
+    INFO: `${commonApiBase}/info`,
+    FS_READ: `${commonApiBase}/fs/read`,
   };
 };
 

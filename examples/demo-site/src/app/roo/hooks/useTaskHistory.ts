@@ -18,7 +18,7 @@ export interface HistoryItem {
   workspace?: string;
 }
 
-export interface TaskConversationItem {
+export interface MessageItem {
   type: "say" | "ask";
   say?: string;
   ask?: string;
@@ -31,7 +31,8 @@ export interface TaskConversationItem {
 export interface TaskDetail {
   historyItem: HistoryItem;
   taskDirPath: string;
-  conversationHistory: TaskConversationItem[];
+  messages?: MessageItem[];
+  uiMessagesFilePath: string;
 }
 
 interface UseTaskHistoryOptions {
@@ -161,6 +162,32 @@ export const useTaskHistory = (options: UseTaskHistoryOptions = {}) => {
 
         if (response.ok) {
           const data = await response.json();
+
+          // Fetch the messages from the uiMessagesFilePath using FS_READ API
+          if (data.uiMessagesFilePath) {
+            try {
+              const fsReadUrl = new URL(endpoints.FS_READ);
+              fsReadUrl.searchParams.set("extensionId", extensionId);
+
+              const messagesFileResp = await fetch(fsReadUrl.toString(), {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ path: data.uiMessagesFilePath }),
+              });
+
+              if (messagesFileResp.ok) {
+                const messagesFile = await messagesFileResp.json();
+                data.messages = JSON.parse(
+                  messagesFile.content,
+                ) as MessageItem[];
+              }
+            } catch (err) {
+              console.error("Failed to fetch messages file:", err);
+            }
+          }
+
           return data as TaskDetail;
         } else {
           console.error(
