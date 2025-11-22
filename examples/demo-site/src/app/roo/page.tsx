@@ -152,7 +152,8 @@ export default function RooPage() {
       try {
         const result = await resumeTask(taskId);
         if (result.success) {
-          setCurrentTaskId(taskId);
+          // Load conversation history after successful resume
+          await handleSelectTask(taskId);
           refetchTasks();
         } else {
           console.error("Failed to resume task:", result.error);
@@ -161,7 +162,7 @@ export default function RooPage() {
         console.error("Error resuming task:", error);
       }
     },
-    [resumeTask, setCurrentTaskId, refetchTasks],
+    [resumeTask, handleSelectTask, refetchTasks],
   );
 
   // Handle hydration to avoid SSR mismatch
