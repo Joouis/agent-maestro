@@ -8,7 +8,7 @@ import packageJson from "../../../package.json";
 import { logger } from "../../utils/logger";
 
 interface ErrorLogContext {
-  requestBody: any;
+  requestBody?: any;
   error: Error | unknown;
   endpoint: string;
   modelId?: string;
@@ -230,35 +230,16 @@ export async function logErrorToFile(
 }
 
 /**
- * Common error handler that logs error details to file
- * @param c - Hono context object
- * @param error - The error that occurred
- * @param endpoint - The API endpoint where the error occurred
- * @param modelId - Optional model ID being used
- * @returns The log file path, or undefined if logging failed
+ * Logs error details to a diagnostic file with sanitized user data
+ * @param ctx - Error context containing request body, error, endpoint, and optional model ID
+ * @returns The absolute path to the log file, or undefined if logging failed
  */
 export async function handleErrorWithLogging(
-  c: Context,
-  error: unknown,
-  endpoint: string,
-  modelId?: string,
+  ctx: ErrorLogContext,
 ): Promise<string | undefined> {
-  // Get request body for error logging
-  let requestBody;
-  try {
-    requestBody = await c.req.json();
-  } catch {
-    requestBody = null;
-  }
-
   // Log error details to file
   try {
-    return await logErrorToFile({
-      requestBody,
-      error,
-      endpoint,
-      modelId,
-    });
+    return await logErrorToFile(ctx);
   } catch (logError) {
     logger.error("Failed to write error log file:", logError);
     return undefined;

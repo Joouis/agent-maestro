@@ -226,9 +226,10 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
     let effectiveModelId: string | undefined;
+    let requestBody;
     try {
       // Parse request body
-      const requestBody =
+      requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
       const {
         model: modelId,
@@ -498,12 +499,12 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
     } catch (error) {
       logger.error("Anthropic API /v1/messages request failed:", error);
 
-      const logFilePath = await handleErrorWithLogging(
-        c,
+      const logFilePath = await handleErrorWithLogging({
+        requestBody,
         error,
-        "/v1/messages",
-        effectiveModelId,
-      );
+        endpoint: "/v1/messages",
+        modelId: effectiveModelId,
+      });
 
       const errorMessage =
         error instanceof Error ? error.message : JSON.stringify(error);
@@ -523,21 +524,19 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
   // POST /v1/messages/count_tokens - Count input tokens
   app.openapi(countTokensRoute, async (c: Context) => {
-    let effectiveModelId: string | undefined;
+    let modelId: string | undefined;
+    let requestBody;
     try {
-      const requestBody =
+      requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
 
-      const { model: modelId } = requestBody;
-
       // Apply the same model selection logic as /v1/messages
-      effectiveModelId = applyClaudeModelSelection(
-        modelId,
+      modelId = applyClaudeModelSelection(
+        requestBody.model,
         "/v1/messages/count_tokens",
       );
 
-      const { client, error: clientError } =
-        await getChatModelClient(effectiveModelId);
+      const { client, error: clientError } = await getChatModelClient(modelId);
 
       if (clientError) {
         return c.json(clientError, 404);
@@ -557,12 +556,12 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
     } catch (error) {
       logger.error("Anthropic API token count request failed:", error);
 
-      const logFilePath = await handleErrorWithLogging(
-        c,
+      const logFilePath = await handleErrorWithLogging({
+        requestBody,
         error,
-        "/v1/messages/count_tokens",
-        effectiveModelId,
-      );
+        endpoint: "/v1/messages/count_tokens",
+        modelId,
+      });
 
       const errorMessage =
         error instanceof Error ? error.message : JSON.stringify(error);
