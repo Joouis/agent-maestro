@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.5.0 - 2025.11.30
+
+- Add `/roo/settings` and `/roo/modes` API routes
+- Log request payload and error context to diagnostic files for `/v1/messages` route with user data sanitized for privacy to help diagnose "unexpected `tool_use_id` found in `tool_result` blocks" issue
+
 ## v2.4.1 - 2025.11.19
 
 - Gemini CLI configuration now detects `.env` files at workspace root and warns that project settings will take precedence over user settings
