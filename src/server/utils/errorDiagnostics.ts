@@ -4,6 +4,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 
 import packageJson from "../../../package.json";
+import { logger } from "../../utils/logger";
 
 interface ErrorLogContext {
   requestBody: any;
@@ -233,7 +234,11 @@ export async function logErrorToFile(
   context: ErrorLogContext,
 ): Promise<string> {
   const filename = generateLogFilename();
-  const cwd = process.cwd();
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) {
+    throw new Error("No workspace folder found");
+  }
+  const cwd = workspaceFolder.uri.fsPath;
   const logPath = path.join(cwd, filename);
 
   const errorMessage =
@@ -262,9 +267,9 @@ export async function logErrorToFile(
     await fs.promises.writeFile(logPath, logContent, "utf8");
     return logPath;
   } catch (writeError) {
-    // If we can't write the log file, at least log to console
-    console.error("Failed to write error log file:", writeError);
-    console.error("Original error context:", logData);
+    // If we can't write the log file, at least log to logger
+    logger.error("Failed to write error log file:", writeError);
+    logger.error("Original error context:", logData);
     throw writeError;
   }
 }
@@ -300,7 +305,7 @@ export async function handleErrorWithLogging(
       modelId,
     });
   } catch (logError) {
-    console.error("Failed to write error log file:", logError);
+    logger.error("Failed to write error log file:", logError);
     return undefined;
   }
 }
