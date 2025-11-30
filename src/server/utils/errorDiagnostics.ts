@@ -173,7 +173,7 @@ function sanitizeAnthropicRequestBody(requestBody: any): any {
  */
 function sanitizeRequestBody(requestBody: any, endpoint: string): any {
   // Sanitize Anthropic API payloads
-  if (endpoint.startsWith("/v1/messages")) {
+  if (endpoint.includes("/v1/messages")) {
     return sanitizeAnthropicRequestBody(requestBody);
   }
 
