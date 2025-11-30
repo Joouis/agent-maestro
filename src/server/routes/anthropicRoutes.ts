@@ -14,6 +14,7 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
 } from "../utils/anthropic";
+import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 
 /**
  * Apply Claude model selection logic based on user configuration
@@ -224,6 +225,7 @@ const countTokensRoute = createRoute({
 export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
+    let effectiveModelId: string | undefined;
     try {
       // Parse request body
       const requestBody =
@@ -243,10 +245,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       );
 
       // 1. Apply Claude model selection logic
-      const effectiveModelId = applyClaudeModelSelection(
-        modelId,
-        "/v1/messages",
-      );
+      effectiveModelId = applyClaudeModelSelection(modelId, "/v1/messages");
 
       // 2. Check if selected model is available in VS Code LM API
       const { client, error: clientError } =
@@ -503,14 +502,24 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       );
     } catch (error) {
       logger.error("Anthropic API /v1/messages request failed:", error);
+
+      const logFilePath = await handleErrorWithLogging(
+        c,
+        error,
+        "/v1/messages",
+        effectiveModelId,
+      );
+
+      const errorMessage =
+        error instanceof Error ? error.message : JSON.stringify(error);
+
       return c.json(
         {
           error: {
-            message:
-              error instanceof Error ? error.message : "Internal server error",
-            type: "internal_error",
+            message: errorMessage,
+            type: "internal_server_error",
+            log_file: logFilePath,
           },
-          type: "error",
         },
         500,
       );
@@ -519,6 +528,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
   // POST /v1/messages/count_tokens - Count input tokens
   app.openapi(countTokensRoute, async (c: Context) => {
+    let effectiveModelId: string | undefined;
     try {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
@@ -526,7 +536,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const { model: modelId } = requestBody;
 
       // Apply the same model selection logic as /v1/messages
-      const effectiveModelId = applyClaudeModelSelection(
+      effectiveModelId = applyClaudeModelSelection(
         modelId,
         "/v1/messages/count_tokens",
       );
@@ -551,14 +561,24 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       );
     } catch (error) {
       logger.error("Anthropic API token count request failed:", error);
+
+      const logFilePath = await handleErrorWithLogging(
+        c,
+        error,
+        "/v1/messages/count_tokens",
+        effectiveModelId,
+      );
+
+      const errorMessage =
+        error instanceof Error ? error.message : JSON.stringify(error);
+
       return c.json(
         {
           error: {
-            message:
-              error instanceof Error ? error.message : "Internal server error",
-            type: "internal_error",
+            message: errorMessage,
+            type: "internal_server_error",
+            log_file: logFilePath,
           },
-          type: "error",
         },
         500,
       );

@@ -197,7 +197,6 @@ export const getChatModelClient = async (modelId: string) => {
           message: `Model '${modelId}' not found. Use /api/v1/lm/chatModels to list available models and pass a valid model ID.`,
           type: "invalid_request_error",
         },
-        type: "error",
       },
     };
   }

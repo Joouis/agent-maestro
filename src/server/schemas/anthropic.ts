@@ -5,7 +5,10 @@ export const AnthropicErrorResponseSchema = z
     error: z.object({
       message: z.string().describe("Error message"),
       type: z.string().describe("Error type"),
+      log_file: z
+        .string()
+        .optional()
+        .describe("Path to debug log file with detailed error context"),
     }),
-    type: z.string().describe("Error type"),
   })
   .openapi("AnthropicErrorResponse");
