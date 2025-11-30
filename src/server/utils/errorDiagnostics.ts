@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import * as fs from "fs";
 import { Context } from "hono";
 import * as path from "path";
@@ -11,191 +12,6 @@ interface ErrorLogContext {
   error: Error | unknown;
   endpoint: string;
   modelId?: string;
-}
-
-/**
- * Cleans a given stack of possible paths
- * @param stack The stack to sanitize
- * @param cleanupPatterns Cleanup patterns to remove from the stack
- * @returns The cleaned stack
- * @see https://github.com/microsoft/vscode/blob/main/src/vs/platform/telemetry/common/telemetryUtils.ts#L277
- */
-function anonymizeFilePaths(stack: string, cleanupPatterns: RegExp[]): string {
-  // Fast check to see if it is a file path to avoid doing unnecessary heavy regex work
-  if (!stack || (!stack.includes("/") && !stack.includes("\\"))) {
-    return stack;
-  }
-
-  let updatedStack = stack;
-
-  const cleanUpIndexes: [number, number][] = [];
-  for (const regexp of cleanupPatterns) {
-    while (true) {
-      const result = regexp.exec(stack);
-      if (!result) {
-        break;
-      }
-      cleanUpIndexes.push([result.index, regexp.lastIndex]);
-    }
-  }
-
-  const nodeModulesRegex = /^[\\\/]?(node_modules|node_modules\.asar)[\\\/]/;
-  const fileRegex =
-    /(file:\/\/)?([a-zA-Z]:(\\\\|\\|\/)|(\\\\|\\|\/))?([\w-\._]+(\\\\|\\|\/))+[\w-\._]*/g;
-  let lastIndex = 0;
-  updatedStack = "";
-
-  while (true) {
-    const result = fileRegex.exec(stack);
-    if (!result) {
-      break;
-    }
-
-    // Check to see if the any cleanupIndexes partially overlap with this match
-    const overlappingRange = cleanUpIndexes.some(
-      ([start, end]) => result.index < end && start < fileRegex.lastIndex,
-    );
-
-    // anoynimize user file paths that do not need to be retained or cleaned up.
-    if (!nodeModulesRegex.test(result[0]) && !overlappingRange) {
-      updatedStack +=
-        stack.substring(lastIndex, result.index) + "<REDACTED: user-file-path>";
-      lastIndex = fileRegex.lastIndex;
-    }
-  }
-  if (lastIndex < stack.length) {
-    updatedStack += stack.substr(lastIndex);
-  }
-
-  return updatedStack;
-}
-
-/**
- * Attempts to remove commonly leaked PII
- * @param property The property which will be removed if it contains user data
- * @returns The new value for the property
- * @see https://github.com/microsoft/vscode/blob/main/src/vs/platform/telemetry/common/telemetryUtils.ts#L329
- */
-function removePropertiesWithPossibleUserInfo(property: string): string {
-  // If for some reason it is undefined we skip it (this shouldn't be possible);
-  if (!property) {
-    return property;
-  }
-
-  const userDataRegexes = [
-    { label: "URL", regex: /[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s]*/ },
-    { label: "Google API Key", regex: /AIza[A-Za-z0-9_\\\-]{35}/ },
-    {
-      label: "JWT",
-      regex:
-        /eyJ[0eXAiOiJKV1Qi|hbGci|a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+/,
-    },
-    { label: "Slack Token", regex: /xox[pbar]\-[A-Za-z0-9]/ },
-    {
-      label: "GitHub Token",
-      regex:
-        /(gh[psuro]_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59})/,
-    },
-    {
-      label: "Generic Secret",
-      regex:
-        /(key|token|sig|secret|signature|password|passwd|pwd|android:value)[^a-zA-Z0-9]/i,
-    },
-    {
-      label: "CLI Credentials",
-      regex:
-        /((login|psexec|(certutil|psexec)\.exe).{1,50}(\s-u(ser(name)?)?\s+.{3,100})?\s-(admin|user|vm|root)?p(ass(word)?)?\s+["']?[^$\-\/\s]|(^|[\s\r\n\\])net(\.exe)?.{1,5}(user\s+|share\s+\/user:| user -? secrets ? set) \s + [^ $\s \/])/,
-    },
-    {
-      label: "Microsoft Entra ID",
-      regex: /eyJ(?:0eXAiOiJKV1Qi|hbGci|[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.)/,
-    },
-    { label: "Email", regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/ },
-  ];
-
-  // Check for common user data in the telemetry events
-  for (const secretRegex of userDataRegexes) {
-    if (secretRegex.regex.test(property)) {
-      return `<REDACTED: ${secretRegex.label}>`;
-    }
-  }
-
-  return property;
-}
-
-/**
- * Sanitizes request body by removing sensitive fields and user info
- */
-function sanitizeRequestBody(body: any): any {
-  if (!body || typeof body !== "object") {
-    return body;
-  }
-
-  const sensitiveFields = [
-    "api_key",
-    "apiKey",
-    "authorization",
-    "token",
-    "password",
-    "secret",
-  ];
-
-  // Deep clone and sanitize
-  const sanitized = JSON.parse(JSON.stringify(body));
-
-  // Recursive function to sanitize nested objects and arrays
-  function sanitizeValue(value: any): any {
-    if (typeof value === "string") {
-      // First anonymize file paths
-      let sanitizedValue = anonymizeFilePaths(value, []);
-      // Then remove properties with possible user info
-      sanitizedValue = removePropertiesWithPossibleUserInfo(sanitizedValue);
-      return sanitizedValue;
-    } else if (Array.isArray(value)) {
-      return value.map(sanitizeValue);
-    } else if (value && typeof value === "object") {
-      const sanitizedObj: any = {};
-      for (const key in value) {
-        // Check if key is sensitive field
-        if (sensitiveFields.includes(key)) {
-          sanitizedObj[key] = "[REDACTED]";
-        } else {
-          sanitizedObj[key] = sanitizeValue(value[key]);
-        }
-      }
-      return sanitizedObj;
-    }
-    return value;
-  }
-
-  // Remove sensitive fields at root level
-  for (const field of sensitiveFields) {
-    if (field in sanitized) {
-      sanitized[field] = "[REDACTED]";
-    }
-  }
-
-  // Sanitize headers if present
-  if (sanitized.headers && typeof sanitized.headers === "object") {
-    for (const field of sensitiveFields) {
-      if (field in sanitized.headers) {
-        sanitized.headers[field] = "[REDACTED]";
-      }
-    }
-    // Sanitize all header values
-    for (const key in sanitized.headers) {
-      sanitized.headers[key] = sanitizeValue(sanitized.headers[key]);
-    }
-  }
-
-  // Sanitize all other fields recursively
-  for (const key in sanitized) {
-    if (key !== "headers" && !sensitiveFields.includes(key)) {
-      sanitized[key] = sanitizeValue(sanitized[key]);
-    }
-  }
-
-  return sanitized;
 }
 
 /**
@@ -214,6 +30,9 @@ function generateLogFilename(): string {
   return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}-${milliseconds}-debug.log`;
 }
 
+// Generate log filename once at extension launch
+const LOG_FILENAME = generateLogFilename();
+
 /**
  * Gets extension metadata for logging
  */
@@ -227,19 +46,154 @@ function getExtensionMetadata() {
 }
 
 /**
- * Logs error details to a timestamped file in the current working directory
+ * Sanitizes Anthropic request body to protect user privacy
+ * Removes message content while keeping metadata useful for debugging
+ */
+function sanitizeAnthropicRequestBody(requestBody: any): any {
+  if (!requestBody || typeof requestBody !== "object") {
+    return requestBody;
+  }
+
+  const body = requestBody as Anthropic.Messages.MessageCreateParams;
+
+  // Sanitize messages array inline
+  const sanitizedMessages = body.messages?.map((message) => {
+    let content;
+    // Sanitize content
+    if (typeof message.content === "string") {
+      content = "[REDACTED]";
+    } else if (Array.isArray(message.content)) {
+      content = message.content.map((contentBlock) => {
+        // Sanitize each content block type
+        switch (contentBlock.type) {
+          case "text":
+            return { type: "text", text: "[REDACTED]" };
+
+          case "image":
+            if (contentBlock.source.type === "base64") {
+              return {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: contentBlock.source.media_type,
+                  data: "[REDACTED]",
+                },
+              };
+            } else {
+              return {
+                type: "image",
+                source: {
+                  type: "url",
+                  url: "[REDACTED]",
+                },
+              };
+            }
+
+          // Do not support "document" content currently, redact entirely
+          case "document":
+            return {
+              type: "document",
+              source: {},
+            };
+
+          case "search_result":
+            return {
+              type: "search_result",
+              source: "[REDACTED]",
+              title: "[REDACTED]",
+              content: [],
+            };
+
+          case "thinking":
+            return {
+              type: "thinking",
+              thinking: "[REDACTED]",
+              signature: contentBlock.signature,
+            };
+
+          case "redacted_thinking":
+            return contentBlock;
+
+          case "tool_use":
+            return {
+              type: "tool_use",
+              id: contentBlock.id,
+              name: contentBlock.name,
+              input: {},
+            };
+
+          case "tool_result":
+            return {
+              type: "tool_result",
+              tool_use_id: contentBlock.tool_use_id,
+              content: "[REDACTED]",
+              ...(contentBlock.is_error !== undefined && {
+                is_error: contentBlock.is_error,
+              }),
+            };
+
+          case "server_tool_use":
+            return {
+              type: "server_tool_use",
+              id: contentBlock.id,
+              name: contentBlock.name,
+              input: {},
+            };
+
+          case "web_search_tool_result":
+            return {
+              type: "web_search_tool_result",
+              tool_use_id: contentBlock.tool_use_id,
+              content: [],
+            };
+
+          default:
+            return contentBlock;
+        }
+      });
+    }
+
+    return {
+      ...message,
+      content,
+    };
+  });
+
+  return {
+    ...body,
+    messages: sanitizedMessages,
+  };
+}
+
+/**
+ * Sanitizes request body based on the endpoint
+ * @param requestBody - The request body to sanitize
+ * @param endpoint - The API endpoint to determine sanitization strategy
+ * @returns Sanitized request body
+ */
+function sanitizeRequestBody(requestBody: any, endpoint: string): any {
+  // Sanitize Anthropic API payloads
+  if (endpoint.startsWith("/v1/messages")) {
+    return sanitizeAnthropicRequestBody(requestBody);
+  }
+
+  // For other endpoints, return as-is
+  return requestBody;
+}
+
+/**
+ * Logs error details to a shared log file, appending each error as a formatted JSON entry
  * @returns The absolute path to the log file
  */
 export async function logErrorToFile(
   context: ErrorLogContext,
 ): Promise<string> {
-  const filename = generateLogFilename();
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   if (!workspaceFolder) {
     throw new Error("No workspace folder found");
   }
   const cwd = workspaceFolder.uri.fsPath;
-  const logPath = path.join(cwd, filename);
+  const logPath = path.join(cwd, LOG_FILENAME);
 
   const errorMessage =
     context.error instanceof Error
@@ -258,13 +212,14 @@ export async function logErrorToFile(
       stack: errorStack,
       raw: context.error,
     },
-    requestBody: sanitizeRequestBody(context.requestBody),
+    requestBody: sanitizeRequestBody(context.requestBody, context.endpoint),
   };
 
-  const logContent = JSON.stringify(logData, null, 2);
+  // Format as pretty-printed JSON with separator for readability
+  const logContent = JSON.stringify(logData, null, 2) + "\n";
 
   try {
-    await fs.promises.writeFile(logPath, logContent, "utf8");
+    await fs.promises.appendFile(logPath, logContent, "utf8");
     return logPath;
   } catch (writeError) {
     // If we can't write the log file, at least log to logger
