@@ -210,139 +210,156 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
       return streamSSE(
         c,
         async (stream) => {
-          try {
-            const chatCompletionId = `AM-${Date.now()}`;
-            const created = Math.floor(Date.now() / 1000);
+          const chatCompletionId = `AM-${Date.now()}`;
+          const created = Math.floor(Date.now() / 1000);
 
-            // Send initial chunk with role
-            const initialChunk: OpenAI.ChatCompletionChunk = {
-              id: chatCompletionId,
-              object: "chat.completion.chunk",
-              created,
-              model: modelId,
-              choices: [
-                {
-                  index: 0,
-                  delta: {
-                    role: "assistant",
-                    content: "",
+          // Send initial chunk with role
+          const initialChunk: OpenAI.ChatCompletionChunk = {
+            id: chatCompletionId,
+            object: "chat.completion.chunk",
+            created,
+            model: modelId,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  role: "assistant",
+                  content: "",
+                },
+                finish_reason: null,
+                logprobs: null,
+              },
+            ],
+          };
+          await stream.writeSSE({
+            data: JSON.stringify(initialChunk),
+          });
+
+          // Process streaming response
+          let accumulatedText = "";
+          let toolCalls: vscode.LanguageModelToolCallPart[] = [];
+          for await (const chunk of response.stream) {
+            if (chunk instanceof vscode.LanguageModelTextPart) {
+              const contentChunk: OpenAI.ChatCompletionChunk = {
+                id: chatCompletionId,
+                object: "chat.completion.chunk",
+                created,
+                model: modelId,
+                choices: [
+                  {
+                    index: 0,
+                    delta: {
+                      role: "assistant",
+                      content: chunk.value,
+                    },
+                    finish_reason: null,
+                    logprobs: null,
                   },
-                  finish_reason: null,
-                  logprobs: null,
-                },
-              ],
-            };
-            await stream.writeSSE({
-              data: JSON.stringify(initialChunk),
-            });
-
-            // Process streaming response
-            let accumulatedText = "";
-            let toolCalls: vscode.LanguageModelToolCallPart[] = [];
-            for await (const chunk of response.stream) {
-              if (chunk instanceof vscode.LanguageModelTextPart) {
-                const contentChunk: OpenAI.ChatCompletionChunk = {
-                  id: chatCompletionId,
-                  object: "chat.completion.chunk",
-                  created,
-                  model: modelId,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: {
-                        role: "assistant",
-                        content: chunk.value,
-                      },
-                      finish_reason: null,
-                      logprobs: null,
-                    },
-                  ],
-                };
-                await stream.writeSSE({
-                  data: JSON.stringify(contentChunk),
-                });
-              } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-                toolCalls.push(chunk);
-                const toolCallChunk: OpenAI.ChatCompletionChunk = {
-                  id: chatCompletionId,
-                  object: "chat.completion.chunk",
-                  created,
-                  model: modelId,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: {
-                        role: "assistant",
-                        tool_calls: [
-                          {
-                            index: toolCalls.length - 1,
-                            id: chunk.callId,
-                            type: "function",
-                            function: {
-                              name: chunk.name,
-                              arguments: JSON.stringify(chunk.input),
-                            },
-                          },
-                        ],
-                      },
-                      finish_reason: null,
-                      logprobs: null,
-                    },
-                  ],
-                };
-                await stream.writeSSE({
-                  data: JSON.stringify(toolCallChunk),
-                });
-              }
-              accumulatedText += JSON.stringify(chunk);
-            }
-
-            // Count output tokens for final chunk if usage is requested
-            let usage: OpenAI.CompletionUsage | undefined;
-            if (requestBody.stream_options?.include_usage) {
-              const completionTokens =
-                await client.countTokens(accumulatedText);
-
-              usage = {
-                prompt_tokens: inputTokenCount,
-                completion_tokens: completionTokens,
-                total_tokens: inputTokenCount + completionTokens,
+                ],
               };
+              await stream.writeSSE({
+                data: JSON.stringify(contentChunk),
+              });
+            } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+              toolCalls.push(chunk);
+              const toolCallChunk: OpenAI.ChatCompletionChunk = {
+                id: chatCompletionId,
+                object: "chat.completion.chunk",
+                created,
+                model: modelId,
+                choices: [
+                  {
+                    index: 0,
+                    delta: {
+                      role: "assistant",
+                      tool_calls: [
+                        {
+                          index: toolCalls.length - 1,
+                          id: chunk.callId,
+                          type: "function",
+                          function: {
+                            name: chunk.name,
+                            arguments: JSON.stringify(chunk.input),
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: null,
+                    logprobs: null,
+                  },
+                ],
+              };
+              await stream.writeSSE({
+                data: JSON.stringify(toolCallChunk),
+              });
             }
-
-            // Send final chunk with finish_reason
-            const finalChunk: OpenAI.ChatCompletionChunk = {
-              id: chatCompletionId,
-              object: "chat.completion.chunk",
-              created,
-              model: modelId,
-              choices: [
-                {
-                  index: 0,
-                  delta: {},
-                  finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
-                  logprobs: null,
-                },
-              ],
-              usage,
-            };
-            await stream.writeSSE({
-              data: JSON.stringify(finalChunk),
-            });
-
-            // Send [DONE] signal
-            await stream.writeSSE({
-              data: "[DONE]",
-            });
-
-            logger.info("OpenAI streaming response completed");
-          } catch (streamError) {
-            logger.error("Error in OpenAI streaming:", streamError);
-            throw streamError;
+            accumulatedText += JSON.stringify(chunk);
           }
+
+          // Count output tokens for final chunk if usage is requested
+          let usage: OpenAI.CompletionUsage | undefined;
+          if (requestBody.stream_options?.include_usage) {
+            const completionTokens = await client.countTokens(accumulatedText);
+
+            usage = {
+              prompt_tokens: inputTokenCount,
+              completion_tokens: completionTokens,
+              total_tokens: inputTokenCount + completionTokens,
+            };
+          }
+
+          // Send final chunk with finish_reason
+          const finalChunk: OpenAI.ChatCompletionChunk = {
+            id: chatCompletionId,
+            object: "chat.completion.chunk",
+            created,
+            model: modelId,
+            choices: [
+              {
+                index: 0,
+                delta: {},
+                finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
+                logprobs: null,
+              },
+            ],
+            usage,
+          };
+          await stream.writeSSE({
+            data: JSON.stringify(finalChunk),
+          });
+
+          // Send [DONE] signal
+          await stream.writeSSE({
+            data: "[DONE]",
+          });
+
+          logger.info("OpenAI streaming response completed");
         },
-        async (error, _stream) => {
+        async (error, stream) => {
           logger.error("Stream error occurred:", error);
+
+          // Send error chunk to client before closing
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const errorChunk: OpenAI.ChatCompletionChunk = {
+            id: `AM-${Date.now()}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: modelId,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  content: `\n\n[Error: ${errorMessage}]`,
+                },
+                finish_reason: "stop",
+                logprobs: null,
+              },
+            ],
+          };
+          await stream.writeSSE({
+            data: JSON.stringify(errorChunk),
+          });
         },
       );
     } catch (error) {

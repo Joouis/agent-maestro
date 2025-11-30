@@ -353,148 +353,143 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             });
           };
 
-          try {
-            await writeSSE({
-              type: "message_start",
-              message: {
-                id: `msg_${Date.now()}`,
-                type: "message",
-                role: "assistant",
-                model: modelId,
-                content: [],
-                stop_reason: null,
-                stop_sequence: null,
-                usage: {
-                  cache_creation: null,
-                  input_tokens: inputTokenCount,
-                  output_tokens: 1,
-                  cache_creation_input_tokens: null,
-                  cache_read_input_tokens: null,
-                  server_tool_use: null,
-                  service_tier: "standard",
-                },
+          await writeSSE({
+            type: "message_start",
+            message: {
+              id: `msg_${Date.now()}`,
+              type: "message",
+              role: "assistant",
+              model: modelId,
+              content: [],
+              stop_reason: null,
+              stop_sequence: null,
+              usage: {
+                cache_creation: null,
+                input_tokens: inputTokenCount,
+                output_tokens: 1,
+                cache_creation_input_tokens: null,
+                cache_read_input_tokens: null,
+                server_tool_use: null,
+                service_tier: "standard",
               },
-            });
+            },
+          });
 
-            const contentBlocks: Anthropic.Messages.ContentBlock[] = [];
-            let accumulatedText = "";
+          const contentBlocks: Anthropic.Messages.ContentBlock[] = [];
+          let accumulatedText = "";
 
-            for await (const chunk of response.stream) {
-              const lastBlock = contentBlocks.at(-1);
-              if (chunk instanceof vscode.LanguageModelTextPart) {
-                // Stop last non-text block if it exists
-                if (lastBlock && lastBlock.type !== "text") {
-                  await writeSSE({
-                    type: "content_block_stop",
-                    index: contentBlocks.length - 1,
-                  });
-                }
-
-                // Start a new text block
-                if (!lastBlock || lastBlock.type !== "text") {
-                  contentBlocks.push({
-                    type: "text",
-                    text: "",
-                    citations: null,
-                  });
-                  await writeSSE({
-                    type: "content_block_start",
-                    index: contentBlocks.length - 1,
-                    content_block: { type: "text", text: "", citations: null },
-                  });
-                }
-
-                // Append text to the current text block
-                (contentBlocks.at(-1) as Anthropic.Messages.TextBlock).text +=
-                  chunk.value;
+          for await (const chunk of response.stream) {
+            const lastBlock = contentBlocks.at(-1);
+            if (chunk instanceof vscode.LanguageModelTextPart) {
+              // Stop last non-text block if it exists
+              if (lastBlock && lastBlock.type !== "text") {
                 await writeSSE({
-                  type: "content_block_delta",
+                  type: "content_block_stop",
                   index: contentBlocks.length - 1,
-                  delta: { type: "text_delta", text: chunk.value },
                 });
+              }
 
-                accumulatedText += chunk.value;
-              } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-                // Every tool call is a new content block
-                if (lastBlock) {
-                  await writeSSE({
-                    type: "content_block_stop",
-                    index: contentBlocks.length - 1,
-                  });
-                }
-
+              // Start a new text block
+              if (!lastBlock || lastBlock.type !== "text") {
                 contentBlocks.push({
-                  type: "tool_use",
-                  id: chunk.callId,
-                  name: chunk.name,
-                  input: chunk.input,
+                  type: "text",
+                  text: "",
+                  citations: null,
                 });
-
                 await writeSSE({
                   type: "content_block_start",
                   index: contentBlocks.length - 1,
-                  content_block: {
-                    type: "tool_use",
-                    id: chunk.callId,
-                    name: chunk.name,
-                    input: {},
-                  },
+                  content_block: { type: "text", text: "", citations: null },
                 });
-
-                await writeSSE({
-                  type: "content_block_delta",
-                  index: contentBlocks.length - 1,
-                  delta: {
-                    type: "input_json_delta",
-                    partial_json: JSON.stringify(chunk.input),
-                  },
-                });
-
-                accumulatedText += JSON.stringify(chunk);
               }
+
+              // Append text to the current text block
+              (contentBlocks.at(-1) as Anthropic.Messages.TextBlock).text +=
+                chunk.value;
+              await writeSSE({
+                type: "content_block_delta",
+                index: contentBlocks.length - 1,
+                delta: { type: "text_delta", text: chunk.value },
+              });
+
+              accumulatedText += chunk.value;
+            } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+              // Every tool call is a new content block
+              if (lastBlock) {
+                await writeSSE({
+                  type: "content_block_stop",
+                  index: contentBlocks.length - 1,
+                });
+              }
+
+              contentBlocks.push({
+                type: "tool_use",
+                id: chunk.callId,
+                name: chunk.name,
+                input: chunk.input,
+              });
+
+              await writeSSE({
+                type: "content_block_start",
+                index: contentBlocks.length - 1,
+                content_block: {
+                  type: "tool_use",
+                  id: chunk.callId,
+                  name: chunk.name,
+                  input: {},
+                },
+              });
+
+              await writeSSE({
+                type: "content_block_delta",
+                index: contentBlocks.length - 1,
+                delta: {
+                  type: "input_json_delta",
+                  partial_json: JSON.stringify(chunk.input),
+                },
+              });
+
+              accumulatedText += JSON.stringify(chunk);
             }
-
-            logger.debug(
-              "/v1/messages streamed content block responses: ",
-              JSON.stringify(contentBlocks, null, 2),
-            );
-
-            // Finalize last content block if it exists
-            await writeSSE({
-              type: "content_block_stop",
-              index: contentBlocks.length - 1,
-            });
-
-            // Count output tokens for the complete response
-            const outputTokenCount = accumulatedText
-              ? await client.countTokens(accumulatedText)
-              : 1;
-
-            await writeSSE({
-              type: "message_delta",
-              delta: {
-                stop_reason:
-                  contentBlocks.at(-1)?.type === "tool_use"
-                    ? "tool_use"
-                    : "end_turn",
-                stop_sequence: null,
-              },
-              usage: {
-                input_tokens: inputTokenCount,
-                output_tokens: outputTokenCount,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
-                server_tool_use: null,
-              },
-            });
-
-            await writeSSE({ type: "message_stop" });
-
-            logger.info("Streaming response completed");
-          } catch (streamError) {
-            logger.error("Error in streaming:", streamError);
-            throw streamError;
           }
+
+          logger.debug(
+            "/v1/messages streamed content block responses: ",
+            JSON.stringify(contentBlocks, null, 2),
+          );
+
+          // Finalize last content block if it exists
+          await writeSSE({
+            type: "content_block_stop",
+            index: contentBlocks.length - 1,
+          });
+
+          // Count output tokens for the complete response
+          const outputTokenCount = accumulatedText
+            ? await client.countTokens(accumulatedText)
+            : 1;
+
+          await writeSSE({
+            type: "message_delta",
+            delta: {
+              stop_reason:
+                contentBlocks.at(-1)?.type === "tool_use"
+                  ? "tool_use"
+                  : "end_turn",
+              stop_sequence: null,
+            },
+            usage: {
+              input_tokens: inputTokenCount,
+              output_tokens: outputTokenCount,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+              server_tool_use: null,
+            },
+          });
+
+          await writeSSE({ type: "message_stop" });
+
+          logger.info("Streaming response completed");
         },
         async (error, _stream) => {
           logger.error("Stream error occurred:", error);

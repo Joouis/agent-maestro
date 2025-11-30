@@ -452,89 +452,84 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         return streamSSE(
           c,
           async (stream) => {
-            try {
-              let accumulatedText = "";
+            let accumulatedText = "";
 
-              for await (const chunk of response.stream) {
-                if (chunk instanceof vscode.LanguageModelTextPart) {
-                  const text = chunk.value;
-                  accumulatedText += text;
+            for await (const chunk of response.stream) {
+              if (chunk instanceof vscode.LanguageModelTextPart) {
+                const text = chunk.value;
+                accumulatedText += text;
 
-                  // Send streaming chunk
-                  const streamChunk: GenerateContentResponse = {
-                    candidates: [
-                      {
-                        content: {
-                          parts: [{ text }],
-                          role: "model",
-                        },
-                        index: 0,
+                // Send streaming chunk
+                const streamChunk: GenerateContentResponse = {
+                  candidates: [
+                    {
+                      content: {
+                        parts: [{ text }],
+                        role: "model",
                       },
-                    ],
-                  };
-
-                  await stream.writeSSE({
-                    data: JSON.stringify(streamChunk),
-                  });
-                } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-                  const functionCallPart: Part = {
-                    functionCall: {
-                      id: chunk.callId,
-                      name: chunk.name,
-                      args: chunk.input as Record<string, unknown>,
+                      index: 0,
                     },
-                  };
-                  accumulatedText += JSON.stringify(chunk);
+                  ],
+                };
 
-                  // Send function call chunk
-                  const streamChunk: GenerateContentResponse = {
-                    candidates: [
-                      {
-                        content: {
-                          parts: [functionCallPart],
-                          role: "model",
-                        },
-                        index: 0,
-                      },
-                    ],
-                  };
-
-                  await stream.writeSSE({
-                    data: JSON.stringify(streamChunk),
-                  });
-                }
-                // Now chunk could be reasoning part (vscode_reasoning_done), so we skip it
-              }
-
-              // Send final chunk with usage metadata
-              const outputTokenCount = accumulatedText
-                ? await client.countTokens(accumulatedText)
-                : 0;
-
-              const finalChunk: GenerateContentResponse = {
-                candidates: [
-                  {
-                    finishReason: FinishReason.STOP,
-                    index: 0,
+                await stream.writeSSE({
+                  data: JSON.stringify(streamChunk),
+                });
+              } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+                const functionCallPart: Part = {
+                  functionCall: {
+                    id: chunk.callId,
+                    name: chunk.name,
+                    args: chunk.input as Record<string, unknown>,
                   },
-                ],
-                usageMetadata: {
-                  promptTokenCount: inputTokenCount,
-                  candidatesTokenCount: outputTokenCount,
-                  totalTokenCount: inputTokenCount + outputTokenCount,
-                },
-                modelVersion: modelId,
-              };
+                };
+                accumulatedText += JSON.stringify(chunk);
 
-              await stream.writeSSE({
-                data: JSON.stringify(finalChunk),
-              });
+                // Send function call chunk
+                const streamChunk: GenerateContentResponse = {
+                  candidates: [
+                    {
+                      content: {
+                        parts: [functionCallPart],
+                        role: "model",
+                      },
+                      index: 0,
+                    },
+                  ],
+                };
 
-              logger.info("Streaming streamGenerateContent completed");
-            } catch (streamError) {
-              logger.error("Error in streaming:", streamError);
-              throw streamError;
+                await stream.writeSSE({
+                  data: JSON.stringify(streamChunk),
+                });
+              }
+              // Now chunk could be reasoning part (vscode_reasoning_done), so we skip it
             }
+
+            // Send final chunk with usage metadata
+            const outputTokenCount = accumulatedText
+              ? await client.countTokens(accumulatedText)
+              : 0;
+
+            const finalChunk: GenerateContentResponse = {
+              candidates: [
+                {
+                  finishReason: FinishReason.STOP,
+                  index: 0,
+                },
+              ],
+              usageMetadata: {
+                promptTokenCount: inputTokenCount,
+                candidatesTokenCount: outputTokenCount,
+                totalTokenCount: inputTokenCount + outputTokenCount,
+              },
+              modelVersion: modelId,
+            };
+
+            await stream.writeSSE({
+              data: JSON.stringify(finalChunk),
+            });
+
+            logger.info("Streaming streamGenerateContent completed");
           },
           async (error, stream) => {
             logger.error("Stream error occurred:", error);
