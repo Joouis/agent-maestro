@@ -124,6 +124,9 @@ const convertContentToVSCodeParts = (
       case "document":
         // Skip document blocks as specified in original implementation
         break;
+      case "search_result":
+        parts.push(searchResultBlockParamToVSCodePart(block));
+        break;
       case "thinking":
         parts.push(thinkingBlockParamToVSCodePart(block));
         break;
@@ -141,9 +144,6 @@ const convertContentToVSCodeParts = (
         break;
       case "web_search_tool_result":
         parts.push(webSearchToolResultBlockParamToVSCodePart(block));
-        break;
-      case "search_result":
-        parts.push(searchResultBlockParamToVSCodePart(block));
         break;
       default:
         // Handle any other block types as text
