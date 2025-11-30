@@ -216,6 +216,8 @@ Full-featured agent integration with real-time streaming:
 - **`POST /api/v1/roo/task`** - Create new RooCode task with SSE streaming
 - **`POST /api/v1/roo/task/{taskId}/message`** - Send message to existing task with SSE streaming
 - **`POST /api/v1/roo/task/{taskId}/action`** - Perform actions (pressPrimaryButton, pressSecondaryButton, cancel, resume)
+- **`GET /api/v1/roo/settings`** - Get current RooCode settings
+- **`GET /api/v1/roo/modes`** - Get available RooCode modes
 
 ### VS Code Language Model API
 
@@ -233,6 +235,21 @@ Basic integration support:
 ### Documentation Routes
 
 - **`GET /openapi.json`** - Complete OpenAPI v3 specification
+
+## Error Diagnostics
+
+Agent Maestro automatically logs detailed error diagnostics for `/v1/messages` route failures to help troubleshoot issues. When an error occurs, a timestamped diagnostic file is created in your workspace root with:
+
+- Request payload (with user data sanitized for privacy)
+- Error details and stack traces
+- Extension metadata
+- Model information
+
+**Log Location**: `{workspace_root}/{timestamp}-debug.log`
+
+**Privacy**: All sensitive user data (text content, images, documents, tool inputs) is redacted as `[REDACTED]` while preserving the request structure for debugging.
+
+**Example**: If you encounter "unexpected `tool_use_id` found in `tool_result` blocks" errors, the diagnostic log will contain sanitized request details to help identify the root cause.
 
 ## Migration from v1.x
 
