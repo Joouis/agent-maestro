@@ -12,7 +12,7 @@ runs:
     - name: Install pnpm
       uses: pnpm/action-setup@v4
       with:
-        version: 10.11.0
+        version: 10.25.0
 
     - name: Install dependencies
       shell: bash
