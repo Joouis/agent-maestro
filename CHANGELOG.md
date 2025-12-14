@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.1 - 2025.12.14
+
+- Automatically complete Claude onboarding to skip login flow during setup
+
 ## v2.5.0 - 2025.11.30
 
 - Add `/roo/settings` and `/roo/modes` API routes

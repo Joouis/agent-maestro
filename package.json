@@ -2,14 +2,15 @@
   "name": "agent-maestro",
   "displayName": "Agent Maestro",
   "description": "Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code or Codex straight in through an OpenAI/Anthropic-compatible API.",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
   "repository": "https://github.com/Joouis/agent-maestro",
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": "^1.100.0",
+    "node": ">=22"
   },
-  "packageManager": "pnpm@10.11.0",
+  "packageManager": "pnpm@10.25.0",
   "categories": [
     "AI",
     "Chat",
