@@ -25,6 +25,46 @@ interface ClaudeSettings {
 }
 
 /**
+ * Ensures that ~/.claude.json has hasCompletedOnboarding set to true
+ * This prevents Claude Code from showing the onboarding flow
+ */
+export const ensureClaudeOnboardingComplete = (): boolean => {
+  try {
+    const claudeJsonPath = path.join(os.homedir(), ".claude.json");
+    let claudeJsonContent: any = {};
+    let needsUpdate = false;
+
+    try {
+      const existingContent = fs.readFileSync(claudeJsonPath, "utf8");
+      claudeJsonContent = JSON.parse(existingContent);
+
+      // Check if hasCompletedOnboarding is not true
+      if (claudeJsonContent.hasCompletedOnboarding !== true) {
+        claudeJsonContent.hasCompletedOnboarding = true;
+        needsUpdate = true;
+      }
+    } catch (error) {
+      // File doesn't exist or is invalid JSON, create new
+      claudeJsonContent = { hasCompletedOnboarding: true };
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      fs.writeFileSync(
+        claudeJsonPath,
+        JSON.stringify(claudeJsonContent, null, 2),
+      );
+      logger.info(`Updated onboarding status in ${claudeJsonPath}`);
+    }
+
+    return true;
+  } catch (error) {
+    logger.error(`Failed to update ~/.claude.json: ${error}`);
+    return false;
+  }
+};
+
+/**
  * Ensures that the Claude config.json file exists with primaryApiKey set to "Agent Maestro"
  * This is a shared utility for ensuring the essential config exists
  */

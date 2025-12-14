@@ -5,7 +5,10 @@ import * as vscode from "vscode";
 
 import { ProxyServer } from "../server/ProxyServer";
 import { getChatModelsQuickPickItems } from "../utils/chatModels";
-import { ensureClaudeConfigExists } from "../utils/claude";
+import {
+  ensureClaudeConfigExists,
+  ensureClaudeOnboardingComplete,
+} from "../utils/claude";
 import { logger } from "../utils/logger";
 import { updateEnvFile } from "../utils/updateEnvFile";
 import { createCommandHandler } from "./commandHandler";
@@ -167,6 +170,9 @@ export function registerConfiguratorCommands(
 
         // Ensure Claude config exists with primaryApiKey for seamless compatibility
         ensureClaudeConfigExists();
+
+        // Ensure Claude onboarding is marked as complete
+        ensureClaudeOnboardingComplete();
 
         vscode.window.showInformationMessage(
           `Claude Code settings ${fileExists ? "updated" : "created"} successfully! The settings point to Agent Maestro proxy server for Anthropic-compatible API.`,
