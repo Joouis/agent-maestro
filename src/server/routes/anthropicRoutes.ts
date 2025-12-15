@@ -227,6 +227,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
     let effectiveModelId: string | undefined;
     let requestBody;
+    let vsCodeLmMessages: vscode.LanguageModelChatMessage[] | undefined;
     try {
       // Parse request body
       requestBody =
@@ -261,11 +262,12 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       );
 
       // 3. Map Anthropic messages to VS Code LM API messages and count input tokens
-      const { vsCodeLmMessages, inputTokenCount, cancellationToken } =
-        await prepareAnthropicMessages({
-          requestBody,
-          client,
-        });
+      const preparedMessages = await prepareAnthropicMessages({
+        requestBody,
+        client,
+      });
+      vsCodeLmMessages = preparedMessages.vsCodeLmMessages;
+      const { inputTokenCount, cancellationToken } = preparedMessages;
 
       // 3. Build VS Code Language Model request options
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
@@ -501,8 +503,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       const logFilePath = await handleErrorWithLogging({
         requestBody,
+        vsCodeLmMessages,
         error,
-        endpoint: "/v1/messages",
+        endpoint: "/api/anthropic/v1/messages",
         modelId: effectiveModelId,
       });
 
@@ -526,6 +529,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
   app.openapi(countTokensRoute, async (c: Context) => {
     let modelId: string | undefined;
     let requestBody;
+    let vsCodeLmMessages: vscode.LanguageModelChatMessage[] | undefined;
     try {
       requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
@@ -542,10 +546,12 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         return c.json(clientError, 404);
       }
 
-      const { inputTokenCount } = await prepareAnthropicMessages({
+      const preparedMessages = await prepareAnthropicMessages({
         requestBody,
         client,
       });
+      vsCodeLmMessages = preparedMessages.vsCodeLmMessages;
+      const { inputTokenCount } = preparedMessages;
 
       return c.json(
         {
@@ -558,6 +564,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       const logFilePath = await handleErrorWithLogging({
         requestBody,
+        vsCodeLmMessages,
         error,
         endpoint: "/v1/messages/count_tokens",
         modelId,

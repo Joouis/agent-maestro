@@ -9,6 +9,7 @@ import { logger } from "../../utils/logger";
 
 interface ErrorLogContext {
   requestBody?: any;
+  vsCodeLmMessages?: vscode.LanguageModelChatMessage[];
   error: Error | unknown;
   endpoint: string;
   modelId?: string;
@@ -166,6 +167,59 @@ function sanitizeAnthropicRequestBody(requestBody: any): any {
 }
 
 /**
+ * Sanitizes VSCode LanguageModelChatMessage array to protect user privacy
+ * Removes message content while keeping metadata useful for debugging
+ */
+function sanitizeVSCodeLmMessages(
+  messages?: vscode.LanguageModelChatMessage[],
+): any[] | undefined {
+  return messages?.map((message) => {
+    // Extract role
+    const role =
+      message.role === vscode.LanguageModelChatMessageRole.User
+        ? "user"
+        : "assistant";
+
+    // Sanitize content parts
+    const sanitizedContent = message.content.map((part: any) => {
+      if (part instanceof vscode.LanguageModelTextPart) {
+        return {
+          type: "text",
+          value: "[REDACTED]",
+        };
+      } else if (part instanceof vscode.LanguageModelToolCallPart) {
+        return {
+          type: "tool_call",
+          callId: part.callId,
+          name: part.name,
+          input: {}, // Redact input
+        };
+      } else if (part instanceof vscode.LanguageModelToolResultPart) {
+        return {
+          type: "tool_result",
+          callId: part.callId,
+          content: part.content.map(() => ({
+            type: "text",
+            value: "[REDACTED]",
+          })),
+        };
+      } else {
+        // Handle any other part types (like LanguageModelDataPart)
+        return {
+          type: "unknown",
+          className: part.constructor?.name || "UnknownPart",
+        };
+      }
+    });
+
+    return {
+      role,
+      content: sanitizedContent,
+    };
+  });
+}
+
+/**
  * Sanitizes request body based on the endpoint
  * @param requestBody - The request body to sanitize
  * @param endpoint - The API endpoint to determine sanitization strategy
@@ -213,6 +267,7 @@ export async function logErrorToFile(
       raw: context.error,
     },
     requestBody: sanitizeRequestBody(context.requestBody, context.endpoint),
+    vsCodeLmMessages: sanitizeVSCodeLmMessages(context.vsCodeLmMessages),
   };
 
   // Format as pretty-printed JSON with separator for readability
