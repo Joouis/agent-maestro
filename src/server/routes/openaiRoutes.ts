@@ -7,6 +7,7 @@ import * as vscode from "vscode";
 import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import { CommonResponseError } from "../schemas/openai";
+import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 import {
   convertOpenAIChatCompletionToolToVSCode,
   convertOpenAIMessagesToVSCode,
@@ -87,10 +88,15 @@ const chatCompletionsRoute = createRoute({
 export function registerOpenaiRoutes(app: OpenAPIHono) {
   // POST /chat/completions - OpenAI-compatible chat completions endpoint
   app.openapi(chatCompletionsRoute, async (c: Context): Promise<Response> => {
+    let rawRequestBody: OpenAI.ChatCompletionCreateParams | undefined;
+    let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
+    let requestedModelId = "";
+
     try {
       // Parse and validate request body
       const requestBody =
         (await c.req.json()) as OpenAI.ChatCompletionCreateParams;
+      rawRequestBody = requestBody;
 
       logger.debug(
         "/chat/completions payload: ",
@@ -105,6 +111,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
         tool_choice,
         ...otherParams
       } = requestBody;
+      requestedModelId = modelId;
 
       // 1. Get chat model client
       const { client, error: clientError } = await getChatModelClient(modelId);
@@ -119,6 +126,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
 
       // 2. Convert OpenAI messages to VSCode LM format
       const vsCodeLmMessages = convertOpenAIMessagesToVSCode(messages);
+      lmChatMessages = vsCodeLmMessages;
 
       // Count input tokens
       let inputTokenCount = 0;
@@ -363,12 +371,23 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
         },
       );
     } catch (error) {
+      logger.error("OpenAI API /chat/completions request failed:", error);
+
+      const logFilePath = await handleErrorWithLogging({
+        requestBody: rawRequestBody,
+        lmChatMessages,
+        error,
+        endpoint: "/chat/completions",
+        modelId: requestedModelId,
+      });
+
       return c.json(
         {
           error: {
             message:
               error instanceof Error ? error.message : "Internal server error",
             type: "internal_error",
+            log_file: logFilePath,
           },
         },
         500,

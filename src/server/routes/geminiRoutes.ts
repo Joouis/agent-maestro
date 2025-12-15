@@ -11,6 +11,7 @@ import {
   GenerateContentRequest,
   GenerateContentResponse,
 } from "../schemas/gemini";
+import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 import {
   convertGeminiContentsToVSCode,
   convertGeminiSystemInstructionToVSCode,
@@ -283,11 +284,16 @@ const countTokensRoute = createRoute({
 export function registerGeminiRoutes(app: OpenAPIHono) {
   // POST /v1beta/models/{model}:generateContent
   app.openapi(generateContentRoute, async (c: Context) => {
+    let rawRequestBody: GenerateContentRequest | undefined;
+    let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
+    let modelId = "";
+
     try {
       // Parse request
       const { modelWithMethod } = c.req.param();
-      const modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:generateContent"
+      modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:generateContent"
       const requestBody = await c.req.json();
+      rawRequestBody = requestBody;
 
       logger.debug(
         `/v1beta/models/${modelId}:generateContent payload:`,
@@ -321,6 +327,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         cancellationToken,
         lmRequestOptions,
       } = await prepareGeminiRequest({ requestBody, client });
+      lmChatMessages = vsCodeLmMessages;
 
       // 3. Send request to VSCode LM API
       const response = await client.sendRequest(
@@ -383,6 +390,15 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       return c.json(geminiResponse, 200);
     } catch (error) {
       logger.error("Gemini API generateContent request failed:", error);
+
+      const logFilePath = await handleErrorWithLogging({
+        requestBody: rawRequestBody,
+        lmChatMessages,
+        error,
+        endpoint: `/v1beta/models/${modelId}:generateContent`,
+        modelId,
+      });
+
       return c.json(
         {
           error: {
@@ -390,6 +406,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             message:
               error instanceof Error ? error.message : "Internal server error",
             status: "INTERNAL_ERROR",
+            log_file: logFilePath,
           },
         },
         500,
@@ -401,11 +418,16 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
   app.openapi(
     streamGenerateContentRoute,
     async (c: Context): Promise<Response> => {
+      let rawRequestBody: GenerateContentRequest | undefined;
+      let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
+      let modelId = "";
+
       try {
         // Parse request
         const { modelWithMethod } = c.req.param();
-        const modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:streamGenerateContent"
+        modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:streamGenerateContent"
         const requestBody = await c.req.json();
+        rawRequestBody = requestBody;
 
         logger.debug(
           `/v1beta/models/${modelId}:streamGenerateContent payload:`,
@@ -440,6 +462,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           cancellationToken,
           lmRequestOptions,
         } = await prepareGeminiRequest({ requestBody, client });
+        lmChatMessages = vsCodeLmMessages;
 
         // 3. Send request to VSCode LM API
         const response = await client.sendRequest(
@@ -565,6 +588,15 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         );
       } catch (error) {
         logger.error("Gemini API streamGenerateContent request failed:", error);
+
+        const logFilePath = await handleErrorWithLogging({
+          requestBody: rawRequestBody,
+          lmChatMessages,
+          error,
+          endpoint: `/v1beta/models/${modelId}:streamGenerateContent`,
+          modelId,
+        });
+
         return c.json(
           {
             error: {
@@ -574,6 +606,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                   ? error.message
                   : "Internal server error",
               status: "INTERNAL_ERROR",
+              log_file: logFilePath,
             },
           },
           500,

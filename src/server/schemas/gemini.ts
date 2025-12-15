@@ -14,6 +14,7 @@ export const GeminiErrorResponseSchema = z
       code: z.number().describe("HTTP status code"),
       message: z.string().describe("Error message"),
       status: z.string().describe("Error status code (e.g., INVALID_ARGUMENT)"),
+      log_file: z.string().optional().describe("Path to error log file"),
     }),
   })
   .openapi("GeminiErrorResponse");

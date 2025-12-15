@@ -9,7 +9,7 @@ import { logger } from "../../utils/logger";
 
 interface ErrorLogContext {
   requestBody?: any;
-  vsCodeLmMessages?: vscode.LanguageModelChatMessage[];
+  lmChatMessages?: vscode.LanguageModelChatMessage[];
   error: Error | unknown;
   endpoint: string;
   modelId?: string;
@@ -170,7 +170,7 @@ function sanitizeAnthropicRequestBody(requestBody: any): any {
  * Sanitizes VSCode LanguageModelChatMessage array to protect user privacy
  * Removes message content while keeping metadata useful for debugging
  */
-function sanitizeVSCodeLmMessages(
+function sanitizeLmChatMessages(
   messages?: vscode.LanguageModelChatMessage[],
 ): any[] | undefined {
   return messages?.map((message) => {
@@ -267,7 +267,7 @@ export async function logErrorToFile(
       raw: context.error,
     },
     requestBody: sanitizeRequestBody(context.requestBody, context.endpoint),
-    vsCodeLmMessages: sanitizeVSCodeLmMessages(context.vsCodeLmMessages),
+    lmChatMessages: sanitizeLmChatMessages(context.lmChatMessages),
   };
 
   // Format as pretty-printed JSON with separator for readability

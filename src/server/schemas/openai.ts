@@ -734,6 +734,7 @@ export const CommonResponseError = z.looseObject({
     message: z.string(),
     param: z.string().nullable(),
     code: z.string().nullable(),
+    log_file: z.string().optional(),
   }),
 });
 
