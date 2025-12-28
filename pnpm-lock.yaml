@@ -39,6 +39,9 @@ importers:
       openai:
         specifier: ^5.22.0
         version: 5.22.0(ws@8.18.3)(zod@4.0.10)
+      smol-toml:
+        specifier: ^1.6.0
+        version: 1.6.0
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
@@ -5168,6 +5171,13 @@ packages:
       }
     engines: { node: ">=18" }
 
+  smol-toml@1.6.0:
+    resolution:
+      {
+        integrity: sha512-4zemZi0HvTnYwLfrpk/CF9LOd9Lt87kAt50GnqhMpyF9U3poDAP2+iukq2bZsO/ufegbYehBkqINbsWxj4l4cw==,
+      }
+    engines: { node: ">= 18" }
+
   spawndamnit@3.0.1:
     resolution:
       {
@@ -9358,6 +9368,8 @@ snapshots:
     dependencies:
       ansi-styles: 6.2.1
       is-fullwidth-code-point: 5.0.0
+
+  smol-toml@1.6.0: {}
 
   spawndamnit@3.0.1:
     dependencies:

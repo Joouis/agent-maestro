@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { parse, stringify } from "smol-toml";
 import * as vscode from "vscode";
 
 import { ProxyServer } from "../server/ProxyServer";
@@ -193,23 +194,44 @@ export function registerConfiguratorCommands(
           "config.toml",
         );
 
-        // Check if config file exists and confirm override
+        // Try to read existing config
+        let existingConfig: any = {};
         let fileExists = false;
+        let parseError = false;
+
         try {
           fs.accessSync(codexConfigPath);
           fileExists = true;
+
+          try {
+            existingConfig = parse(fs.readFileSync(codexConfigPath, "utf-8"));
+          } catch (error) {
+            parseError = true;
+            logger.warn(
+              `Failed to parse existing Codex config: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+
+          // Prompt user to confirm update
+          const prompt = parseError
+            ? "Failed to load existing config file. Do you want to create a fresh configuration?"
+            : "Config file already exists. Do you want to update it?";
 
           const shouldOverride = await vscode.window.showQuickPick(
             ["Yes", "No"],
             {
               title: "Codex Configuration Found",
-              placeHolder:
-                "Config file already exists. Do you want to update it?",
+              placeHolder: prompt,
             },
           );
 
           if (shouldOverride !== "Yes") {
             return;
+          }
+
+          // Reset to empty config if parse failed
+          if (parseError) {
+            existingConfig = {};
           }
         } catch (error) {
           // File doesn't exist, continue with creation
@@ -238,17 +260,20 @@ export function registerConfiguratorCommands(
 
         const proxyPort = proxy.getStatus().port;
 
-        // Create config content
-        const configContent = `# Set the default model and provider
-model = "${selectedModel.modelId}"
-model_provider = "agent-maestro"
-
-# Configure the Agent Maestro provider
-[model_providers.agent-maestro]
-name = "Agent Maestro"
-base_url = "http://localhost:${proxyPort}/api/openai"
-wire_api = "chat"
-`;
+        // Build updated config by merging with existing config
+        const updatedConfig = {
+          ...existingConfig,
+          model: selectedModel.modelId,
+          model_provider: "agent-maestro",
+          model_providers: {
+            ...existingConfig.model_providers,
+            "agent-maestro": {
+              name: "Agent Maestro",
+              base_url: `http://localhost:${proxyPort}/api/openai`,
+              wire_api: "chat",
+            },
+          },
+        };
 
         // Ensure .codex directory exists
         const codexDir = path.dirname(codexConfigPath);
@@ -259,8 +284,8 @@ wire_api = "chat"
           // Directory might already exist, ignore error
         }
 
-        // Write config file
-        fs.writeFileSync(codexConfigPath, configContent);
+        // Write config file using smol-toml stringify
+        fs.writeFileSync(codexConfigPath, stringify(updatedConfig));
 
         vscode.window.showInformationMessage(
           `Codex configuration ${fileExists ? "updated" : "created"} successfully! The configuration points to Agent Maestro proxy server for OpenAI-compatible API.`,
