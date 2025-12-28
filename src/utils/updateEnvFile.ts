@@ -15,13 +15,6 @@ import { dirname } from "path";
  * - Existing comments and blank lines are preserved
  * - Keys in `updates` but not in `preserveKeys` will be updated or added
  * - Keys in both `updates` and `preserveKeys` will only be added if they don't exist
- *
- * @example
- * // Update or create .env file, preserving existing API_KEY if present
- * await updateEnvFile('/path/to/.env', {
- *   API_ENDPOINT: 'http://localhost:3000',
- *   API_KEY: 'default-key'
- * }, ['API_KEY']);
  */
 export async function updateEnvFile(
   path: string,
