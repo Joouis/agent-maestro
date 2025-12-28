@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.5.2 - 2025.12.28
+
+- Added comprehensive error diagnostics with detailed logging for Anthropic, Gemini, and OpenAI API routes
+- Enhanced Codex configuration to incrementally update TOML files, preserving existing user settings while updating only Agent Maestro provider configuration.
+
 ## v2.5.1 - 2025.12.14
 
 - Automatically complete Claude onboarding to skip login flow during setup
