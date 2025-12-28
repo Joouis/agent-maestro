@@ -238,18 +238,33 @@ Basic integration support:
 
 ## Error Diagnostics
 
-Agent Maestro automatically logs detailed error diagnostics for `/v1/messages` route failures to help troubleshoot issues. When an error occurs, a timestamped diagnostic file is created in your workspace root with:
+Agent Maestro automatically logs detailed error diagnostics when API requests fail. Each extension launch creates a timestamped log file in your workspace root: `{YYYY}-{MM}-{DD}_{HH}-{MM}-{SS}-{mmm}-debug.log`. All errors during that session are appended to the same file.
 
-- Request payload (with user data sanitized for privacy)
-- Error details and stack traces
-- Extension metadata
-- Model information
+**What's logged**: Request payload, transformed VSCode LM messages, error details, extension metadata, model ID, endpoint, and timestamp.
 
-**Log Location**: `{workspace_root}/{timestamp}-debug.log`
+**Supported endpoints**:
 
-**Privacy**: All sensitive user data (text content, images, documents, tool inputs) is redacted as `[REDACTED]` while preserving the request structure for debugging.
+- `/api/anthropic/v1/messages` (content sanitized)
+- `/api/openai/chat/completions` (TODO: sanitization)
+- `/api/gemini/v1beta/models/{model}:generateContent|streamGenerateContent` (TODO: sanitization)
 
-**Example**: If you encounter "unexpected `tool_use_id` found in `tool_result` blocks" errors, the diagnostic log will contain sanitized request details to help identify the root cause.
+**Privacy protection**:
+
+- **Anthropic only**: User content is automatically redacted (text, images, documents, tool I/O, search results → `[REDACTED]`)
+- **OpenAI/Gemini**: Not yet sanitized - **review carefully before sharing logs**
+
+Error responses include the log file path for easy troubleshooting:
+
+```json
+{
+  "error": {
+    "message": "...",
+    "log_file": "/path/to/workspace/2025-12-28_14-30-45-123-debug.log"
+  }
+}
+```
+
+**Tip**: Add `*-debug.log` to `.gitignore` to prevent committing diagnostic files.
 
 ## Migration from v1.x
 

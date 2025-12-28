@@ -231,6 +231,7 @@ function sanitizeRequestBody(requestBody: any, endpoint: string): any {
     return sanitizeAnthropicRequestBody(requestBody);
   }
 
+  // TODO: Add sanitization for Gemini and OpenAI request formats to protect user privacy
   // For other endpoints, return as-is
   return requestBody;
 }

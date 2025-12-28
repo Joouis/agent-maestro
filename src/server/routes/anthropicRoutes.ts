@@ -16,6 +16,8 @@ import {
 } from "../utils/anthropic";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 
+const ANTHROPIC_MODEL_PREFIX = "claude";
+
 /**
  * Apply Claude model selection logic based on user configuration
  *
@@ -33,8 +35,6 @@ const applyClaudeModelSelection = (
   modelId: string,
   context: string = "request",
 ): string => {
-  const ANTHROPIC_MODEL_PREFIX = "claude";
-
   // Get Claude configured models
   const claudeConfig = getClaudeConfiguredModels();
 

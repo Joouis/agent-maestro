@@ -395,7 +395,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         requestBody: rawRequestBody,
         lmChatMessages,
         error,
-        endpoint: `/v1beta/models/${modelId}:generateContent`,
+        endpoint: `/api/gemini/v1beta/models/${modelId}:generateContent`,
         modelId,
       });
 
@@ -593,7 +593,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           requestBody: rawRequestBody,
           lmChatMessages,
           error,
-          endpoint: `/v1beta/models/${modelId}:streamGenerateContent`,
+          endpoint: `/api/gemini/v1beta/models/${modelId}:streamGenerateContent`,
           modelId,
         });
 

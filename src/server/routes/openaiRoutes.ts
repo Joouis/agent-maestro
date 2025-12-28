@@ -377,7 +377,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
         requestBody: rawRequestBody,
         lmChatMessages,
         error,
-        endpoint: "/chat/completions",
+        endpoint: "/api/openai/chat/completions",
         modelId: requestedModelId,
       });
 
