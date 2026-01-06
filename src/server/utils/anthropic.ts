@@ -191,6 +191,59 @@ export const convertAnthropicMessageToVSCode = (
 };
 
 /**
+ * Validate and clean messages to ensure tool_use and tool_result are properly paired
+ * Removes orphaned tool_result blocks that don't have corresponding tool_use blocks
+ *
+ * This prevents API errors when conversation history is truncated or summarized,
+ * which can leave tool_result blocks without their corresponding tool_use blocks.
+ *
+ * @param messages - Array of Anthropic MessageParam
+ * @returns Cleaned array with orphaned tool_result blocks removed
+ */
+const validateToolPairing = (
+  messages: Array<Anthropic.Messages.MessageParam>,
+): Array<Anthropic.Messages.MessageParam> => {
+  const toolUseIds = new Set<string>();
+  const cleanedMessages: Array<Anthropic.Messages.MessageParam> = [];
+
+  // First pass: collect all tool_use IDs
+  for (const message of messages) {
+    if (typeof message.content !== "string") {
+      for (const block of message.content) {
+        if (block.type === "tool_use") {
+          toolUseIds.add(block.id);
+        }
+      }
+    }
+  }
+
+  // Second pass: filter out orphaned tool_result blocks
+  for (const message of messages) {
+    if (typeof message.content === "string") {
+      cleanedMessages.push(message);
+      continue;
+    }
+
+    const filteredContent = message.content.filter((block) => {
+      if (block.type === "tool_result") {
+        return toolUseIds.has(block.tool_use_id);
+      }
+      return true;
+    });
+
+    // Only include the message if it has content after filtering
+    if (filteredContent.length > 0) {
+      cleanedMessages.push({
+        ...message,
+        content: filteredContent,
+      });
+    }
+  }
+
+  return cleanedMessages;
+};
+
+/**
  * Convert an array of Anthropic MessageParams to VS Code LanguageModelChatMessages
  * Flattens any array results from individual message conversions
  *
@@ -200,9 +253,12 @@ export const convertAnthropicMessageToVSCode = (
 export const convertAnthropicMessagesToVSCode = (
   messages: Array<Anthropic.Messages.MessageParam>,
 ): vscode.LanguageModelChatMessage[] => {
+  // First validate and clean messages to ensure tool pairing is correct
+  const validatedMessages = validateToolPairing(messages);
+
   const results: vscode.LanguageModelChatMessage[] = [];
 
-  for (const message of messages) {
+  for (const message of validatedMessages) {
     const converted = convertAnthropicMessageToVSCode(message);
     if (Array.isArray(converted)) {
       results.push(...converted);
