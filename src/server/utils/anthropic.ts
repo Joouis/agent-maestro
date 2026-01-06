@@ -204,7 +204,7 @@ export const convertAnthropicMessageToVSCode = (
  * @param messages - Array of Anthropic MessageParam
  * @returns Cleaned array with orphaned tool_result blocks removed
  */
-const validateToolPairing = (
+export const validateToolPairing = (
   messages: Array<Anthropic.Messages.MessageParam>,
 ): Array<Anthropic.Messages.MessageParam> => {
   const cleanedMessages: Array<Anthropic.Messages.MessageParam> = [];

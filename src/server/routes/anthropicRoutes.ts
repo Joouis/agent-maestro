@@ -13,6 +13,7 @@ import {
   convertAnthropicSystemToVSCode,
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
+  validateToolPairing,
 } from "../utils/anthropic";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 
@@ -231,14 +232,24 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
     try {
       // Parse request body
-      const requestBody =
+      const rawRequestBodyData =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
-      rawRequestBody = requestBody;
+      rawRequestBody = rawRequestBodyData;
+
+      // Validate and clean messages to remove orphaned tool_results
+      const validatedMessages = validateToolPairing(
+        rawRequestBodyData.messages,
+      );
+
+      // Create a new request body with validated messages
+      const requestBody: Anthropic.Messages.MessageCreateParams = {
+        ...rawRequestBodyData,
+        messages: validatedMessages,
+      };
 
       const {
         model: modelId,
         system,
-        messages,
         tools,
         tool_choice,
         ...msgCreateParams
@@ -531,8 +542,19 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages/count_tokens - Count input tokens
   app.openapi(countTokensRoute, async (c: Context) => {
     try {
-      const requestBody =
+      const rawRequestBodyData =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
+
+      // Validate and clean messages to remove orphaned tool_results
+      const validatedMessages = validateToolPairing(
+        rawRequestBodyData.messages,
+      );
+
+      // Create a new request body with validated messages
+      const requestBody: Anthropic.Messages.MessageCreateParams = {
+        ...rawRequestBodyData,
+        messages: validatedMessages,
+      };
 
       // Apply the same model selection logic as /v1/messages
       const modelId = applyClaudeModelSelection(
