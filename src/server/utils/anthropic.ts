@@ -193,9 +193,13 @@ export const convertAnthropicMessageToVSCode = (
 /**
  * Validate and clean messages to ensure tool_use and tool_result are properly paired
  * Removes orphaned tool_result blocks that don't have corresponding tool_use blocks
+ * in the PREVIOUS message.
  *
  * This prevents API errors when conversation history is truncated or summarized,
  * which can leave tool_result blocks without their corresponding tool_use blocks.
+ *
+ * According to Anthropic API requirements, each tool_result must have a corresponding
+ * tool_use block in the immediately preceding message.
  *
  * @param messages - Array of Anthropic MessageParam
  * @returns Cleaned array with orphaned tool_result blocks removed
@@ -203,30 +207,32 @@ export const convertAnthropicMessageToVSCode = (
 const validateToolPairing = (
   messages: Array<Anthropic.Messages.MessageParam>,
 ): Array<Anthropic.Messages.MessageParam> => {
-  const toolUseIds = new Set<string>();
   const cleanedMessages: Array<Anthropic.Messages.MessageParam> = [];
 
-  // First pass: collect all tool_use IDs
-  for (const message of messages) {
-    if (typeof message.content !== "string") {
-      for (const block of message.content) {
-        if (block.type === "tool_use") {
-          toolUseIds.add(block.id);
-        }
-      }
-    }
-  }
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
 
-  // Second pass: filter out orphaned tool_result blocks
-  for (const message of messages) {
     if (typeof message.content === "string") {
       cleanedMessages.push(message);
       continue;
     }
 
+    // Collect tool_use IDs from the previous message
+    const previousMessage = i > 0 ? messages[i - 1] : null;
+    const previousToolUseIds = new Set<string>();
+
+    if (previousMessage && typeof previousMessage.content !== "string") {
+      for (const block of previousMessage.content) {
+        if (block.type === "tool_use") {
+          previousToolUseIds.add(block.id);
+        }
+      }
+    }
+
+    // Filter out tool_result blocks that don't have corresponding tool_use in previous message
     const filteredContent = message.content.filter((block) => {
       if (block.type === "tool_result") {
-        return toolUseIds.has(block.tool_use_id);
+        return previousToolUseIds.has(block.tool_use_id);
       }
       return true;
     });
