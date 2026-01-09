@@ -153,6 +153,11 @@
         "command": "agent-maestro.fixCopilotChatModelNotSupported",
         "title": "Fix GitHub Copilot Chat - Model is not supported error",
         "category": "Agent Maestro"
+      },
+      {
+        "command": "agent-maestro.setApiKey",
+        "title": "Set API Key",
+        "category": "Agent Maestro"
       }
     ]
   },

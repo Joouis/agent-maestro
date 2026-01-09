@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 
 import { registerAllCommands } from "./commands";
+import { restoreApiKey } from "./commands/apiKeyCommands";
 import { ExtensionController } from "./core/controller";
 import { McpServer } from "./server/McpServer";
 import { ProxyServer } from "./server/ProxyServer";
@@ -53,6 +54,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const proxyPort = envProxyPort ? envProxyPort : config.proxyServerPort;
   proxy = new ProxyServer(controller, proxyPort, context);
+
+  // Restore API key from secrets storage
+  await restoreApiKey(proxy, context);
 
   // Register all commands
   registerAllCommands(context, controller, proxy, mcpServer);

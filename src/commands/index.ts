@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { ExtensionController } from "../core/controller";
 import { McpServer } from "../server/McpServer";
 import { ProxyServer } from "../server/ProxyServer";
+import { registerApiKeyCommands } from "./apiKeyCommands";
 import { registerConfiguratorCommands } from "./configuratorCommands";
 import { registerCopilotFixCommands } from "./copilotFixCommands";
 import { registerMcpCommands } from "./mcpCommands";
@@ -20,4 +21,5 @@ export function registerAllCommands(
   registerConfiguratorCommands(proxy, context);
   registerCopilotFixCommands(context);
   registerStatusCommands(controller, context);
+  registerApiKeyCommands(proxy, context);
 }
