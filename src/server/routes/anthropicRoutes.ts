@@ -310,8 +310,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             });
 
             accumulatedText += JSON.stringify(chunk);
-          } else {
-            accumulatedText += JSON.stringify(chunk);
           }
         }
 
@@ -459,8 +457,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                 },
               });
 
-              accumulatedText += JSON.stringify(chunk);
-            } else {
               accumulatedText += JSON.stringify(chunk);
             }
           }
