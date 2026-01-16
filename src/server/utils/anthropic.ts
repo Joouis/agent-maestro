@@ -309,7 +309,7 @@ export const convertAnthropicToolChoiceToVSCode = (
 
 /**
  * Token Calibration Coefficients
- * Linear regression model: CAPI = slope × VSCode + baseOffset
+ * Linear regression model: ŷ = slope * token_count_by_VSCode_API + baseOffset
  */
 interface CalibrationCoefficients {
   slope: number;
