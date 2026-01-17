@@ -523,7 +523,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         error instanceof Error ? error.message : JSON.stringify(error);
 
       const isToolResultError = errorMessage.includes(
-        "`tool_result` block must have a corresponding `tool_use` block in the previous message",
+        "unexpected `tool_use_id` found in `tool_result` blocks",
       );
 
       return c.json(
