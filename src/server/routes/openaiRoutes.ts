@@ -124,7 +124,10 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
       const vsCodeLmMessages = convertOpenAIMessagesToVSCode(messages);
       lmChatMessages = vsCodeLmMessages;
 
-      // Count input tokens on entire request body (includes messages, tools, config)
+      // NOTE: Rough estimation of input tokens for OpenAI API
+      // We pass the stringified request body to VSCode's countTokens() API, which is technically
+      // a misuse since it's designed for LanguageModelChatMessage objects. However, we intentionally
+      // do this to leverage the official tokenizer instead of building our own wheel.
       const requestBodyStr = JSON.stringify(requestBody);
       logger.debug("/chat/completions payload: ", requestBodyStr);
       const cancellationToken = new vscode.CancellationTokenSource().token;

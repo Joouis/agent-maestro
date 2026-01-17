@@ -46,7 +46,10 @@ const prepareGeminiRequest = async ({
     ...convertGeminiContentsToVSCode(contents || []),
   ];
 
-  // Count input tokens on entire request body (includes system, contents, tools, config)
+  // NOTE: Rough estimation of input tokens for Gemini API
+  // We pass the stringified request body to VSCode's countTokens() API, which is technically
+  // a misuse since it's designed for LanguageModelChatMessage objects. However, we intentionally
+  // do this to leverage the official tokenizer instead of building our own wheel.
   const cancellationToken = new vscode.CancellationTokenSource().token;
   const inputTokenCount = await client.countTokens(
     requestBodyStr,
