@@ -34,6 +34,9 @@ const prepareGeminiRequest = async ({
   requestBody: GenerateContentRequest;
   client: vscode.LanguageModelChat;
 }) => {
+  const requestBodyStr = JSON.stringify(requestBody);
+  logger.debug("Gemini request payload: ", requestBodyStr);
+
   const { systemInstruction, contents, tools, generationConfig, toolConfig } =
     requestBody;
 
@@ -43,12 +46,12 @@ const prepareGeminiRequest = async ({
     ...convertGeminiContentsToVSCode(contents || []),
   ];
 
-  // Count input tokens
-  let inputTokenCount = 0;
+  // Count input tokens on entire request body (includes system, contents, tools, config)
   const cancellationToken = new vscode.CancellationTokenSource().token;
-  for (const msg of vsCodeLmMessages) {
-    inputTokenCount += await client.countTokens(msg, cancellationToken);
-  }
+  const inputTokenCount = await client.countTokens(
+    requestBodyStr,
+    cancellationToken,
+  );
 
   // Build request options
   const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
@@ -287,6 +290,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
     let rawRequestBody: GenerateContentRequest | undefined;
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let modelId = "";
+    let inputTokens = 0;
 
     try {
       // Parse request
@@ -294,11 +298,6 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:generateContent"
       const requestBody = await c.req.json();
       rawRequestBody = requestBody;
-
-      logger.debug(
-        `/v1beta/models/${modelId}:generateContent payload:`,
-        JSON.stringify(requestBody, null, 2),
-      );
 
       // 1. Get chat model client
       const { client, error: clientError } = await getChatModelClient(modelId);
@@ -328,6 +327,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         lmRequestOptions,
       } = await prepareGeminiRequest({ requestBody, client });
       lmChatMessages = vsCodeLmMessages;
+      inputTokens = inputTokenCount;
 
       // 3. Send request to VSCode LM API
       const response = await client.sendRequest(
@@ -393,6 +393,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
 
       const logFilePath = await handleErrorWithLogging({
         requestBody: rawRequestBody,
+        inputTokens,
         lmChatMessages,
         error,
         endpoint: `/api/gemini/v1beta/models/${modelId}:generateContent`,
@@ -421,6 +422,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       let rawRequestBody: GenerateContentRequest | undefined;
       let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
       let modelId = "";
+      let inputTokens = 0;
 
       try {
         // Parse request
@@ -428,11 +430,6 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:streamGenerateContent"
         const requestBody = await c.req.json();
         rawRequestBody = requestBody;
-
-        logger.debug(
-          `/v1beta/models/${modelId}:streamGenerateContent payload:`,
-          JSON.stringify(requestBody, null, 2),
-        );
 
         // 1. Get chat model client
         const { client, error: clientError } =
@@ -463,6 +460,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           lmRequestOptions,
         } = await prepareGeminiRequest({ requestBody, client });
         lmChatMessages = vsCodeLmMessages;
+        inputTokens = inputTokenCount;
 
         // 3. Send request to VSCode LM API
         const response = await client.sendRequest(
@@ -591,6 +589,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
 
         const logFilePath = await handleErrorWithLogging({
           requestBody: rawRequestBody,
+          inputTokens,
           lmChatMessages,
           error,
           endpoint: `/api/gemini/v1beta/models/${modelId}:streamGenerateContent`,
@@ -622,11 +621,6 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       const { modelWithMethod } = c.req.param();
       const modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:countTokens"
       const requestBody = await c.req.json();
-
-      logger.debug(
-        `/v1beta/models/${modelId}:countTokens payload:`,
-        JSON.stringify(requestBody, null, 2),
-      );
 
       // 1. Get chat model client
       const { client, error: clientError } = await getChatModelClient(modelId);
