@@ -160,7 +160,7 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 
 ```json
 {
-  "agent-maestro.defaultRooIdentifier": "roo-cline",
+  "agent-maestro.defaultRooIdentifier": "rooveterinaryinc.roo-cline",
   "agent-maestro.proxyServerPort": 23333,
   "agent-maestro.mcpServerPort": 23334
 }
@@ -168,11 +168,11 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 
 **Available Settings:**
 
-| Setting                              | Description                  | Default       |
-| ------------------------------------ | ---------------------------- | ------------- |
-| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"roo-cline"` |
-| `agent-maestro.proxyServerPort`      | Proxy server port            | `23333`       |
-| `agent-maestro.mcpServerPort`        | MCP server port              | `23334`       |
+| Setting                              | Description                  | Default                        |
+| ------------------------------------ | ---------------------------- | ------------------------------ |
+| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"rooveterinaryinc.roo-cline"` |
+| `agent-maestro.proxyServerPort`      | Proxy server port            | `23333`                        |
+| `agent-maestro.mcpServerPort`        | MCP server port              | `23334`                        |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
 
