@@ -232,6 +232,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
     let effectiveModelId = "";
     let rawRequestBody;
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
+    let inputTokens = 0;
 
     try {
       // Parse request body
@@ -266,6 +267,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           client,
         });
       lmChatMessages = vsCodeLmMessages;
+      inputTokens = inputTokenCount.calibrated;
 
       logger.info(
         `Received /v1/messages call with model: ${client.name} (${client.vendor}/${client.family}) | Input tokens: ${inputTokenCount.original} → ${inputTokenCount.calibrated}`,
@@ -510,6 +512,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       const logFilePath = await handleErrorWithLogging({
         requestBody: rawRequestBody,
+        inputTokens,
         lmChatMessages,
         error,
         endpoint: "/api/anthropic/v1/messages",
@@ -519,12 +522,19 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const errorMessage =
         error instanceof Error ? error.message : JSON.stringify(error);
 
+      const isToolResultError = errorMessage.includes(
+        "`tool_result` block must have a corresponding `tool_use` block in the previous message",
+      );
+
       return c.json(
         {
           error: {
             message: errorMessage,
             type: "internal_server_error",
             log_file: logFilePath,
+            ...(isToolResultError && {
+              hint: "This error may occur when input tokens exceed the model's context limit. Please use the /compact command to reduce the conversation history.",
+            }),
           },
         },
         500,

@@ -1,8 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import * as vscode from "vscode";
 
-import { logger } from "../../utils/logger";
-
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
 
@@ -353,7 +351,7 @@ const calibrationConfig: TokenCalibrationConfig = {
   },
 };
 
-export interface TokenCountResult {
+export interface TokenCounts {
   original: number; // Original VSCode API token count
   calibrated: number; // Calibrated token count matching actual API usage
 }
@@ -365,10 +363,7 @@ export interface TokenCountResult {
  * @param isInput - True for input tokens, false for output tokens
  * @returns Object containing both original and calibrated token counts
  */
-function calibrateTokens(
-  vscodeTokens: number,
-  isInput: boolean,
-): TokenCountResult {
+function calibrateTokens(vscodeTokens: number, isInput: boolean): TokenCounts {
   const coefficients = isInput
     ? calibrationConfig.input
     : calibrationConfig.output;
@@ -411,7 +406,7 @@ export const countAnthropicMessageTokens = async (
   message: string,
   client: vscode.LanguageModelChat,
   isInput: boolean = true,
-): Promise<TokenCountResult> => {
+): Promise<TokenCounts> => {
   const cancellationToken = new vscode.CancellationTokenSource().token;
   const tokenCount = await client.countTokens(message, cancellationToken);
 

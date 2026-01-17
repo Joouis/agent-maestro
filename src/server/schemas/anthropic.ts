@@ -9,6 +9,10 @@ export const AnthropicErrorResponseSchema = z
         .string()
         .optional()
         .describe("Path to debug log file with detailed error context"),
+      hint: z
+        .string()
+        .optional()
+        .describe("Optional hint for resolving the error"),
     }),
   })
   .openapi("AnthropicErrorResponse");

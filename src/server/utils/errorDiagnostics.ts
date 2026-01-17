@@ -13,6 +13,7 @@ interface ErrorLogContext {
   error: Error | unknown;
   endpoint: string;
   modelId?: string;
+  inputTokens?: number;
 }
 
 /**
@@ -262,6 +263,7 @@ export async function logErrorToFile(
     endpoint: context.endpoint,
     extension: getExtensionMetadata(),
     modelId: context.modelId,
+    inputTokens: context.inputTokens,
     error: {
       message: errorMessage,
       stack: errorStack,
