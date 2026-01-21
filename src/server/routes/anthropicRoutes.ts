@@ -463,7 +463,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         },
       );
     } catch (error) {
-      logger.error("Anthropic API /v1/messages request failed:", error);
+      logger.error("→ /v1/messages | ", error);
 
       const logFilePath = await handleErrorWithLogging({
         requestBody: rawRequestBody,
