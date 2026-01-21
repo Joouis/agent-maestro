@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.6.0 - 2026.01.21
+
+- Add fuzzy model matching using Jaccard similarity
+  - Match model IDs with date suffixes to available models (e.g., `claude-opus-4-5-20251101` → `claude-opus-4.5`)
+  - Warn when no Claude models found (VPN/network issue hint)
+  - Add error hints for `model_not_supported` errors
+  - Improve logging format (→ request, ← response, ✕ error)
+- Add trivial model-specific token calibration for Opus models
+
 ## v2.5.3 - 2026.01.17
 
 - Mitigate "unexpected `tool_use_id` found in `tool_result` blocks" 400 errors by calibrating Anthropic token counts with linear regression to trigger auto-compact before context window limit is exceeded
