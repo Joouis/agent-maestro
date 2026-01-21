@@ -335,19 +335,38 @@ interface TokenCalibrationConfig {
  * Uses linear regression coefficients optimized for different token size ranges.
  * Output tokens use uniform parameters across all ranges due to high variability.
  */
-const calibrationConfig: TokenCalibrationConfig = {
-  input: {
-    small: { slope: 1.065, baseOffset: -120 },
-    medium: { slope: 1.082, baseOffset: 1300 },
-    large: { slope: 1.047, baseOffset: 2000 },
-    xlarge: { slope: 1.05, baseOffset: 1500 },
+const calibrationConfig: {
+  default: TokenCalibrationConfig;
+  opus: TokenCalibrationConfig;
+} = {
+  default: {
+    input: {
+      small: { slope: 1.065, baseOffset: -120 },
+      medium: { slope: 1.082, baseOffset: 1300 },
+      large: { slope: 1.05, baseOffset: 2000 },
+      xlarge: { slope: 1.05, baseOffset: 1500 },
+    },
+    output: {
+      // Use same parameters for all output token ranges due to insufficient data
+      small: { slope: 0.67, baseOffset: 170 },
+      medium: { slope: 0.67, baseOffset: 170 },
+      large: { slope: 0.67, baseOffset: 170 },
+      xlarge: { slope: 0.67, baseOffset: 170 },
+    },
   },
-  output: {
-    // Use same parameters for all output token ranges due to insufficient data
-    small: { slope: 0.67, baseOffset: 170 },
-    medium: { slope: 0.67, baseOffset: 170 },
-    large: { slope: 0.67, baseOffset: 170 },
-    xlarge: { slope: 0.67, baseOffset: 170 },
+  opus: {
+    input: {
+      small: { slope: 1.1, baseOffset: 0 },
+      medium: { slope: 1.1, baseOffset: 1500 },
+      large: { slope: 1.12, baseOffset: 1500 },
+      xlarge: { slope: 1.13, baseOffset: 1500 },
+    },
+    output: {
+      small: { slope: 1, baseOffset: 150 },
+      medium: { slope: 1, baseOffset: 150 },
+      large: { slope: 1, baseOffset: 150 },
+      xlarge: { slope: 1, baseOffset: 150 },
+    },
   },
 };
 
@@ -361,12 +380,21 @@ export interface TokenCounts {
  *
  * @param vscodeTokens - Token count from VSCode API
  * @param isInput - True for input tokens, false for output tokens
+ * @param modelId - Model ID to determine which calibration config to use
  * @returns Object containing both original and calibrated token counts
  */
-function calibrateTokens(vscodeTokens: number, isInput: boolean): TokenCounts {
-  const coefficients = isInput
-    ? calibrationConfig.input
-    : calibrationConfig.output;
+function calibrateTokens(
+  vscodeTokens: number,
+  isInput: boolean,
+  modelId?: string,
+): TokenCounts {
+  // Select config based on model ID
+  const configKey = modelId?.toLowerCase().includes("opus")
+    ? "opus"
+    : "default";
+  const config = calibrationConfig[configKey];
+
+  const coefficients = isInput ? config.input : config.output;
 
   let calibration: CalibrationCoefficients;
 
@@ -400,15 +428,17 @@ function calibrateTokens(vscodeTokens: number, isInput: boolean): TokenCounts {
  * @param message - The message text to count tokens for
  * @param client - The VSCode language model chat client
  * @param isInput - True for input tokens, false for output tokens
+ * @param modelId - Model ID to determine which calibration config to use
  * @returns Object containing both original and calibrated token counts
  */
 export const countAnthropicMessageTokens = async (
   message: string,
   client: vscode.LanguageModelChat,
   isInput: boolean = true,
+  modelId?: string,
 ): Promise<TokenCounts> => {
   const cancellationToken = new vscode.CancellationTokenSource().token;
   const tokenCount = await client.countTokens(message, cancellationToken);
 
-  return calibrateTokens(tokenCount, isInput);
+  return calibrateTokens(tokenCount, isInput, modelId);
 };
