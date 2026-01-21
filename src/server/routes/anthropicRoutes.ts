@@ -485,16 +485,14 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         "model_not_supported",
       );
 
-      if (isModelNotSupportedError) {
-        // Need to reload VS Code to clean the model cache
-        await vscode.commands.executeCommand("workbench.action.reloadWindow");
-      }
-
       let hintMessage: string | undefined;
 
       if (isToolResultError) {
         hintMessage =
           "This error may occur when input tokens exceed the model's context limit. Please use the /compact command to reduce the conversation history.";
+      } else if (isModelNotSupportedError) {
+        hintMessage =
+          "This error may be caused by network connectivity issues. Try these steps: 1. Check your network connection and VPN settings; 2. Reload VS Code to refresh the model cache (Cmd/Ctrl+R or Cmd/Ctrl+Shift+P > 'Developer: Reload Window').";
       }
 
       return c.json(
