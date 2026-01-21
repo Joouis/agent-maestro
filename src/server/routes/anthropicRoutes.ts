@@ -181,8 +181,7 @@ const countTokensRoute = createRoute({
 export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
-    // Effective model ID after any mapping
-    let modelId = "";
+    let effectiveModelId = "";
     let rawRequestBody;
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let inputTokens = 0;
@@ -206,7 +205,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const { client, error: clientError } = await getChatModelClient(model);
 
       if (client) {
-        modelId = client.id;
+        effectiveModelId = client.id;
       }
 
       if (clientError) {
@@ -224,7 +223,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       logger.info(
         `→ /v1/messages | model: ${
-          model === modelId ? model : `${model} → ${modelId}`
+          model === effectiveModelId ? model : `${model} → ${effectiveModelId}`
         } | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated}`,
       );
 
@@ -471,7 +470,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         lmChatMessages,
         error,
         endpoint: "/api/anthropic/v1/messages",
-        modelId,
+        modelId: effectiveModelId,
       });
 
       const errorMessage =
