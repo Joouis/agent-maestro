@@ -6,6 +6,7 @@ class ChatModelsCache {
   private static instance: ChatModelsCache;
   private _cachedModels: vscode.LanguageModelChat[] = [];
   private initializationPromise: Promise<void> | null = null;
+  private hasShownNoClaudeWarning = false;
 
   // Getter that filters out claude-3.7 models by default due to model_not_supported error
   private get cachedModels(): vscode.LanguageModelChat[] {
@@ -40,6 +41,19 @@ class ChatModelsCache {
         logger.info("Initializing chat models cache...");
         this.cachedModels = await vscode.lm.selectChatModels({});
         logger.info(`Cached ${this.cachedModels.length} chat models`);
+
+        // Check for Claude models availability and show warning once if none found
+        if (this.cachedModels.length > 0 && !this.hasShownNoClaudeWarning) {
+          const hasClaudeModels = this.cachedModels.some((m) =>
+            m.id.includes("claude"),
+          );
+          if (!hasClaudeModels) {
+            this.hasShownNoClaudeWarning = true;
+            vscode.window.showWarningMessage(
+              "No Claude models found. Please check your VPN status - Anthropic models may not be accessible in some regions.",
+            );
+          }
+        }
       } catch (error) {
         logger.error("Failed to initialize chat models cache:", error);
         this.cachedModels = [];
@@ -183,23 +197,127 @@ export const getChatModelsQuickPickItems = async (
 };
 
 /**
- * Get chat model client with integrated override logic
+ * Calculate Jaccard similarity between two strings based on character bigrams
  */
-export const getChatModelClient = async (modelId: string) => {
-  const models = await chatModelsCache.getChatModels();
-  const client = models.find((m) => m.id === modelId);
+function jaccardSimilarity(str1: string, str2: string): number {
+  const getBigrams = (str: string): Set<string> => {
+    const bigrams = new Set<string>();
+    const normalized = str.toLowerCase().replace(/[^a-z0-9]/g, "");
+    for (let i = 0; i < normalized.length - 1; i++) {
+      bigrams.add(normalized.substring(i, i + 2));
+    }
+    return bigrams;
+  };
 
-  if (!client) {
-    logger.error(`No VS Code LM model available for model ID: ${modelId}`);
-    return {
-      error: {
-        error: {
-          message: `Model '${modelId}' not found. Use /api/v1/lm/chatModels to list available models and pass a valid model ID.`,
-          type: "invalid_request_error",
-        },
-      },
-    };
+  const bigrams1 = getBigrams(str1);
+  const bigrams2 = getBigrams(str2);
+
+  if (bigrams1.size === 0 && bigrams2.size === 0) {
+    return 1;
   }
 
-  return { client };
+  let intersection = 0;
+  for (const bigram of bigrams1) {
+    if (bigrams2.has(bigram)) {
+      intersection++;
+    }
+  }
+
+  const union = bigrams1.size + bigrams2.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Find the best matching model using Jaccard similarity
+ */
+function findBestMatch(
+  modelId: string,
+  models: vscode.LanguageModelChat[],
+): vscode.LanguageModelChat | null {
+  if (models.length === 0) {
+    return null;
+  }
+
+  let bestMatch: vscode.LanguageModelChat | null = null;
+  let bestScore = 0;
+
+  for (const model of models) {
+    const score = jaccardSimilarity(modelId, model.id);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = model;
+    }
+  }
+
+  // Only accept matches with a reasonable similarity threshold
+  if (bestScore >= 0.3 && bestMatch) {
+    logger.info(
+      `Fuzzy matched model "${modelId}" to "${bestMatch.id}" (similarity: ${bestScore.toFixed(2)})`,
+    );
+    return bestMatch;
+  }
+
+  return null;
+}
+
+/**
+ * Get chat model client with integrated model mapping logic
+ *
+ * This function handles:
+ * 1. Exact match lookup
+ * 2. Retry with cache refresh if not found
+ * 3. Fuzzy matching using Jaccard similarity
+ * 4. Fallback to "auto" or first available model
+ * 5. Warning if no Claude models are available (VPN issue hint)
+ */
+export const getChatModelClient = async (modelId: string) => {
+  let models = await chatModelsCache.getChatModels();
+
+  // 1. Try exact match
+  let client = models.find((m) => m.id === modelId);
+  if (client) {
+    return { client };
+  }
+
+  // 2. Retry with cache refresh
+  logger.info(`Model "${modelId}" not found, refreshing cache...`);
+  await chatModelsCache.refresh();
+  models = await chatModelsCache.getChatModels();
+
+  client = models.find((m) => m.id === modelId);
+  if (client) {
+    return { client };
+  }
+
+  // 3. Try fuzzy matching with Jaccard similarity
+  const fuzzyMatch = findBestMatch(modelId, models);
+  if (fuzzyMatch) {
+    return { client: fuzzyMatch };
+  }
+
+  // 4. Fallback to "auto" or first model
+  const autoModel = models.find((m) => m.id === "auto");
+  if (autoModel) {
+    logger.info(`Model "${modelId}" not found, using "auto" model`);
+    return { client: autoModel };
+  }
+
+  if (models.length > 0) {
+    const fallback = models[0];
+    logger.info(
+      `Model "${modelId}" not found, using first available model: ${fallback.id}`,
+    );
+    return { client: fallback };
+  }
+
+  // No models available at all
+  logger.error(`No VS Code LM model available for model ID: ${modelId}`);
+  return {
+    error: {
+      error: {
+        message: `Model '${modelId}' not found and no fallback models available. Use /api/v1/lm/chatModels to list available models.`,
+        type: "invalid_request_error",
+      },
+    },
+  };
 };
