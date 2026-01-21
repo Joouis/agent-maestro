@@ -45,7 +45,7 @@ class ChatModelsCache {
         // Check for Claude models availability and show warning once if none found
         if (this.cachedModels.length > 0 && !this.hasShownNoClaudeWarning) {
           const hasClaudeModels = this.cachedModels.some((m) =>
-            m.id.includes("claude"),
+            m.id.toLowerCase().includes("claude"),
           );
           if (!hasClaudeModels) {
             this.hasShownNoClaudeWarning = true;
@@ -268,7 +268,6 @@ function findBestMatch(
  * 2. Retry with cache refresh if not found
  * 3. Fuzzy matching using Jaccard similarity
  * 4. Fallback to "auto" or first available model
- * 5. Warning if no Claude models are available (VPN issue hint)
  */
 export const getChatModelClient = async (modelId: string) => {
   let models = await chatModelsCache.getChatModels();
