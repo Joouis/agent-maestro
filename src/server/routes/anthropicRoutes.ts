@@ -4,7 +4,7 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
-import { chatModelsCache, getChatModelClient } from "../../utils/chatModels";
+import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
