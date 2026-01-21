@@ -39,7 +39,7 @@ class ChatModelsCache {
     this.initializationPromise = (async () => {
       try {
         logger.info("Initializing chat models cache...");
-        this.cachedModels = await vscode.lm.selectChatModels({});
+        this.cachedModels = await vscode.lm.selectChatModels();
         logger.info(`Cached ${this.cachedModels.length} chat models`);
 
         // Check for Claude models availability and show warning once if none found
@@ -265,12 +265,15 @@ function findBestMatch(
  *
  * This function handles:
  * 1. Exact match lookup
- * 2. Retry with cache refresh if not found
- * 3. Fuzzy matching using Jaccard similarity
- * 4. Fallback to "auto" or first available model
+ * 2. Fuzzy matching using Jaccard similarity
+ * 3. Fallback to "auto" or first available model
+ *
+ * Note: We don't refresh the cache if a model isn't found because vscode.lm.selectChatModels()
+ * doesn't update dynamically when network state changes - the VS Code API returns the same
+ * cached results regardless of VPN/network changes during the session.
  */
 export const getChatModelClient = async (modelId: string) => {
-  let models = await chatModelsCache.getChatModels();
+  const models = await chatModelsCache.getChatModels();
 
   // 1. Try exact match
   let client = models.find((m) => m.id === modelId);
@@ -278,23 +281,13 @@ export const getChatModelClient = async (modelId: string) => {
     return { client };
   }
 
-  // 2. Retry with cache refresh
-  logger.info(`Model "${modelId}" not found, refreshing cache...`);
-  await chatModelsCache.refresh();
-  models = await chatModelsCache.getChatModels();
-
-  client = models.find((m) => m.id === modelId);
-  if (client) {
-    return { client };
-  }
-
-  // 3. Try fuzzy matching with Jaccard similarity
+  // 2. Try fuzzy matching with Jaccard similarity
   const fuzzyMatch = findBestMatch(modelId, models);
   if (fuzzyMatch) {
     return { client: fuzzyMatch };
   }
 
-  // 4. Fallback to "auto" or first model
+  // 3. Fallback to "auto" or first model
   const autoModel = models.find((m) => m.id === "auto");
   client = models.find((m) => m.version === autoModel?.version);
   if (client) {
