@@ -462,7 +462,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         },
       );
     } catch (error) {
-      logger.error("→ /v1/messages | ", error);
+      logger.error("✕ /v1/messages | ", error);
 
       const logFilePath = await handleErrorWithLogging({
         requestBody: rawRequestBody,
