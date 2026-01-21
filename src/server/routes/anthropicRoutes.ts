@@ -223,9 +223,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       inputTokens = inputTokenCount.calibrated;
 
       logger.info(
-        `[POST /v1/messages] Requested model: ${
+        `→ /v1/messages | model: ${
           model === modelId ? model : `${model} → ${modelId}`
-        } | Input tokens: ${inputTokenCount.original} → ${inputTokenCount.calibrated}`,
+        } | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated}`,
       );
 
       // 4. Build VS Code Language Model request options
@@ -299,7 +299,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
         logger.debug("/v1/messages response: ", JSON.stringify(resp, null, 2));
         logger.info(
-          `/v1/messages completed - Input: ${inputTokenCount.original} → ${inputTokenCount.calibrated}, Output: ${outputTokenCount.original} → ${outputTokenCount.calibrated}`,
+          `← /v1/messages | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated} | output: ${outputTokenCount.original} → ${outputTokenCount.calibrated}`,
         );
 
         return c.json(resp);
@@ -455,7 +455,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           await writeSSE({ type: "message_stop" });
 
           logger.info(
-            `Streaming response completed - Input: ${inputTokenCount.original} → ${inputTokenCount.calibrated}, Output: ${outputTokenCount.original} → ${outputTokenCount.calibrated}`,
+            `← /v1/messages (stream) | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated} | output: ${outputTokenCount.original} → ${outputTokenCount.calibrated}`,
           );
         },
         async (error, _stream) => {
