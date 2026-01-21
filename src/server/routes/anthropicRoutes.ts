@@ -486,15 +486,13 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       );
 
       if (isModelNotSupportedError) {
-        await chatModelsCache.refresh();
+        // Need to reload VS Code to clean the model cache
+        await vscode.commands.executeCommand("workbench.action.reloadWindow");
       }
 
       let hintMessage: string | undefined;
 
-      if (isModelNotSupportedError) {
-        hintMessage =
-          "This error may occur when network access to Anthropic models is restricted. Please check your VPN connection or network settings.";
-      } else if (isToolResultError) {
+      if (isToolResultError) {
         hintMessage =
           "This error may occur when input tokens exceed the model's context limit. Please use the /compact command to reduce the conversation history.";
       }
