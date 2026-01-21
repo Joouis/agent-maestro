@@ -50,7 +50,7 @@ class ChatModelsCache {
           if (!hasClaudeModels) {
             this.hasShownNoClaudeWarning = true;
             vscode.window.showWarningMessage(
-              "No Claude models found. Please check your VPN status - Anthropic models may not be accessible in some regions.",
+              "No Claude models found. Please check your network or VPN settings.",
             );
           }
         }
