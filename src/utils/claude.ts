@@ -153,49 +153,6 @@ const hasAgentMaestroClaudeSettings = (): boolean => {
 };
 
 /**
- * Read Claude settings to get user's configured models
- * This reads from .claude/settings.json in workspace or home directory
- */
-export const getClaudeConfiguredModels = (): {
-  mainModel: string;
-  fastModel: string;
-} | null => {
-  try {
-    // Try workspace settings first, then home directory
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    let settingsPath: string;
-
-    if (workspaceRoot) {
-      settingsPath = path.join(workspaceRoot, ".claude", "settings.json");
-      if (!fs.existsSync(settingsPath)) {
-        settingsPath = path.join(os.homedir(), ".claude", "settings.json");
-      }
-    } else {
-      settingsPath = path.join(os.homedir(), ".claude", "settings.json");
-    }
-
-    if (!fs.existsSync(settingsPath)) {
-      return null;
-    }
-
-    const settingsContent = fs.readFileSync(settingsPath, "utf8");
-    const settings: ClaudeSettings = JSON.parse(settingsContent);
-
-    const mainModel = settings.env?.ANTHROPIC_MODEL;
-    const fastModel = settings.env?.ANTHROPIC_SMALL_FAST_MODEL;
-
-    if (mainModel && fastModel) {
-      return { mainModel, fastModel };
-    }
-
-    return null;
-  } catch (error) {
-    logger.debug("Could not read Claude settings:", error);
-    return null;
-  }
-};
-
-/**
  * Performs self-check when extension activates:
  * 1. Check if current workspace or homedir has .claude/settings.json with Agent Maestro token
  * 2. If yes, ensure homedir has .claude/config.json with primaryApiKey set to "Agent Maestro"
