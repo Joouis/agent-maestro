@@ -4,7 +4,7 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
-import { getChatModelClient } from "../../utils/chatModels";
+import { chatModelsCache, getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
@@ -481,15 +481,31 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         "unexpected `tool_use_id` found in `tool_result` blocks",
       );
 
+      const isModelNotSupportedError = errorMessage.includes(
+        "model_not_supported",
+      );
+
+      if (isModelNotSupportedError) {
+        await chatModelsCache.refresh();
+      }
+
+      let hintMessage: string | undefined;
+
+      if (isModelNotSupportedError) {
+        hintMessage =
+          "This error may occur when network access to Anthropic models is restricted. Please check your VPN connection or network settings.";
+      } else if (isToolResultError) {
+        hintMessage =
+          "This error may occur when input tokens exceed the model's context limit. Please use the /compact command to reduce the conversation history.";
+      }
+
       return c.json(
         {
           error: {
             message: errorMessage,
             type: "internal_server_error",
             log_file: logFilePath,
-            ...(isToolResultError && {
-              hint: "This error may occur when input tokens exceed the model's context limit. Please use the /compact command to reduce the conversation history.",
-            }),
+            ...(hintMessage && { hint: hintMessage }),
           },
         },
         500,

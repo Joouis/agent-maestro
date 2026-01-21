@@ -297,9 +297,10 @@ export const getChatModelClient = async (modelId: string) => {
 
   // 4. Fallback to "auto" or first model
   const autoModel = models.find((m) => m.id === "auto");
-  if (autoModel) {
-    logger.info(`Model "${modelId}" not found, using "auto" model`);
-    return { client: autoModel };
+  client = models.find((m) => m.version === autoModel?.version);
+  if (client) {
+    logger.info(`Model "${modelId}" not found, using ${client.id} model`);
+    return { client };
   }
 
   if (models.length > 0) {
