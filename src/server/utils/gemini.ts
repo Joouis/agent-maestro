@@ -154,7 +154,10 @@ export const convertGeminiToolsToVSCode = (
           funcDecl.parametersJsonSchema ||
           {}) as Schema;
 
-        // Only convert schemas with `type` or `anyOf` properties to avoid "400 Bad Request" errors
+        // Only convert schemas with `type` or `anyOf` properties to avoid "400 Bad Request" errors.
+        // For the "delegate_to_agent" tool, some tests show that the LLM can select the correct
+        // "agent_name" when it appears alongside other properties in the same schema.
+        // However, Gemini CLI fails to invoke the function and returns an "Incomplete JSON segment at the end" error.
         if (inputSchema.type) {
           vsCodeTools.push({
             name,
