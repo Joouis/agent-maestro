@@ -27,6 +27,8 @@ import { registerOpenaiRoutes } from "./routes/openaiRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 
+const API_KEY_SECRET_KEY = "agent-maestro.apiKey";
+
 export class ProxyServer {
   private app: OpenAPIHono;
   private controller: ExtensionController;
@@ -58,15 +60,15 @@ export class ProxyServer {
     // Register authentication middleware for API routes
     this.app.use(
       "/api/anthropic/*",
-      createAnthropicAuthMiddleware(() => this.apiKey),
+      createAnthropicAuthMiddleware(this.getApiKey.bind(this)),
     );
     this.app.use(
       "/api/openai/*",
-      createOpenAIAuthMiddleware(() => this.apiKey),
+      createOpenAIAuthMiddleware(this.getApiKey.bind(this)),
     );
     this.app.use(
       "/api/gemini/*",
-      createGeminiAuthMiddleware(() => this.apiKey),
+      createGeminiAuthMiddleware(this.getApiKey.bind(this)),
     );
 
     // Register routes under the /api/v1 namespace
@@ -345,5 +347,16 @@ export class ProxyServer {
    */
   getApiKey(): string | null {
     return this.apiKey;
+  }
+
+  /**
+   * Restores the API key from secrets storage.
+   * Should be called during extension activation.
+   */
+  async restoreApiKey(): Promise<void> {
+    const storedKey = await this.context.secrets.get(API_KEY_SECRET_KEY);
+    if (storedKey) {
+      this.setApiKey(storedKey);
+    }
   }
 }

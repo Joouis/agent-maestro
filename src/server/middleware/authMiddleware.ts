@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 
+import { constantTimeEqual } from "../../utils/crypto";
 import { logger } from "../../utils/logger";
 
 /**
@@ -19,7 +20,7 @@ export function createAnthropicAuthMiddleware(
 
     const providedKey = c.req.header("x-api-key");
 
-    if (!providedKey || providedKey !== configuredKey) {
+    if (!providedKey || !constantTimeEqual(providedKey, configuredKey)) {
       logger.warn(
         `Anthropic API authentication failed: ${providedKey ? "invalid key" : "missing key"}`,
       );
@@ -61,7 +62,7 @@ export function createOpenAIAuthMiddleware(
       providedKey = authHeader.slice(7); // Remove "Bearer " prefix
     }
 
-    if (!providedKey || providedKey !== configuredKey) {
+    if (!providedKey || !constantTimeEqual(providedKey, configuredKey)) {
       logger.warn(
         `OpenAI API authentication failed: ${providedKey ? "invalid key" : "missing key"}`,
       );
@@ -101,7 +102,7 @@ export function createGeminiAuthMiddleware(
     const queryKey = c.req.query("key");
     const providedKey = headerKey || queryKey;
 
-    if (!providedKey || providedKey !== configuredKey) {
+    if (!providedKey || !constantTimeEqual(providedKey, configuredKey)) {
       logger.warn(
         `Gemini API authentication failed: ${providedKey ? "invalid key" : "missing key"}`,
       );

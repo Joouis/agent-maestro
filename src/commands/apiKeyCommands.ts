@@ -52,16 +52,3 @@ export function registerApiKeyCommands(
 
   context.subscriptions.push(disposable);
 }
-
-/**
- * Restores the API key from secrets storage on extension activation.
- */
-export async function restoreApiKey(
-  proxy: ProxyServer,
-  context: vscode.ExtensionContext,
-): Promise<void> {
-  const storedKey = await context.secrets.get(API_KEY_SECRET_KEY);
-  if (storedKey) {
-    proxy.setApiKey(storedKey);
-  }
-}
