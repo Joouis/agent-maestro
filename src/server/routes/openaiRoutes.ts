@@ -116,14 +116,6 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
         return c.json(clientError, 404);
       }
 
-      logger.info(
-        `Received /chat/completions call with selected model: ${client.name} (${client.vendor}/${client.family})`,
-      );
-
-      // 2. Convert OpenAI messages to VSCode LM format
-      const vsCodeLmMessages = convertOpenAIMessagesToVSCode(messages);
-      lmChatMessages = vsCodeLmMessages;
-
       // NOTE: Rough estimation of input tokens for OpenAI API
       // We pass the stringified request body to VSCode's countTokens() API, which is technically
       // a misuse since it's designed for LanguageModelChatMessage objects. However, we intentionally
@@ -136,6 +128,16 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
         cancellationToken,
       );
       inputTokens = inputTokenCount;
+
+      logger.info(
+        `→ /chat/completions | model: ${
+          modelId === client.id ? modelId : `${modelId} → ${client.id}`
+        } | input: ${inputTokenCount}`,
+      );
+
+      // 2. Convert OpenAI messages to VSCode LM format
+      const vsCodeLmMessages = convertOpenAIMessagesToVSCode(messages);
+      lmChatMessages = vsCodeLmMessages;
 
       // 3. Build VSCode Language Model request options
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
@@ -211,6 +213,9 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
         logger.debug(
           "/chat/completions response: ",
           JSON.stringify(openaiResponse, null, 2),
+        );
+        logger.info(
+          `← /chat/completions | input: ${inputTokenCount} | output: ${completionTokens}`,
         );
 
         return c.json(openaiResponse);
@@ -343,7 +348,9 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
             data: "[DONE]",
           });
 
-          logger.info("OpenAI streaming response completed");
+          logger.info(
+            `← /chat/completions (stream) | input: ${inputTokenCount} | output: ${usage?.completion_tokens ?? 0}`,
+          );
         },
         async (error, stream) => {
           logger.error("Stream error occurred:", error);
@@ -373,7 +380,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
         },
       );
     } catch (error) {
-      logger.error("OpenAI API /chat/completions request failed:", error);
+      logger.error("✕ /chat/completions | ", error);
 
       const logFilePath = await handleErrorWithLogging({
         requestBody: rawRequestBody,

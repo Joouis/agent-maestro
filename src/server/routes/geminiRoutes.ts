@@ -318,10 +318,6 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         );
       }
 
-      logger.info(
-        `Received generateContent call with model: ${client.name} (${client.vendor}/${client.family})`,
-      );
-
       // 2. Prepare request
       const {
         vsCodeLmMessages,
@@ -331,6 +327,12 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       } = await prepareGeminiRequest({ requestBody, client });
       lmChatMessages = vsCodeLmMessages;
       inputTokens = inputTokenCount;
+
+      logger.info(
+        `→ /v1beta/models/${modelWithMethod} | model: ${
+          modelId === client.id ? modelId : `${modelId} → ${client.id}`
+        } | input: ${inputTokenCount}`,
+      );
 
       // 3. Send request to VSCode LM API
       const response = await client.sendRequest(
@@ -389,10 +391,13 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         "generateContent response:",
         JSON.stringify(geminiResponse, null, 2),
       );
+      logger.info(
+        `← /v1beta/models/${modelWithMethod} | input: ${inputTokenCount} | output: ${outputTokenCount}`,
+      );
 
       return c.json(geminiResponse, 200);
     } catch (error) {
-      logger.error("Gemini API generateContent request failed:", error);
+      logger.error(`✕ /v1beta/models/${modelId}:generateContent | `, error);
 
       const logFilePath = await handleErrorWithLogging({
         requestBody: rawRequestBody,
@@ -451,10 +456,6 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           );
         }
 
-        logger.info(
-          `Received streamGenerateContent call with model: ${client.name} (${client.vendor}/${client.family})`,
-        );
-
         // 2. Prepare request
         const {
           vsCodeLmMessages,
@@ -464,6 +465,12 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         } = await prepareGeminiRequest({ requestBody, client });
         lmChatMessages = vsCodeLmMessages;
         inputTokens = inputTokenCount;
+
+        logger.info(
+          `→ /v1beta/models/${modelWithMethod} | model: ${
+            modelId === client.id ? modelId : `${modelId} → ${client.id}`
+          } | input: ${inputTokenCount}`,
+        );
 
         // 3. Send request to VSCode LM API
         const response = await client.sendRequest(
@@ -553,7 +560,9 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
               data: JSON.stringify(finalChunk),
             });
 
-            logger.info("Streaming streamGenerateContent completed");
+            logger.info(
+              `← /v1beta/models/${modelWithMethod} (stream) | input: ${inputTokenCount} | output: ${outputTokenCount}`,
+            );
           },
           async (error, stream) => {
             logger.error("Stream error occurred:", error);
@@ -588,7 +597,10 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           },
         );
       } catch (error) {
-        logger.error("Gemini API streamGenerateContent request failed:", error);
+        logger.error(
+          `✕ /v1beta/models/${modelId}:streamGenerateContent | `,
+          error,
+        );
 
         const logFilePath = await handleErrorWithLogging({
           requestBody: rawRequestBody,
@@ -619,10 +631,11 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
 
   // POST /v1beta/models/{model}:countTokens
   app.openapi(countTokensRoute, async (c: Context) => {
+    let modelId = "";
     try {
       // Parse request
       const { modelWithMethod } = c.req.param();
-      const modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:countTokens"
+      modelId = modelWithMethod.split(":")[0]; // Extract model ID from "model:countTokens"
       const requestBody = await c.req.json();
 
       // 1. Get chat model client
@@ -641,15 +654,17 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         );
       }
 
-      logger.info(
-        `Received countTokens call with model: ${client.name} (${client.vendor}/${client.family})`,
-      );
-
       // 2. Prepare request and get token count
       const { inputTokenCount } = await prepareGeminiRequest({
         requestBody,
         client,
       });
+
+      logger.info(
+        `→ /v1beta/models/${modelWithMethod} | model: ${
+          modelId === client.id ? modelId : `${modelId} → ${client.id}`
+        } | input: ${inputTokenCount}`,
+      );
 
       return c.json(
         {
@@ -658,7 +673,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         200,
       );
     } catch (error) {
-      logger.error("Gemini API countTokens request failed:", error);
+      logger.error(`✕ /v1beta/models/${modelId}:countTokens | `, error);
       return c.json(
         {
           error: {
