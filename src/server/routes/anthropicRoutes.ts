@@ -473,11 +473,11 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           );
         },
         async (error, _stream) => {
-          logger.error("Stream error occurred:", error);
+          logger.error("✕ /v1/messages |", error);
         },
       );
     } catch (error) {
-      logger.error("✕ /v1/messages | ", error);
+      logger.error("✕ /v1/messages |", error);
 
       const logFilePath = await handleErrorWithLogging({
         requestBody: rawRequestBody,

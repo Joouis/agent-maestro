@@ -397,7 +397,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
 
       return c.json(geminiResponse, 200);
     } catch (error) {
-      logger.error(`✕ /v1beta/models/${modelId}:generateContent | `, error);
+      logger.error(`✕ /v1beta/models/${modelId}:generateContent |`, error);
 
       const logFilePath = await handleErrorWithLogging({
         requestBody: rawRequestBody,
@@ -565,7 +565,10 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             );
           },
           async (error, stream) => {
-            logger.error("Stream error occurred:", error);
+            logger.error(
+              `✕ /v1beta/models/${modelWithMethod} (stream) |`,
+              error,
+            );
 
             // Send final chunk with error finish reason
             const errorChunk: GenerateContentResponse = {
@@ -598,7 +601,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         );
       } catch (error) {
         logger.error(
-          `✕ /v1beta/models/${modelId}:streamGenerateContent | `,
+          `✕ /v1beta/models/${modelId}:streamGenerateContent |`,
           error,
         );
 
@@ -673,7 +676,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         200,
       );
     } catch (error) {
-      logger.error(`✕ /v1beta/models/${modelId}:countTokens | `, error);
+      logger.error(`✕ /v1beta/models/${modelId}:countTokens |`, error);
       return c.json(
         {
           error: {

@@ -353,7 +353,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
           );
         },
         async (error, stream) => {
-          logger.error("Stream error occurred:", error);
+          logger.error("✕ /chat/completions (stream) |", error);
 
           // Send error chunk to client before closing
           const errorMessage =
@@ -380,7 +380,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
         },
       );
     } catch (error) {
-      logger.error("✕ /chat/completions | ", error);
+      logger.error("✕ /chat/completions |", error);
 
       const logFilePath = await handleErrorWithLogging({
         requestBody: rawRequestBody,
