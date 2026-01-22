@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6.1 - 2026.01.22
+
+- Fix Gemini 400 Bad Request by handling unsupported tool schemas
+
 ## v2.6.0 - 2026.01.21
 
 - Add fuzzy model matching using Jaccard similarity
