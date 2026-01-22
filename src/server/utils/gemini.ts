@@ -3,9 +3,12 @@ import {
   type FunctionCallingConfig,
   FunctionCallingConfigMode,
   type Part,
+  type Schema,
   type Tool,
 } from "@google/genai";
 import * as vscode from "vscode";
+
+import { logger } from "../../utils/logger";
 
 /**
  * Convert a single Gemini Part to VSCode LanguageModelChatMessage parts
@@ -144,12 +147,65 @@ export const convertGeminiToolsToVSCode = (
         if (!funcDecl.name) {
           continue;
         }
-        vsCodeTools.push({
-          name: funcDecl.name,
-          description: funcDecl.description || "",
-          inputSchema:
-            funcDecl.parameters || funcDecl.parametersJsonSchema || {},
-        });
+
+        const name = funcDecl.name;
+        const description = funcDecl.description || "";
+        const inputSchema = (funcDecl.parameters ||
+          funcDecl.parametersJsonSchema ||
+          {}) as Schema;
+
+        // Only convert schemas with `type` or `anyOf` properties to avoid "400 Bad Request" errors
+        if (inputSchema.type) {
+          vsCodeTools.push({
+            name,
+            description,
+            inputSchema,
+          });
+        } else if (
+          Array.isArray(inputSchema.anyOf) &&
+          name === "delegate_to_agent"
+        ) {
+          let enhancedDescription = `This function has multiple input schemas. Please choose the appropriate schema when calling the function.`;
+
+          const schema = {
+            type: "object",
+            properties: {
+              agent_name: {
+                type: "string",
+                description:
+                  "Read function description to learn different agent names and usages",
+              },
+            },
+            required: ["agent_name"],
+          };
+          inputSchema.anyOf.forEach((subSchema) => {
+            const agentNameProp = subSchema.properties?.agent_name as any;
+            if (agentNameProp && agentNameProp.const) {
+              enhancedDescription += `\n\n## ${agentNameProp.const}\n\`\`\`json\n${JSON.stringify(
+                subSchema,
+                null,
+                2,
+              )}\n\`\`\``;
+              for (const key in subSchema.properties) {
+                if (key !== "agent_name") {
+                  (schema.properties as Record<string, unknown>)[key] =
+                    subSchema.properties[key];
+                }
+              }
+            }
+          });
+
+          vsCodeTools.push({
+            name,
+            description: enhancedDescription,
+            inputSchema: schema,
+          });
+        } else {
+          logger.warn(
+            `Skipping Gemini tool "${name}": schema structure not supported for conversion`,
+          );
+          logger.info(`Schema: ${JSON.stringify(inputSchema, null, 2)}`);
+        }
       }
     }
   }
