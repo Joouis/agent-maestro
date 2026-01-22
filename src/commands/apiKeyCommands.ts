@@ -1,9 +1,8 @@
 import * as vscode from "vscode";
 
 import { ProxyServer } from "../server/ProxyServer";
+import { API_KEY_SECRET_KEY } from "../utils/constant";
 import { createCommandHandler } from "./commandHandler";
-
-const API_KEY_SECRET_KEY = "agent-maestro.apiKey";
 
 export function registerApiKeyCommands(
   proxy: ProxyServer,

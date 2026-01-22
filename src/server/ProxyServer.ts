@@ -8,6 +8,7 @@ import { ExtensionController } from "../core/controller";
 import { DEFAULT_CONFIG } from "../utils/config";
 import {
   ANOTHER_INSTANCE_RUNNING_MESSAGE,
+  API_KEY_SECRET_KEY,
   PORT_MONITOR_INTERVAL_MS,
 } from "../utils/constant";
 import { logger } from "../utils/logger";
@@ -26,8 +27,6 @@ import { registerLmRoutes } from "./routes/lmRoutes";
 import { registerOpenaiRoutes } from "./routes/openaiRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
-
-const API_KEY_SECRET_KEY = "agent-maestro.apiKey";
 
 export class ProxyServer {
   private app: OpenAPIHono;
