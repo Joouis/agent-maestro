@@ -1,5 +1,3 @@
-import agentMaestroDemo from "@/assets/agent-maestro-demo.gif";
-import claudeCodeDemo from "@/assets/configure-claude-code-demo.gif";
 import { motion } from "framer-motion";
 
 const demos = [
@@ -7,13 +5,13 @@ const demos = [
     title: "One-Click Claude Code Setup",
     description:
       "Configure Claude Code to use VS Code's language models with a single command. Automatic endpoint configuration and model discovery.",
-    gif: claudeCodeDemo,
+    gif: "https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/configure-claude-code-demo.gif",
   },
   {
     title: "Agent Maestro in Action",
     description:
       "See how Agent Maestro orchestrates AI agents, manages tasks, and provides real-time updates through its powerful API.",
-    gif: agentMaestroDemo,
+    gif: "https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/agent-maestro-demo.gif",
   },
 ];
 
