@@ -12,9 +12,7 @@ const Header = () => {
     >
       <div className="container mx-auto px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">A</span>
-          </div>
+          <img src="/logo.svg" alt="Agent Maestro" className="size-8" />
           <span className="font-semibold text-lg">Agent Maestro</span>
         </div>
 
