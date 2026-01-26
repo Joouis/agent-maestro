@@ -124,11 +124,60 @@ This feature:
    - `Agent Maestro: Configure Codex Settings` - One-click Codex setup
    - `Agent Maestro: Configure Gemini CLI Settings` - One-click Gemini CLI setup
    - `Agent Maestro: Fix GitHub Copilot Chat - Model is not supported error` - Remove header restriction to enable additional models
+   - `Agent Maestro: Set LLM API Key` - Configure authentication for LLM API endpoints
 
 3. **Development Resources**:
    - **API Documentation**: Complete reference in [`docs/roo-code/`](docs/roo-code/README.md)
    - **Type Definitions**: [`@roo-code/types`](https://www.npmjs.com/package/@roo-code/types) package
    - **Examples**: Reference implementation in `examples/demo-site` (testing purposes)
+
+## LLM API Authentication
+
+Agent Maestro supports optional API key authentication to secure access to the LLM API endpoints (Anthropic, OpenAI, and Gemini). When enabled, all requests to these endpoints must include a valid API key.
+
+### Setting Up Authentication
+
+1. Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+2. Run `Agent Maestro: Set LLM API Key`
+3. Enter your desired API key (or leave empty to disable authentication)
+
+The API key is stored securely using VS Code's built-in secrets storage and persists across sessions.
+
+### Authenticating Requests
+
+Once authentication is enabled, include your API key in requests using the standard header format for each provider:
+
+**Anthropic API** (`/api/anthropic/*`):
+
+```bash
+curl -H "x-api-key: YOUR_LLM_API_KEY" \
+  http://localhost:23333/api/anthropic/v1/messages
+```
+
+**OpenAI API** (`/api/openai/*`):
+
+```bash
+curl -H "Authorization: Bearer YOUR_LLM_API_KEY" \
+  http://localhost:23333/api/openai/chat/completions
+```
+
+**Gemini API** (`/api/gemini/*`):
+
+```bash
+# Using header
+curl -H "x-goog-api-key: YOUR_LLM_API_KEY" \
+  http://localhost:23333/api/gemini/v1beta/models/gemini-pro:generateContent
+
+# Or using query parameter
+curl "http://localhost:23333/api/gemini/v1beta/models/gemini-pro:generateContent?key=YOUR_LLM_API_KEY"
+```
+
+### Security Notes
+
+- Authentication is **disabled by default** for ease of local development
+- When authentication is disabled, the proxy accepts all requests without validation
+- API keys are compared using constant-time comparison to prevent timing attacks
+- Failed authentication attempts are logged for security monitoring
 
 ## Configuration
 

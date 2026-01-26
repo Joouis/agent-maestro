@@ -3,9 +3,9 @@ import * as vscode from "vscode";
 import { ExtensionController } from "../core/controller";
 import { McpServer } from "../server/McpServer";
 import { ProxyServer } from "../server/ProxyServer";
-import { registerApiKeyCommands } from "./apiKeyCommands";
 import { registerConfiguratorCommands } from "./configuratorCommands";
 import { registerCopilotFixCommands } from "./copilotFixCommands";
+import { registerLlmApiKeyCommands } from "./llmApiKeyCommands";
 import { registerMcpCommands } from "./mcpCommands";
 import { registerProxyCommands } from "./proxyCommands";
 import { registerStatusCommands } from "./statusCommands";
@@ -21,5 +21,5 @@ export function registerAllCommands(
   registerConfiguratorCommands(proxy, context);
   registerCopilotFixCommands(context);
   registerStatusCommands(controller, context);
-  registerApiKeyCommands(proxy, context);
+  registerLlmApiKeyCommands(proxy, context);
 }

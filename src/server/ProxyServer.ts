@@ -8,7 +8,7 @@ import { ExtensionController } from "../core/controller";
 import { DEFAULT_CONFIG } from "../utils/config";
 import {
   ANOTHER_INSTANCE_RUNNING_MESSAGE,
-  API_KEY_SECRET_KEY,
+  LLM_API_KEY_SECRET_KEY,
   PORT_MONITOR_INTERVAL_MS,
 } from "../utils/constant";
 import { logger } from "../utils/logger";
@@ -36,7 +36,7 @@ export class ProxyServer {
   private port: number;
   private server?: ServerType;
   private portMonitorInterval?: NodeJS.Timeout;
-  private apiKey: string | null = null;
+  private llmApiKey: string | null = null;
 
   constructor(
     controller: ExtensionController,
@@ -59,15 +59,15 @@ export class ProxyServer {
     // Register authentication middleware for API routes
     this.app.use(
       "/api/anthropic/*",
-      createAnthropicAuthMiddleware(this.getApiKey.bind(this)),
+      createAnthropicAuthMiddleware(this.getLlmApiKey.bind(this)),
     );
     this.app.use(
       "/api/openai/*",
-      createOpenAIAuthMiddleware(this.getApiKey.bind(this)),
+      createOpenAIAuthMiddleware(this.getLlmApiKey.bind(this)),
     );
     this.app.use(
       "/api/gemini/*",
-      createGeminiAuthMiddleware(this.getApiKey.bind(this)),
+      createGeminiAuthMiddleware(this.getLlmApiKey.bind(this)),
     );
 
     // Register routes under the /api/v1 namespace
@@ -329,33 +329,42 @@ export class ProxyServer {
   }
 
   /**
-   * Sets the API key for authentication.
+   * Sets the LLM API key for authentication.
    * Pass null or empty string to disable authentication.
    */
-  setApiKey(key: string | null): void {
-    this.apiKey = key && key.trim() ? key.trim() : null;
-    if (this.apiKey) {
-      logger.info("API key has been configured for authentication");
+  setLlmApiKey(key: string | null): void {
+    this.llmApiKey = key && key.trim() ? key.trim() : null;
+    if (this.llmApiKey) {
+      logger.info("LLM API key has been configured for authentication");
     } else {
-      logger.info("API key authentication has been disabled");
+      logger.info("LLM API key authentication has been disabled");
     }
   }
 
   /**
-   * Gets the current API key.
+   * Gets the current LLM API key.
    */
-  getApiKey(): string | null {
-    return this.apiKey;
+  getLlmApiKey(): string | null {
+    return this.llmApiKey;
   }
 
   /**
-   * Restores the API key from secrets storage.
+   * Restores the LLM API key from secrets storage.
    * Should be called during extension activation.
+   * Errors are logged but do not throw to prevent extension activation failure.
    */
-  async restoreApiKey(): Promise<void> {
-    const storedKey = await this.context.secrets.get(API_KEY_SECRET_KEY);
-    if (storedKey) {
-      this.setApiKey(storedKey);
+  async restoreLlmApiKey(): Promise<void> {
+    try {
+      const storedKey = await this.context.secrets.get(LLM_API_KEY_SECRET_KEY);
+      if (storedKey) {
+        this.setLlmApiKey(storedKey);
+        logger.info("LLM API key restored from secrets storage");
+      }
+    } catch (error) {
+      logger.error(
+        "Failed to restore LLM API key from secrets storage. Authentication will be disabled until manually configured:",
+        error,
+      );
     }
   }
 }

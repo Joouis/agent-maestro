@@ -5,13 +5,13 @@ import { logger } from "../../utils/logger";
 
 /**
  * Creates Anthropic authentication middleware.
- * Validates the `x-api-key` header against the configured API key.
+ * Validates the `x-api-key` header against the configured LLM API key.
  */
 export function createAnthropicAuthMiddleware(
-  getApiKey: () => string | null,
+  getLlmApiKey: () => string | null,
 ): (c: Context, next: Next) => Promise<Response | void> {
   return async (c: Context, next: Next) => {
-    const configuredKey = getApiKey();
+    const configuredKey = getLlmApiKey();
 
     // If no key is configured, skip authentication
     if (!configuredKey) {
@@ -42,13 +42,13 @@ export function createAnthropicAuthMiddleware(
 
 /**
  * Creates OpenAI authentication middleware.
- * Validates the `Authorization: Bearer <token>` header against the configured API key.
+ * Validates the `Authorization: Bearer <token>` header against the configured LLM API key.
  */
 export function createOpenAIAuthMiddleware(
-  getApiKey: () => string | null,
+  getLlmApiKey: () => string | null,
 ): (c: Context, next: Next) => Promise<Response | void> {
   return async (c: Context, next: Next) => {
-    const configuredKey = getApiKey();
+    const configuredKey = getLlmApiKey();
 
     // If no key is configured, skip authentication
     if (!configuredKey) {
@@ -84,13 +84,13 @@ export function createOpenAIAuthMiddleware(
 
 /**
  * Creates Gemini authentication middleware.
- * Validates either the `x-goog-api-key` header or `key` query parameter against the configured API key.
+ * Validates either the `x-goog-api-key` header or `key` query parameter against the configured LLM API key.
  */
 export function createGeminiAuthMiddleware(
-  getApiKey: () => string | null,
+  getLlmApiKey: () => string | null,
 ): (c: Context, next: Next) => Promise<Response | void> {
   return async (c: Context, next: Next) => {
-    const configuredKey = getApiKey();
+    const configuredKey = getLlmApiKey();
 
     // If no key is configured, skip authentication
     if (!configuredKey) {
