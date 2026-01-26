@@ -84,7 +84,7 @@ export function createOpenAIAuthMiddleware(
 
 /**
  * Creates Gemini authentication middleware.
- * Validates either the `x-goog-api-key` header or `key` query parameter against the configured LLM API key.
+ * Validates the `x-goog-api-key` header against the configured LLM API key.
  */
 export function createGeminiAuthMiddleware(
   getLlmApiKey: () => string | null,
@@ -97,10 +97,7 @@ export function createGeminiAuthMiddleware(
       return next();
     }
 
-    // Check header first, then query parameter
-    const headerKey = c.req.header("x-goog-api-key");
-    const queryKey = c.req.query("key");
-    const providedKey = headerKey || queryKey;
+    const providedKey = c.req.header("x-goog-api-key");
 
     if (!providedKey || !constantTimeEqual(providedKey, configuredKey)) {
       logger.warn(

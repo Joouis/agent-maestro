@@ -235,36 +235,6 @@ suite("Authentication Middleware Test Suite", () => {
       assert.strictEqual((next as any).wasCalled(), true);
     });
 
-    test("should allow request with valid key query parameter", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createGeminiAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({}, { key: validKey });
-      const next = createMockNext();
-
-      await middleware(ctx, next);
-
-      assert.strictEqual((next as any).wasCalled(), true);
-    });
-
-    test("should prioritize header over query parameter", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createGeminiAuthMiddleware(getLlmApiKey);
-
-      // Header has valid key, query has invalid
-      const ctx = createMockContext(
-        { "x-goog-api-key": validKey },
-        { key: "invalid-key" },
-      );
-      const next = createMockNext();
-
-      await middleware(ctx, next);
-
-      assert.strictEqual((next as any).wasCalled(), true);
-    });
-
     test("should reject request with invalid LLM API key in header", async () => {
       const validKey = "valid-llm-api-key-123";
       const getLlmApiKey = () => validKey;
@@ -283,20 +253,6 @@ suite("Authentication Middleware Test Suite", () => {
         "API key not valid. Please pass a valid API key.",
       );
       assert.strictEqual(response.body.error.status, "UNAUTHENTICATED");
-    });
-
-    test("should reject request with invalid LLM API key in query", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createGeminiAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({}, { key: "invalid-key" });
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
     });
 
     test("should reject request with missing LLM API key", async () => {
