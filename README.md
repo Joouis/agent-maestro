@@ -165,7 +165,7 @@ curl -H "Authorization: Bearer YOUR_LLM_API_KEY" \
 
 ```bash
 curl -H "x-goog-api-key: YOUR_LLM_API_KEY" \
-  http://localhost:23333/api/gemini/v1beta/models/gemini-pro:generateContent
+  http://localhost:23333/api/gemini/v1beta/models/gemini-3-pro:generateContent
 ```
 
 ### Security Notes
