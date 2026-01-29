@@ -44,4 +44,5 @@ yarn-error.log*
 next-env.d.ts
 
 # Claude Code
-.claude
+.claude/*
+!.claude/commands
