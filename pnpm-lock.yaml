@@ -37,8 +37,8 @@ importers:
         specifier: ^4.8.9
         version: 4.8.9
       openai:
-        specifier: ^5.22.0
-        version: 5.22.0(ws@8.18.3)(zod@4.0.10)
+        specifier: ^6.17.0
+        version: 6.17.0(ws@8.18.3)(zod@4.0.10)
       smol-toml:
         specifier: ^1.6.0
         version: 1.6.0
@@ -4289,15 +4289,15 @@ packages:
       }
     engines: { node: ">=18" }
 
-  openai@5.22.0:
+  openai@6.17.0:
     resolution:
       {
-        integrity: sha512-uSsYZ+vw9JxUwnMTcT9bj5sGM5qY/4du2BIf1KSqDRZF9nhSlJYsBLPRwBZTOW+HNyjwGviR0SsoDPv5lpPrBw==,
+        integrity: sha512-NHRpPEUPzAvFOAFs9+9pC6+HCw/iWsYsKCMPXH5Kw7BpMxqd8g/A07/1o7Gx2TWtCnzevVRyKMRFqyiHyAlqcA==,
       }
     hasBin: true
     peerDependencies:
       ws: ^8.18.0
-      zod: ^3.23.8
+      zod: ^3.25 || ^4.0
     peerDependenciesMeta:
       ws:
         optional: true
@@ -8820,7 +8820,7 @@ snapshots:
       is-inside-container: 1.0.0
       is-wsl: 3.1.0
 
-  openai@5.22.0(ws@8.18.3)(zod@4.0.10):
+  openai@6.17.0(ws@8.18.3)(zod@4.0.10):
     optionalDependencies:
       ws: 8.18.3
       zod: 4.0.10

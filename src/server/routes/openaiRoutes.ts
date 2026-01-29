@@ -12,6 +12,7 @@ import {
   convertOpenAIChatCompletionToolToVSCode,
   convertOpenAIMessagesToVSCode,
 } from "../utils/openai";
+import { registerOpenaiResponsesRoutes } from "./openaiResponsesRoutes";
 
 // OpenAPI route definition for /chat/completions
 const chatCompletionsRoute = createRoute({
@@ -404,4 +405,7 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
       );
     }
   });
+
+  // Register /v1/responses routes (OpenAI Responses API)
+  registerOpenaiResponsesRoutes(app);
 }
