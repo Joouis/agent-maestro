@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { SSEStreamingApi } from "hono/streaming";
 import OpenAI from "openai";
 import * as vscode from "vscode";
 
@@ -72,7 +73,7 @@ export const getCurrentTimestamp = (): number => Math.floor(Date.now() / 1000);
  * Helper for closing a message output item in streaming responses
  */
 export const closeMessageOutputItem = async (
-  sseStream: any,
+  sseStream: SSEStreamingApi,
   messageId: string,
   outputIndex: number,
   contentIndex: number,

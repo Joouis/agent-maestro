@@ -180,7 +180,8 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
       // 5. Count input tokens
       const requestBodyStr = JSON.stringify(requestBody);
       logger.debug("/v1/responses payload:", requestBodyStr);
-      const cancellationToken = new vscode.CancellationTokenSource().token;
+      const cancellationTokenSource = new vscode.CancellationTokenSource();
+      const cancellationToken = cancellationTokenSource.token;
       inputTokens = await client.countTokens(requestBodyStr, cancellationToken);
 
       logger.info(
@@ -280,6 +281,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
             let contentIndex = 0;
             let currentMessageId: string | null = null;
             let accumulatedText = "";
+            let totalOutputText = ""; // Track all output for token counting
 
             for await (const chunk of response.stream) {
               if (chunk instanceof vscode.LanguageModelTextPart) {
@@ -317,6 +319,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
 
                 // Emit text delta
                 accumulatedText += chunk.value;
+                totalOutputText += chunk.value;
                 await sseStream.writeSSE({
                   event: "response.output_text.delta",
                   data: JSON.stringify({
@@ -347,6 +350,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                 const fcId = generateFunctionCallId();
                 const callId = chunk.callId;
                 const argsStr = JSON.stringify(chunk.input ?? {});
+                totalOutputText += argsStr; // Include tool call arguments in token count
 
                 await sseStream.writeSSE({
                   event: "response.output_item.added",
@@ -421,9 +425,11 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
 
             // Count output tokens
             const outputTokens = await client.countTokens(
-              accumulatedText,
+              totalOutputText,
               cancellationToken,
             );
+
+            cancellationTokenSource.dispose();
 
             const usage = {
               input_tokens: inputTokens,
@@ -453,6 +459,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           },
           async (error, sseStream) => {
             logger.error("✕ /v1/responses (stream) |", error);
+            cancellationTokenSource.dispose();
 
             const responseId = generateResponseId();
             const createdAt = getCurrentTimestamp();
@@ -537,6 +544,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         `← /v1/responses | input: ${inputTokens} | output: ${outputTokens}`,
       );
 
+      cancellationTokenSource.dispose();
       return c.json(responseObj);
     } catch (error) {
       logger.error("✕ /v1/responses |", error);
