@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import OpenAI from "openai";
 import * as vscode from "vscode";
 
@@ -34,13 +35,14 @@ type ResponseFunctionToolCall = OpenAI.Responses.ResponseFunctionToolCall;
 export type OutputItem = ResponseOutputMessage | ResponseFunctionToolCall;
 
 /**
- * Generate random string for IDs
+ * Generate random string for IDs using crypto
  */
 const randomString = (length: number): string => {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = crypto.randomBytes(length);
   let result = "";
   for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+    result += chars.charAt(bytes[i] % chars.length);
   }
   return result;
 };
@@ -62,9 +64,71 @@ export const generateMessageId = (): string => `msg_AM-${randomString(12)}`;
 export const generateFunctionCallId = (): string => `fc_AM-${randomString(12)}`;
 
 /**
- * Generate unique call ID for tool calls
+ * Get current Unix timestamp in seconds
  */
-export const generateCallId = (): string => `call_AM-${randomString(12)}`;
+export const getCurrentTimestamp = (): number => Math.floor(Date.now() / 1000);
+
+/**
+ * Helper for closing a message output item in streaming responses
+ */
+export const closeMessageOutputItem = async (
+  sseStream: any,
+  messageId: string,
+  outputIndex: number,
+  contentIndex: number,
+  accumulatedText: string,
+): Promise<OutputItem> => {
+  await sseStream.writeSSE({
+    event: "response.output_text.done",
+    data: JSON.stringify({
+      type: "response.output_text.done",
+      item_id: messageId,
+      output_index: outputIndex,
+      content_index: contentIndex,
+      text: accumulatedText,
+    }),
+  });
+
+  await sseStream.writeSSE({
+    event: "response.content_part.done",
+    data: JSON.stringify({
+      type: "response.content_part.done",
+      item_id: messageId,
+      output_index: outputIndex,
+      content_index: contentIndex,
+      part: {
+        type: "output_text",
+        text: accumulatedText,
+        annotations: [],
+      },
+    }),
+  });
+
+  const outputItem: OutputItem = {
+    type: "message",
+    id: messageId,
+    role: "assistant",
+    content: [
+      {
+        type: "output_text",
+        text: accumulatedText,
+        annotations: [],
+      },
+    ],
+    status: "completed",
+  };
+
+  await sseStream.writeSSE({
+    event: "response.output_item.done",
+    data: JSON.stringify({
+      type: "response.output_item.done",
+      output_index: outputIndex,
+      item: outputItem,
+    }),
+  });
+
+  return outputItem;
+};
 
 /**
  * Convert input_image content to VSCode DataPart or TextPart

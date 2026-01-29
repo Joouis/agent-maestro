@@ -12,12 +12,14 @@ import {
   OutputItem,
   ToolChoice,
   buildResponseOutput,
+  closeMessageOutputItem,
   convertResponsesInputToVSCode,
   convertResponsesToolsToVSCode,
   convertToolChoice,
   generateFunctionCallId,
   generateMessageId,
   generateResponseId,
+  getCurrentTimestamp,
 } from "../utils/openaiResponses";
 
 // OpenAPI route definition for /v1/responses
@@ -157,7 +159,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           {
             error: {
               type: "invalid_request_error",
-              message: "Either input or instruction is required",
+              message: "Either input or instructions is required",
               param: "input",
               code: "missing_required_parameter",
             },
@@ -233,7 +235,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           c,
           async (sseStream) => {
             const responseId = generateResponseId();
-            const createdAt = Math.floor(Date.now() / 1000);
+            const createdAt = getCurrentTimestamp();
 
             // Build base response object
             const baseResponse = {
@@ -328,55 +330,14 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
                 // Close current message if open
                 if (currentMessageId) {
-                  await sseStream.writeSSE({
-                    event: "response.output_text.done",
-                    data: JSON.stringify({
-                      type: "response.output_text.done",
-                      item_id: currentMessageId,
-                      output_index: outputIndex,
-                      content_index: contentIndex,
-                      text: accumulatedText,
-                    }),
-                  });
-
-                  await sseStream.writeSSE({
-                    event: "response.content_part.done",
-                    data: JSON.stringify({
-                      type: "response.content_part.done",
-                      item_id: currentMessageId,
-                      output_index: outputIndex,
-                      content_index: contentIndex,
-                      part: {
-                        type: "output_text",
-                        text: accumulatedText,
-                        annotations: [],
-                      },
-                    }),
-                  });
-
-                  output.push({
-                    type: "message",
-                    id: currentMessageId,
-                    role: "assistant",
-                    content: [
-                      {
-                        type: "output_text",
-                        text: accumulatedText,
-                        annotations: [],
-                      },
-                    ],
-                    status: "completed",
-                  });
-
-                  await sseStream.writeSSE({
-                    event: "response.output_item.done",
-                    data: JSON.stringify({
-                      type: "response.output_item.done",
-                      output_index: outputIndex,
-                      item: output[outputIndex],
-                    }),
-                  });
-
+                  const outputItem = await closeMessageOutputItem(
+                    sseStream,
+                    currentMessageId,
+                    outputIndex,
+                    contentIndex,
+                    accumulatedText,
+                  );
+                  output.push(outputItem);
                   outputIndex++;
                   currentMessageId = null;
                   accumulatedText = "";
@@ -447,54 +408,15 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
 
             // Close any remaining message
             if (currentMessageId) {
-              await sseStream.writeSSE({
-                event: "response.output_text.done",
-                data: JSON.stringify({
-                  type: "response.output_text.done",
-                  item_id: currentMessageId,
-                  output_index: outputIndex,
-                  content_index: contentIndex,
-                  text: accumulatedText,
-                }),
-              });
-
-              await sseStream.writeSSE({
-                event: "response.content_part.done",
-                data: JSON.stringify({
-                  type: "response.content_part.done",
-                  item_id: currentMessageId,
-                  output_index: outputIndex,
-                  content_index: contentIndex,
-                  part: {
-                    type: "output_text",
-                    text: accumulatedText,
-                    annotations: [],
-                  },
-                }),
-              });
-
-              output.push({
-                type: "message",
-                id: currentMessageId,
-                role: "assistant",
-                content: [
-                  {
-                    type: "output_text",
-                    text: accumulatedText,
-                    annotations: [],
-                  },
-                ],
-                status: "completed",
-              });
-
-              await sseStream.writeSSE({
-                event: "response.output_item.done",
-                data: JSON.stringify({
-                  type: "response.output_item.done",
-                  output_index: outputIndex,
-                  item: output[outputIndex],
-                }),
-              });
+              const outputItem = await closeMessageOutputItem(
+                sseStream,
+                currentMessageId,
+                outputIndex,
+                contentIndex,
+                accumulatedText,
+              );
+              output.push(outputItem);
+              outputIndex++;
             }
 
             // Count output tokens
@@ -533,7 +455,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
             logger.error("✕ /v1/responses (stream) |", error);
 
             const responseId = generateResponseId();
-            const createdAt = Math.floor(Date.now() / 1000);
+            const createdAt = getCurrentTimestamp();
 
             await sseStream.writeSSE({
               event: "response.failed",
@@ -592,7 +514,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         id: generateResponseId(),
         object: "response",
         status: "completed",
-        created_at: Math.floor(Date.now() / 1000),
+        created_at: getCurrentTimestamp(),
         model: modelId,
         output,
         error: null,

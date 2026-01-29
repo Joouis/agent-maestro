@@ -8,7 +8,6 @@ import {
   convertResponsesItemToVSCode,
   convertResponsesToolsToVSCode,
   convertToolChoice,
-  generateCallId,
   generateFunctionCallId,
   generateMessageId,
   generateResponseId,
@@ -29,11 +28,6 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
     test("generateFunctionCallId should return string starting with fc_AM-", () => {
       const id = generateFunctionCallId();
       assert.ok(id.startsWith("fc_AM-"));
-    });
-
-    test("generateCallId should return string starting with call_AM-", () => {
-      const id = generateCallId();
-      assert.ok(id.startsWith("call_AM-"));
     });
 
     test("generated IDs should be unique", () => {
