@@ -40,20 +40,35 @@ const TYPE_NORMALIZATION_MAP: Record<string, string> = {
 const NON_SCHEMA_FIELDS = new Set(["default", "example", "const"]);
 
 /**
+ * Maximum depth for recursive schema traversal to prevent stack overflow.
+ */
+const MAX_SCHEMA_DEPTH = 100;
+
+/**
  * Normalize JSON Schema type values from uppercase (Protocol Buffer style)
  * to lowercase (JSON Schema style).
  * Recursively processes all nested schemas using generic traversal.
  *
  * @param schema - The schema to normalize (can be any value)
  * @param visited - WeakSet to track visited objects and prevent circular reference loops
+ * @param depth - Current recursion depth (used to prevent stack overflow)
  * @returns The normalized schema with lowercase type values
  */
 export const normalizeSchemaTypes = (
   schema: unknown,
   visited = new WeakSet<object>(),
+  depth = 0,
 ): unknown => {
   // Guard against null, undefined, or non-object (primitives pass through)
   if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+
+  // Prevent stack overflow from deeply nested schemas
+  if (depth >= MAX_SCHEMA_DEPTH) {
+    logger.warn(
+      `Schema normalization reached max depth (${MAX_SCHEMA_DEPTH}), returning value as-is`,
+    );
     return schema;
   }
 
@@ -65,7 +80,7 @@ export const normalizeSchemaTypes = (
 
   // Handle arrays - recurse into each element
   if (Array.isArray(schema)) {
-    return schema.map((item) => normalizeSchemaTypes(item, visited));
+    return schema.map((item) => normalizeSchemaTypes(item, visited, depth + 1));
   }
 
   // Handle objects - traverse all fields
@@ -84,7 +99,7 @@ export const normalizeSchemaTypes = (
       normalized[key] = value;
     } else {
       // Recurse into all other fields
-      normalized[key] = normalizeSchemaTypes(value, visited);
+      normalized[key] = normalizeSchemaTypes(value, visited, depth + 1);
     }
   }
   return normalized;

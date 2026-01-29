@@ -615,6 +615,34 @@ suite("Gemini Conversion Utils Test Suite", () => {
 
         assert.strictEqual(result.type, "custom_type");
       });
+
+      test("should handle deeply nested schemas up to max depth", () => {
+        // Create a deeply nested schema (50 levels - within limit)
+        let nested: any = { type: "STRING" };
+        for (let i = 0; i < 50; i++) {
+          nested = { type: "OBJECT", properties: { child: nested } };
+        }
+
+        const result = normalizeSchemaTypes(nested) as any;
+
+        // Should normalize the outer type
+        assert.strictEqual(result.type, "object");
+      });
+
+      test("should not crash when exceeding max depth", () => {
+        // Create a schema that exceeds max depth (105 levels > 100 limit)
+        let nested: any = { type: "STRING" };
+        for (let i = 0; i < 105; i++) {
+          nested = { type: "OBJECT", properties: { child: nested } };
+        }
+
+        // Should not throw - just returns value as-is after max depth
+        const result = normalizeSchemaTypes(nested) as any;
+
+        // Outer levels should still be normalized
+        assert.strictEqual(result.type, "object");
+        assert.ok(result.properties.child);
+      });
     });
 
     suite("real-world LangChain-style schema", () => {
