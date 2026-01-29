@@ -36,8 +36,10 @@ const TYPE_NORMALIZATION_MAP: Record<string, string> = {
 /**
  * Fields that contain arbitrary user data and should NOT be recursively traversed.
  * These may contain objects with "type" properties that are not JSON Schema types.
+ * - default/example/const: Can contain any user-defined data
+ * - enum: Contains literal values for exact matching, not schema definitions
  */
-const NON_SCHEMA_FIELDS = new Set(["default", "example", "const"]);
+const NON_SCHEMA_FIELDS = new Set(["default", "example", "const", "enum"]);
 
 /**
  * Maximum depth for recursive schema traversal to prevent stack overflow.
