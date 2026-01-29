@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.7.0 - 2026.01.29
+
+- Added optional API key authentication to secure LLM API endpoints (Anthropic, OpenAI, Gemini), with keys stored securely in VS Code secrets and protected by constant-time comparison.
+- Normalize Gemini schema type fields from uppercase to lowercase for VSCode Language Model API compatibility, fixing issues with LangChain and Google's official SDKs.
+
 ## v2.6.1 - 2026.01.22
 
 - Fix Gemini 400 Bad Request by handling unsupported tool schemas
