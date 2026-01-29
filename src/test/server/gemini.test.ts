@@ -602,7 +602,10 @@ suite("Gemini Conversion Utils Test Suite", () => {
         const result = normalizeSchemaTypes(input) as any;
 
         assert.strictEqual(result.type, "object");
-        // The circular reference should be preserved (same object reference)
+        // Note: normalizeSchemaTypes returns the original object when a circular
+        // reference is detected. This means result.properties.self === input
+        // (the original, un-normalized object), not result. This creates a mixed
+        // structure, but circular references in JSON Schema are rare in practice.
         assert.strictEqual(result.properties.self, input);
       });
 
