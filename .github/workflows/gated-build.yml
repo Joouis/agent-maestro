@@ -31,9 +31,8 @@ jobs:
       - name: Build project
         run: pnpm run build:prod
 
-      # Not ready yet
-      # - name: Run tests
-      #   run: pnpm run test
+      - name: Run tests
+        run: pnpm run test
 
   build-status:
     name: Build Status Check

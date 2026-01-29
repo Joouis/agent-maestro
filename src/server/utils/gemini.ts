@@ -11,6 +11,86 @@ import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 
 /**
+ * Map of uppercase/mixed-case type values to lowercase JSON Schema types.
+ * Handles Protocol Buffer style (OBJECT), mixed case (Object), and edge cases.
+ */
+const TYPE_NORMALIZATION_MAP: Record<string, string> = {
+  // Uppercase (Protocol Buffer style)
+  STRING: "string",
+  NUMBER: "number",
+  INTEGER: "integer",
+  BOOLEAN: "boolean",
+  ARRAY: "array",
+  OBJECT: "object",
+  NULL: "null",
+  // Mixed case (just in case)
+  String: "string",
+  Number: "number",
+  Integer: "integer",
+  Boolean: "boolean",
+  Array: "array",
+  Object: "object",
+  Null: "null",
+};
+
+/**
+ * Fields that contain arbitrary user data and should NOT be recursively traversed.
+ * These may contain objects with "type" properties that are not JSON Schema types.
+ */
+const NON_SCHEMA_FIELDS = new Set(["default", "example", "const"]);
+
+/**
+ * Normalize JSON Schema type values from uppercase (Protocol Buffer style)
+ * to lowercase (JSON Schema style).
+ * Recursively processes all nested schemas using generic traversal.
+ *
+ * @param schema - The schema to normalize (can be any value)
+ * @param visited - WeakSet to track visited objects and prevent circular reference loops
+ * @returns The normalized schema with lowercase type values
+ */
+export const normalizeSchemaTypes = (
+  schema: unknown,
+  visited = new WeakSet<object>(),
+): unknown => {
+  // Guard against null, undefined, or non-object (primitives pass through)
+  if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+
+  // Prevent infinite loops from circular references
+  if (visited.has(schema as object)) {
+    return schema;
+  }
+  visited.add(schema as object);
+
+  // Handle arrays - recurse into each element
+  if (Array.isArray(schema)) {
+    return schema.map((item) => normalizeSchemaTypes(item, visited));
+  }
+
+  // Handle objects - traverse all fields
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === "type" && typeof value === "string") {
+      // Normalize the type field
+      const upperType = value.toUpperCase();
+      if (upperType === "TYPE_UNSPECIFIED") {
+        // Skip TYPE_UNSPECIFIED - it's invalid and should be removed
+        continue;
+      }
+      normalized[key] = TYPE_NORMALIZATION_MAP[value] ?? value.toLowerCase();
+    } else if (NON_SCHEMA_FIELDS.has(key)) {
+      // Don't recurse into non-schema fields that contain arbitrary user data
+      normalized[key] = value;
+    } else {
+      // Recurse into all other fields
+      normalized[key] = normalizeSchemaTypes(value, visited);
+    }
+  }
+  return normalized;
+};
+
+/**
  * Convert a single Gemini Part to VSCode LanguageModelChatMessage parts
  */
 const convertGeminiPartToVSCodePart = (
@@ -150,9 +230,13 @@ export const convertGeminiToolsToVSCode = (
 
         const name = funcDecl.name;
         const description = funcDecl.description || "";
-        const inputSchema = (funcDecl.parameters ||
+        const rawSchema = (funcDecl.parameters ||
           funcDecl.parametersJsonSchema ||
           {}) as Schema;
+
+        // Normalize type fields from uppercase (OBJECT, STRING) to lowercase (object, string)
+        // to ensure compatibility with VSCode Language Model API which expects JSON Schema style
+        const inputSchema = normalizeSchemaTypes(rawSchema) as Schema;
 
         // Only convert schemas with `type` or `anyOf` properties to avoid "400 Bad Request" errors.
         // For the "delegate_to_agent" tool, some tests show that the LLM can select the correct

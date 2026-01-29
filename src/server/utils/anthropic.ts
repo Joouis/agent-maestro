@@ -359,7 +359,7 @@ const calibrationConfig: {
       small: { slope: 1.1, baseOffset: 0 },
       medium: { slope: 1.1, baseOffset: 1500 },
       large: { slope: 1.12, baseOffset: 1500 },
-      xlarge: { slope: 1.13, baseOffset: 1500 },
+      xlarge: { slope: 1.14, baseOffset: 1500 },
     },
     output: {
       small: { slope: 1, baseOffset: 150 },
