@@ -2,9 +2,9 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 
 import {
-  convertOpenAIMessagesToVSCode,
   convertOpenAIChatCompletionToolToVSCode,
-} from "../../server/utils/openai";
+  convertOpenAIMessagesToVSCode,
+} from "../../server/utils/openaiChat";
 
 suite("OpenAI Conversion Utils Test Suite", () => {
   suite("convertOpenAIMessagesToVSCode", () => {
@@ -52,9 +52,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
       const messages = [
         {
           role: "user" as const,
-          content: [
-            { type: "text" as const, text: "Look at this image" },
-          ],
+          content: [{ type: "text" as const, text: "Look at this image" }],
         },
       ];
 

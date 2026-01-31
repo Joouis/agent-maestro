@@ -4,15 +4,14 @@ import { streamSSE } from "hono/streaming";
 import OpenAI from "openai";
 import * as vscode from "vscode";
 
-import { getChatModelClient } from "../../utils/chatModels";
-import { logger } from "../../utils/logger";
-import { CommonResponseError } from "../schemas/openai";
-import { handleErrorWithLogging } from "../utils/errorDiagnostics";
+import { getChatModelClient } from "../../../utils/chatModels";
+import { logger } from "../../../utils/logger";
+import { CommonResponseError } from "../../schemas/openai";
+import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
 import {
   convertOpenAIChatCompletionToolToVSCode,
   convertOpenAIMessagesToVSCode,
-} from "../utils/openai";
-import { registerOpenaiResponsesRoutes } from "./openaiResponsesRoutes";
+} from "../../utils/openaiChat";
 
 // OpenAPI route definition for /v1/chat/completions
 const chatCompletionsRoute = createRoute({
@@ -86,7 +85,7 @@ const chatCompletionsRoute = createRoute({
   },
 });
 
-export function registerOpenaiRoutes(app: OpenAPIHono) {
+export function registerOpenaiChatRoutes(app: OpenAPIHono) {
   // POST /v1/chat/completions - OpenAI-compatible chat completions endpoint
   app.openapi(chatCompletionsRoute, async (c: Context): Promise<Response> => {
     let rawRequestBody: OpenAI.ChatCompletionCreateParams | undefined;
@@ -405,7 +404,4 @@ export function registerOpenaiRoutes(app: OpenAPIHono) {
       );
     }
   });
-
-  // Register /v1/responses routes (OpenAI Responses API)
-  registerOpenaiResponsesRoutes(app);
 }

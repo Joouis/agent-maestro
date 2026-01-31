@@ -4,10 +4,10 @@ import { streamSSE } from "hono/streaming";
 import { Responses } from "openai/resources/responses/responses";
 import * as vscode from "vscode";
 
-import { getChatModelClient } from "../../utils/chatModels";
-import { logger } from "../../utils/logger";
-import { CommonResponseError } from "../schemas/openai";
-import { handleErrorWithLogging } from "../utils/errorDiagnostics";
+import { getChatModelClient } from "../../../utils/chatModels";
+import { logger } from "../../../utils/logger";
+import { CommonResponseError } from "../../schemas/openai";
+import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
 import {
   OutputItem,
   ToolChoice,
@@ -20,7 +20,7 @@ import {
   generateMessageId,
   generateResponseId,
   getCurrentTimestamp,
-} from "../utils/openaiResponses";
+} from "../../utils/openaiResponses";
 
 // OpenAPI route definition for /v1/responses
 const createResponseRoute = createRoute({

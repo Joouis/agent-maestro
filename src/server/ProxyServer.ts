@@ -24,7 +24,7 @@ import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerGeminiRoutes } from "./routes/geminiRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
-import { registerOpenaiRoutes } from "./routes/openaiRoutes";
+import { registerOpenaiRoutes } from "./routes/openai/openaiRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 
