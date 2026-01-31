@@ -15,7 +15,7 @@ Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Clin
 
 Turn VS Code into your compliant AI playground with powerful API compatibility and one-click setup:
 
-- **Universal API Compatibility**: Anthropic (`/messages`), OpenAI (`/chat/completions`), and Gemini compatible endpoints - use Claude Code, Codex, Gemini CLI or any LLM client seamlessly
+- **Universal API Compatibility**: Anthropic (`/messages`), OpenAI (`/chat/completions`, `/responses`), and Gemini compatible endpoints - use Claude Code, Codex, Gemini CLI or any LLM client seamlessly
 - **One-Click Setup**: Automated configuration commands for instant Claude Code, Codex, and Gemini CLI integration
 - **Headless AI Agent Control**: Create and manage tasks through REST APIs for Roo Code and Cline extensions
   - **Comprehensive APIs**: Complete task lifecycle management with OpenAPI documentation at `/openapi.json`
@@ -158,7 +158,7 @@ curl -H "x-api-key: YOUR_LLM_API_KEY" \
 
 ```bash
 curl -H "Authorization: Bearer YOUR_LLM_API_KEY" \
-  http://localhost:23333/api/openai/chat/completions
+  http://localhost:23333/api/openai/v1/chat/completions
 ```
 
 **Gemini API** (`/api/gemini/*`):
@@ -244,7 +244,8 @@ Perfect for GitHub Copilot and Claude Code integration:
 
 Perfect for Codex and OpenAI model integration:
 
-- **`POST /api/openai/chat/completions`** - OpenAI Chat Completions API compatibility using VS Code's Language Model API
+- **`POST /api/openai/v1/chat/completions`** - OpenAI Chat Completions API compatibility using VS Code's Language Model API
+- **`POST /api/openai/v1/responses`** - OpenAI Responses API compatibility using VS Code's Language Model API
 
 ### Gemini-Compatible Endpoints
 

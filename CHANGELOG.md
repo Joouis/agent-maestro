@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.8.0 - 2026.01.31
+
+- Added OpenAI Responses API support (`POST /api/openai/v1/responses`) with streaming and function tools
+- Updated OpenAI endpoints to use `/v1` prefix for API consistency (`/v1/chat/completions`, `/v1/responses`)
+- Changed Codex default wire API from `chat` to `responses` ([Deprecating `chat/completions` support in Codex #7782](https://github.com/openai/codex/discussions/7782))
+
 ## v2.7.0 - 2026.01.29
 
 - Added optional API key authentication to secure LLM API endpoints (Anthropic, OpenAI, Gemini), with keys stored securely in VS Code secrets and protected by constant-time comparison.

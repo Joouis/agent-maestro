@@ -269,8 +269,8 @@ export function registerConfiguratorCommands(
             ...existingConfig.model_providers,
             "agent-maestro": {
               name: "Agent Maestro",
-              base_url: `http://localhost:${proxyPort}/api/openai`,
-              wire_api: "chat",
+              base_url: `http://localhost:${proxyPort}/api/openai/v1`,
+              wire_api: "responses",
             },
           },
         };
