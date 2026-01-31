@@ -1,14 +1,15 @@
 import { EventEmitter } from "events";
 import * as vscode from "vscode";
-import { logger } from "../utils/logger";
-import { ClineAdapter } from "./ClineAdapter";
-import { RooCodeAdapter } from "./RooCodeAdapter";
+
 import {
   AgentMaestroConfiguration,
   DEFAULT_CONFIG,
   readConfiguration,
 } from "../utils/config";
+import { logger } from "../utils/logger";
 import { ExtensionStatus } from "../utils/systemInfo";
+import { ClineAdapter } from "./ClineAdapter";
+import { RooCodeAdapter } from "./RooCodeAdapter";
 
 /**
  * Core controller to manage Cline and RooCode extensions
@@ -100,8 +101,7 @@ export class ExtensionController extends EventEmitter {
       );
 
     if (!hasActiveAdapter) {
-      // throw new Error(
-      logger.error(
+      logger.warn(
         "No active extension found. This may be due to missing installations or activation issues.",
       );
     }

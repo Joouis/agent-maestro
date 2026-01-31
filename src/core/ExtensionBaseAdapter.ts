@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+
 import { logger } from "../utils/logger";
 
 /**
@@ -56,8 +57,7 @@ export abstract class ExtensionBaseAdapter<TApi = any> {
       this.isActive = true;
       logger.info(`${this.getDisplayName()} activated successfully`);
     } catch (error) {
-      logger.error(`Failed to initialize ${this.getDisplayName()}:`, error);
-      // throw error;
+      logger.warn(`Failed to initialize ${this.getDisplayName()}:`, error);
     }
   }
 

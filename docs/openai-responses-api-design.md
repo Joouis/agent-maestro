@@ -112,6 +112,9 @@ Only `function` type tools are supported. Other tools are filtered out with a wa
 | `image_gen`            | No VSCode LM equivalent                       |
 | `local_shell`          | Security concerns                             |
 | `mcp`                  | Would require separate MCP server integration |
+| `custom`               | No VSCode LM equivalent for custom tool input |
+| `shell`                | No VSCode LM equivalent                       |
+| `apply_patch`          | No VSCode LM equivalent                       |
 
 ### Content Limitations
 

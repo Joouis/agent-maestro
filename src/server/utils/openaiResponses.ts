@@ -1,6 +1,25 @@
 import crypto from "crypto";
 import { SSEStreamingApi } from "hono/streaming";
-import OpenAI from "openai";
+import {
+  EasyInputMessage,
+  FunctionTool,
+  ResponseFunctionToolCall,
+  ResponseInput,
+  ResponseInputContent,
+  ResponseInputImage,
+  ResponseInputItem,
+  ResponseOutputMessage,
+  ResponseOutputText,
+  Tool,
+  ToolChoiceAllowed,
+  ToolChoiceApplyPatch,
+  ToolChoiceCustom,
+  ToolChoiceFunction,
+  ToolChoiceMcp,
+  ToolChoiceOptions,
+  ToolChoiceShell,
+  ToolChoiceTypes,
+} from "openai/resources/responses/responses";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
@@ -8,27 +27,15 @@ import { logger } from "../../utils/logger";
 /**
  * Import types from OpenAI SDK for Responses API
  */
-type EasyInputMessage = OpenAI.Responses.EasyInputMessage;
-type ResponseInputItem = OpenAI.Responses.ResponseInputItem;
-type ResponseInput = OpenAI.Responses.ResponseInput;
-type ResponseInputContent = OpenAI.Responses.ResponseInputContent;
-type ResponseInputImage = OpenAI.Responses.ResponseInputImage;
-type ResponseInputItemMessage = OpenAI.Responses.ResponseInputItem.Message;
-type ResponseInputItemFunctionCallOutput =
-  OpenAI.Responses.ResponseInputItem.FunctionCallOutput;
-type FunctionTool = OpenAI.Responses.FunctionTool;
-type Tool = OpenAI.Responses.Tool;
 export type ToolChoice =
-  | OpenAI.Responses.ToolChoiceOptions
-  | OpenAI.Responses.ToolChoiceAllowed
-  | OpenAI.Responses.ToolChoiceTypes
-  | OpenAI.Responses.ToolChoiceFunction
-  | OpenAI.Responses.ToolChoiceMcp
-  | OpenAI.Responses.ToolChoiceCustom
-  | OpenAI.Responses.ToolChoiceApplyPatch
-  | OpenAI.Responses.ToolChoiceShell;
-type ResponseOutputMessage = OpenAI.Responses.ResponseOutputMessage;
-type ResponseFunctionToolCall = OpenAI.Responses.ResponseFunctionToolCall;
+  | ToolChoiceOptions
+  | ToolChoiceAllowed
+  | ToolChoiceTypes
+  | ToolChoiceFunction
+  | ToolChoiceMcp
+  | ToolChoiceCustom
+  | ToolChoiceApplyPatch
+  | ToolChoiceShell;
 
 /**
  * Output item types for Responses API (subset we generate)
@@ -161,10 +168,13 @@ const convertInputImageToVSCodePart = (
  * Convert a single input content part to VSCode part
  */
 export const convertInputContentToVSCodePart = (
-  content: ResponseInputContent,
+  content: ResponseInputContent | ResponseOutputText,
 ): vscode.LanguageModelTextPart => {
   switch (content.type) {
     case "input_text":
+      return new vscode.LanguageModelTextPart(content.text ?? "");
+    case "output_text":
+      // Accept output_text for compatibility with persisted response content.
       return new vscode.LanguageModelTextPart(content.text ?? "");
     case "input_image":
       return convertInputImageToVSCodePart(content);
@@ -230,7 +240,7 @@ const convertEasyInputMessage = (
  * Convert ResponseInputItem.Message to VSCode LM message
  */
 const convertInputMessage = (
-  msg: ResponseInputItemMessage,
+  msg: ResponseInputItem.Message,
 ): vscode.LanguageModelChatMessage => {
   const parts = msg.content.map(convertInputContentToVSCodePart);
   switch (msg.role) {
@@ -272,7 +282,7 @@ export const convertResponsesItemToVSCode = (
 
   // Handle function_call_output
   if (typedItem.type === "function_call_output") {
-    const fco = item as ResponseInputItemFunctionCallOutput;
+    const fco = item as ResponseInputItem.FunctionCallOutput;
     // fco.output can be string or array of content items
     const outputText =
       typeof fco.output === "string" ? fco.output : JSON.stringify(fco.output);
@@ -298,7 +308,7 @@ export const convertResponsesItemToVSCode = (
 
   // Handle full InputMessage (ResponseInputItem.Message)
   if (typedItem.type === "message" && "content" in typedItem) {
-    return convertInputMessage(item as unknown as ResponseInputItemMessage);
+    return convertInputMessage(item as unknown as ResponseInputItem.Message);
   }
 
   logger.warn("Unknown input item type, skipping:", typedItem.type);
@@ -373,7 +383,8 @@ export const convertResponsesToolsToVSCode = (
         inputSchema: funcTool.parameters ?? undefined,
       });
     } else {
-      logger.warn(`Tool type "${tool.type}" not supported, skipping`);
+      // Known tool types are expected and frequent, so keep the log at debug.
+      logger.debug(`Tool type "${tool.type}" not supported, skipping`);
     }
   }
 
