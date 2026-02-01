@@ -291,7 +291,8 @@ Agent Maestro automatically logs detailed error diagnostics when API requests fa
 **Supported endpoints**:
 
 - `/api/anthropic/v1/messages` (content sanitized)
-- `/api/openai/chat/completions` (TODO: sanitization)
+- `/api/openai/v1/chat/completions` (TODO: sanitization)
+- `/api/openai/v1/responses` (TODO: sanitization)
 - `/api/gemini/v1beta/models/{model}:generateContent|streamGenerateContent` (TODO: sanitization)
 
 **Privacy protection**:

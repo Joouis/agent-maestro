@@ -17,20 +17,21 @@ pnpm run watch-tests
 
 ## Test Coverage Summary
 
-| Test File | Tests | What It Covers |
-|-----------|-------|----------------|
-| `extension.test.ts` | 12 | Extension activation, command registration, configuration |
-| `copilotFixer.test.ts` | 12 | Copilot header removal, backup/restore functionality |
-| `utils/config.test.ts` | 5 | Configuration defaults and reading |
-| `utils/mimeTypes.test.ts` | 12 | MIME type detection for file extensions |
-| `utils/rooSettingsFilter.test.ts` | 5 | API key filtering from settings |
-| `utils/updateEnvFile.test.ts` | 13 | .env file creation/update logic |
-| `schemas/cline.test.ts` | 6 | Cline API request/response validation |
-| `schemas/roo.test.ts` | 7 | Roo API request/response validation |
-| `schemas/common.test.ts` | 7 | Common schemas (file ops, extension info, OS info) |
-| `server/anthropic.test.ts` | 23 | Anthropic → VS Code message conversion |
-| `server/openai.test.ts` | 15 | OpenAI → VS Code message conversion |
-| `server/gemini.test.ts` | 27 | Gemini → VS Code message conversion |
+| Test File                         | Tests | What It Covers                                            |
+| --------------------------------- | ----- | --------------------------------------------------------- |
+| `extension.test.ts`               | 12    | Extension activation, command registration, configuration |
+| `copilotFixer.test.ts`            | 12    | Copilot header removal, backup/restore functionality      |
+| `utils/config.test.ts`            | 5     | Configuration defaults and reading                        |
+| `utils/mimeTypes.test.ts`         | 12    | MIME type detection for file extensions                   |
+| `utils/rooSettingsFilter.test.ts` | 5     | API key filtering from settings                           |
+| `utils/updateEnvFile.test.ts`     | 13    | .env file creation/update logic                           |
+| `schemas/cline.test.ts`           | 6     | Cline API request/response validation                     |
+| `schemas/roo.test.ts`             | 7     | Roo API request/response validation                       |
+| `schemas/common.test.ts`          | 7     | Common schemas (file ops, extension info, OS info)        |
+| `server/anthropic.test.ts`        | 23    | Anthropic → VS Code message conversion                    |
+| `server/openaiChat.test.ts`       | 15    | OpenAI → VS Code message conversion                       |
+| `server/openaiResponses.test.ts`  | 45    | OpenAI Responses → VS Code conversion                     |
+| `server/gemini.test.ts`           | 27    | Gemini → VS Code message conversion                       |
 
 ## How Tests Prevent Regressions
 
@@ -39,6 +40,7 @@ pnpm run watch-tests
 2. **Schema Validation** - Zod schemas define the API contract. Tests ensure valid requests pass and invalid ones fail.
 
 3. **API Conversion Logic** - The proxy server translates between OpenAI/Anthropic/Gemini formats and VS Code's chat API. Tests verify:
+
    - Message roles convert correctly (user/assistant/system)
    - Tool calls and tool results are preserved
    - Edge cases like empty arrays don't crash
@@ -57,6 +59,7 @@ pnpm test
 ```
 
 This command:
+
 1. Compiles all test files
 2. Builds the extension
 3. Runs ESLint
@@ -77,7 +80,8 @@ src/test/
 ├── server/                    # API conversion utilities tests
 │   ├── anthropic.test.ts
 │   ├── gemini.test.ts
-│   └── openai.test.ts
+│   ├── openaiChat.test.ts
+│   └── openaiResponses.test.ts
 └── utils/                     # Utility function tests
     ├── config.test.ts
     ├── mimeTypes.test.ts
@@ -95,7 +99,9 @@ import * as assert from "assert";
 suite("FeatureName Test Suite", () => {
   suite("functionOrClassName", () => {
     test("should do expected behavior", () => {
-      const input = { /* test data */ };
+      const input = {
+        /* test data */
+      };
       const result = functionToTest(input);
       assert.strictEqual(result.success, true);
     });
