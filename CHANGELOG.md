@@ -5,6 +5,7 @@
 - Added OpenAI Responses API support (`POST /api/openai/v1/responses`) with streaming and function tools
 - Updated OpenAI endpoints to use `/v1` prefix for API consistency (`/v1/chat/completions`, `/v1/responses`)
 - Changed Codex default wire API from `chat` to `responses` ([Deprecating `chat/completions` support in Codex #7782](https://github.com/openai/codex/discussions/7782))
+- Added `model_context_window` setting to Codex configuration to trigger context compaction before token limit errors, with configurable scale factor via `agent-maestro.codex.contextWindowScaleFactor` (default: 1.3)
 
 ## v2.7.0 - 2026.01.29
 

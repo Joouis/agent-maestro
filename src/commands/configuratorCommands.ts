@@ -260,11 +260,22 @@ export function registerConfiguratorCommands(
 
         const proxyPort = proxy.getStatus().port;
 
+        // Calculate model_context_window with scale factor
+        const scaleFactor = vscode.workspace
+          .getConfiguration("agent-maestro.codex")
+          .get<number>("contextWindowScaleFactor", 1.3);
+        const modelContextWindow = selectedModel.maxInputTokens
+          ? Math.floor(selectedModel.maxInputTokens * scaleFactor)
+          : undefined;
+
         // Build updated config by merging with existing config
         const updatedConfig = {
           ...existingConfig,
           model: selectedModel.modelId,
           model_provider: "agent-maestro",
+          ...(modelContextWindow && {
+            model_context_window: modelContextWindow,
+          }),
           model_providers: {
             ...existingConfig.model_providers,
             "agent-maestro": {

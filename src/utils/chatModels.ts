@@ -91,6 +91,7 @@ const chatModelToQuickPickItem = (model: vscode.LanguageModelChat) => ({
   label: model.name,
   description: `${model.vendor} - ${model.id}`,
   modelId: model.id,
+  maxInputTokens: model.maxInputTokens,
 });
 
 export type ModelFamily = "claude" | "gemini" | "openai" | "other";
@@ -168,6 +169,7 @@ export const getChatModelsQuickPickItems = async (
         kind: vscode.QuickPickItemKind.Separator,
         label: "Recommended",
         modelId: "",
+        maxInputTokens: 0,
       },
       {
         ...chatModelToQuickPickItem(recommendedModel),
@@ -187,6 +189,7 @@ export const getChatModelsQuickPickItems = async (
           kind: vscode.QuickPickItemKind.Separator,
           label: getFamilyLabel(family),
           modelId: "",
+          maxInputTokens: 0,
         },
         ...models.map(chatModelToQuickPickItem),
       );

@@ -85,6 +85,12 @@
           "default": false,
           "description": "Allow the extension to access files outside of the current workspace",
           "scope": "application"
+        },
+        "agent-maestro.codex.contextWindowScaleFactor": {
+          "type": "number",
+          "default": 1.3,
+          "description": "Scale factor for calculating `model_context_window` in Codex config. Higher values trigger context compaction earlier to prevent token limit errors.",
+          "scope": "application"
         }
       }
     },
