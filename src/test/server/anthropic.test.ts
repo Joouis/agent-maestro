@@ -357,6 +357,62 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.strictEqual(result.length, 0);
     });
 
+    test("should remove tool_result when preceding message is user, not assistant", () => {
+      // assistant has tool_use, user sends tool_result, then another user message
+      // with a tool_result referencing the same assistant — but it's not immediately
+      // preceding, so the tool_result should be treated as orphaned.
+      const messages = [
+        { role: "user" as const, content: "Do something" },
+        {
+          role: "assistant" as const,
+          content: [
+            {
+              type: "tool_use" as const,
+              id: "tool-1",
+              name: "search",
+              input: {},
+            },
+          ],
+        },
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "tool_result" as const,
+              tool_use_id: "tool-1",
+              content: "Result 1",
+            },
+          ],
+        },
+        { role: "assistant" as const, content: "Got it" },
+        { role: "user" as const, content: "More context" },
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "tool_result" as const,
+              tool_use_id: "tool-1",
+              content: "Stale result referencing old tool_use",
+            },
+          ],
+        },
+      ];
+
+      const result = sanitizeOrphanedToolResults(messages);
+
+      // The last user message's tool_result references tool-1 but the immediately
+      // preceding message is a user message ("More context"), not an assistant,
+      // so the tool_result is orphaned and the message is dropped.
+      // Remaining: user, assistant(tool_use), user(tool_result), assistant, user
+      assert.strictEqual(result.length, 5);
+      assert.strictEqual(result[0].role, "user");
+      assert.strictEqual(result[1].role, "assistant");
+      assert.strictEqual(result[2].role, "user");
+      assert.strictEqual(result[3].role, "assistant");
+      assert.strictEqual(result[4].role, "user");
+      assert.strictEqual(result[4].content, "More context");
+    });
+
     test("should remove orphaned tool_result when preceding assistant has no tool_use", () => {
       const messages = [
         { role: "user" as const, content: "Hello" },
@@ -425,32 +481,15 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     });
 
     test("should merge consecutive same-role messages after removal", () => {
+      // Scenario: assistant1 → user(orphaned tool_result) → assistant2
+      // After dropping the orphaned user message, we get assistant1 → assistant2
+      // which must be merged into a single assistant message.
       const messages = [
-        { role: "user" as const, content: "First user message" },
+        { role: "user" as const, content: "Hello" },
         {
           role: "assistant" as const,
-          content: [
-            {
-              type: "tool_use" as const,
-              id: "tool-1",
-              name: "search",
-              input: {},
-            },
-          ],
+          content: [{ type: "text" as const, text: "First response" }],
         },
-        {
-          role: "user" as const,
-          content: [
-            {
-              type: "tool_result" as const,
-              tool_use_id: "tool-1",
-              content: "Result 1",
-            },
-          ],
-        },
-        // This assistant message was compacted away in the original history,
-        // but we simulate the scenario where orphaned results appear:
-        { role: "assistant" as const, content: "Some text response" },
         {
           role: "user" as const,
           content: [
@@ -461,25 +500,27 @@ suite("Anthropic Conversion Utils Test Suite", () => {
             },
           ],
         },
+        {
+          role: "assistant" as const,
+          content: [{ type: "text" as const, text: "Second response" }],
+        },
         { role: "user" as const, content: "Follow-up question" },
       ];
 
       const result = sanitizeOrphanedToolResults(messages);
 
-      // After removing the orphaned tool_result message (index 4),
-      // the two user messages at the end (original index 4 dropped, index 5 remains)
-      // would result in assistant at index 3 followed by user at index 5 — no merge needed
-      // But let's verify the structure is correct
-      assert.ok(result.length >= 4);
-      // Verify alternation is maintained
-      for (let i = 1; i < result.length; i++) {
-        if (result[i].role === result[i - 1].role) {
-          // Same-role messages should have been merged
-          assert.fail(
-            `Consecutive same-role messages at index ${i - 1} and ${i}`,
-          );
-        }
-      }
+      // After dropping the orphaned user message (index 2), the two assistant
+      // messages become consecutive and must be merged.
+      assert.strictEqual(result.length, 3);
+      assert.strictEqual(result[0].role, "user");
+      assert.strictEqual(result[1].role, "assistant");
+      assert.strictEqual(result[2].role, "user");
+
+      // Verify the merged assistant message contains both text blocks
+      const mergedContent = result[1].content as any[];
+      assert.strictEqual(mergedContent.length, 2);
+      assert.strictEqual(mergedContent[0].text, "First response");
+      assert.strictEqual(mergedContent[1].text, "Second response");
     });
 
     test("should handle empty messages array", () => {

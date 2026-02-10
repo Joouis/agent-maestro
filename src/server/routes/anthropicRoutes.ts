@@ -26,11 +26,12 @@ const prepareAnthropicMessages = async ({
   client: vscode.LanguageModelChat;
   modelId: string;
 }) => {
-  const requestBodyStr = JSON.stringify(requestBody);
-  logger.debug("/v1/messages payload: ", requestBodyStr);
-
   const { system, messages: rawMessages } = requestBody;
   const messages = sanitizeOrphanedToolResults(rawMessages);
+
+  const sanitizedRequestBody = { ...requestBody, messages };
+  const sanitizedRequestBodyStr = JSON.stringify(sanitizedRequestBody);
+  logger.debug("/v1/messages payload: ", sanitizedRequestBodyStr);
 
   const vsCodeLmMessages: vscode.LanguageModelChatMessage[] = [
     ...convertAnthropicSystemToVSCode(system),
@@ -39,7 +40,7 @@ const prepareAnthropicMessages = async ({
 
   const cancellationToken = new vscode.CancellationTokenSource().token;
   const inputTokenCount = await countAnthropicMessageTokens(
-    requestBodyStr,
+    sanitizedRequestBodyStr,
     client,
     true,
     modelId,

@@ -494,18 +494,16 @@ export const sanitizeOrphanedToolResults = (
       continue;
     }
 
-    // Collect tool_use IDs from the preceding assistant message
-    let precedingAssistant: Anthropic.Messages.MessageParam | undefined;
-    for (let j = filtered.length - 1; j >= 0; j--) {
-      if (filtered[j].role === "assistant") {
-        precedingAssistant = filtered[j];
-        break;
-      }
-    }
+    // Collect tool_use IDs from the immediately preceding assistant message
+    const precedingMessage = filtered.at(-1);
     const validToolUseIds = new Set<string>();
 
-    if (precedingAssistant && typeof precedingAssistant.content !== "string") {
-      for (const block of precedingAssistant.content) {
+    if (
+      precedingMessage &&
+      precedingMessage.role === "assistant" &&
+      typeof precedingMessage.content !== "string"
+    ) {
+      for (const block of precedingMessage.content) {
         if (block.type === "tool_use" || block.type === "server_tool_use") {
           validToolUseIds.add(block.id);
         }
