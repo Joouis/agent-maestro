@@ -454,7 +454,8 @@ export const countAnthropicMessageTokens = async (
  * blocks may be removed while leaving corresponding tool_result blocks orphaned.
  *
  * This function:
- * 1. Collects tool_use IDs from each assistant message
+ * 1. For each user message, collects tool_use IDs from all contiguous preceding
+ *    assistant messages (which will be merged into one after filtering)
  * 2. Filters out tool_result blocks in subsequent user messages that don't match
  * 3. Drops user messages that become empty after filtering
  * 4. Merges consecutive same-role messages to maintain user/assistant alternation
@@ -494,18 +495,20 @@ export const sanitizeOrphanedToolResults = (
       continue;
     }
 
-    // Collect tool_use IDs from the immediately preceding assistant message
-    const precedingMessage = filtered.at(-1);
+    // Collect tool_use IDs from all contiguous preceding assistant messages.
+    // When orphaned user messages are dropped, consecutive assistant messages
+    // will be merged later, so we must consider tool_use IDs from all of them.
     const validToolUseIds = new Set<string>();
-
-    if (
-      precedingMessage &&
-      precedingMessage.role === "assistant" &&
-      typeof precedingMessage.content !== "string"
-    ) {
-      for (const block of precedingMessage.content) {
-        if (block.type === "tool_use" || block.type === "server_tool_use") {
-          validToolUseIds.add(block.id);
+    for (let j = filtered.length - 1; j >= 0; j--) {
+      const prev = filtered[j];
+      if (prev.role !== "assistant") {
+        break;
+      }
+      if (typeof prev.content !== "string") {
+        for (const block of prev.content) {
+          if (block.type === "tool_use" || block.type === "server_tool_use") {
+            validToolUseIds.add(block.id);
+          }
         }
       }
     }

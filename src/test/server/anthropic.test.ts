@@ -523,6 +523,65 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.strictEqual(mergedContent[1].text, "Second response");
     });
 
+    test("should keep tool_result referencing tool_use from earlier contiguous assistant", () => {
+      // Scenario: assistant(tool_use t1) → user(orphaned → dropped) → assistant(text) → user(tool_result t1)
+      // After dropping the orphaned user, the two assistants become contiguous.
+      // The tool_result for t1 should be kept because t1 is in the contiguous
+      // assistant run that will be merged.
+      const messages = [
+        { role: "user" as const, content: "Hello" },
+        {
+          role: "assistant" as const,
+          content: [
+            {
+              type: "tool_use" as const,
+              id: "t1",
+              name: "search",
+              input: {},
+            },
+          ],
+        },
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "tool_result" as const,
+              tool_use_id: "some-compacted-id",
+              content: "Orphaned",
+            },
+          ],
+        },
+        {
+          role: "assistant" as const,
+          content: [{ type: "text" as const, text: "Here is info" }],
+        },
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "tool_result" as const,
+              tool_use_id: "t1",
+              content: "Result for t1",
+            },
+          ],
+        },
+      ];
+
+      const result = sanitizeOrphanedToolResults(messages);
+
+      // After filtering: user, assistant(t1), assistant(text), user(tool_result t1)
+      // After merging: user, assistant(t1 + text), user(tool_result t1)
+      assert.strictEqual(result.length, 3);
+      assert.strictEqual(result[0].role, "user");
+      assert.strictEqual(result[1].role, "assistant");
+      assert.strictEqual(result[2].role, "user");
+
+      // The tool_result for t1 is preserved
+      const lastContent = result[2].content as any[];
+      assert.strictEqual(lastContent.length, 1);
+      assert.strictEqual(lastContent[0].tool_use_id, "t1");
+    });
+
     test("should handle empty messages array", () => {
       const result = sanitizeOrphanedToolResults([]);
       assert.strictEqual(result.length, 0);
