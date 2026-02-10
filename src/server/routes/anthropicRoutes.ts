@@ -13,6 +13,7 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
   countAnthropicMessageTokens,
+  sanitizeOrphanedToolResults,
 } from "../utils/anthropic";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 
@@ -28,7 +29,8 @@ const prepareAnthropicMessages = async ({
   const requestBodyStr = JSON.stringify(requestBody);
   logger.debug("/v1/messages payload: ", requestBodyStr);
 
-  const { system, messages } = requestBody;
+  const { system, messages: rawMessages } = requestBody;
+  const messages = sanitizeOrphanedToolResults(rawMessages);
 
   const vsCodeLmMessages: vscode.LanguageModelChatMessage[] = [
     ...convertAnthropicSystemToVSCode(system),

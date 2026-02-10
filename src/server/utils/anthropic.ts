@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import * as vscode from "vscode";
 
+import { logger } from "../../utils/logger";
+
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
 
@@ -441,4 +443,124 @@ export const countAnthropicMessageTokens = async (
   const tokenCount = await client.countTokens(message, cancellationToken);
 
   return calibrateTokens(tokenCount, isInput, modelId);
+};
+
+/**
+ * Remove orphaned tool_result and web_search_tool_result blocks from the messages array.
+ *
+ * The Anthropic API requires every tool_result to reference a tool_use in the
+ * immediately preceding assistant message. When conversation history is compacted
+ * (e.g. by Claude Code's /compact command), assistant messages containing tool_use
+ * blocks may be removed while leaving corresponding tool_result blocks orphaned.
+ *
+ * This function:
+ * 1. Collects tool_use IDs from each assistant message
+ * 2. Filters out tool_result blocks in subsequent user messages that don't match
+ * 3. Drops user messages that become empty after filtering
+ * 4. Merges consecutive same-role messages to maintain user/assistant alternation
+ */
+export const sanitizeOrphanedToolResults = (
+  messages: Array<Anthropic.Messages.MessageParam>,
+): Array<Anthropic.Messages.MessageParam> => {
+  if (messages.length === 0) {
+    return messages;
+  }
+
+  const filtered: Array<Anthropic.Messages.MessageParam> = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+
+    // Assistant messages pass through unchanged
+    if (message.role === "assistant") {
+      filtered.push(message);
+      continue;
+    }
+
+    // User messages with string content pass through unchanged
+    if (typeof message.content === "string") {
+      filtered.push(message);
+      continue;
+    }
+
+    // For user messages with array content, check for tool_result blocks
+    const hasToolResults = message.content.some(
+      (block) =>
+        block.type === "tool_result" || block.type === "web_search_tool_result",
+    );
+
+    if (!hasToolResults) {
+      filtered.push(message);
+      continue;
+    }
+
+    // Collect tool_use IDs from the preceding assistant message
+    let precedingAssistant: Anthropic.Messages.MessageParam | undefined;
+    for (let j = filtered.length - 1; j >= 0; j--) {
+      if (filtered[j].role === "assistant") {
+        precedingAssistant = filtered[j];
+        break;
+      }
+    }
+    const validToolUseIds = new Set<string>();
+
+    if (precedingAssistant && typeof precedingAssistant.content !== "string") {
+      for (const block of precedingAssistant.content) {
+        if (block.type === "tool_use" || block.type === "server_tool_use") {
+          validToolUseIds.add(block.id);
+        }
+      }
+    }
+
+    // Filter out orphaned tool_result blocks
+    const filteredContent = message.content.filter((block) => {
+      if (
+        block.type === "tool_result" ||
+        block.type === "web_search_tool_result"
+      ) {
+        if (!validToolUseIds.has(block.tool_use_id)) {
+          logger.warn(
+            `Removing orphaned ${block.type} block with tool_use_id: ${block.tool_use_id}`,
+          );
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Skip messages that became empty after filtering
+    if (filteredContent.length === 0) {
+      logger.warn(
+        "Dropping empty user message after removing orphaned tool_result blocks",
+      );
+      continue;
+    }
+
+    filtered.push({ ...message, content: filteredContent });
+  }
+
+  // Merge consecutive same-role messages to maintain user/assistant alternation
+  const merged: Array<Anthropic.Messages.MessageParam> = [];
+  for (const message of filtered) {
+    const last = merged.at(-1);
+    if (last && last.role === message.role) {
+      // Merge content into the previous message of the same role
+      const lastContent =
+        typeof last.content === "string"
+          ? [{ type: "text" as const, text: last.content }]
+          : last.content;
+      const currentContent =
+        typeof message.content === "string"
+          ? [{ type: "text" as const, text: message.content }]
+          : message.content;
+      merged[merged.length - 1] = {
+        role: message.role,
+        content: [...lastContent, ...currentContent],
+      };
+    } else {
+      merged.push(message);
+    }
+  }
+
+  return merged;
 };
