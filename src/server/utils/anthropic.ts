@@ -243,7 +243,7 @@ export const convertAnthropicToolToVSCode = (
 ): vscode.LanguageModelChatTool[] | undefined =>
   tools?.map((tool) => {
     const t = tool as Anthropic.Messages.Tool;
-    if (t.input_schema !== undefined) {
+    if (t.input_schema) {
       return {
         name: t.name,
         description: t.description || "",

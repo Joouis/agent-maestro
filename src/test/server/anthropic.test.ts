@@ -214,6 +214,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.ok(result);
       assert.strictEqual(result[0].name, "bash");
       assert.strictEqual(result[0].description, "bash_20250124");
+      assert.deepStrictEqual(result[0].inputSchema, tools[0]);
     });
 
     test("should return undefined for undefined tools", () => {
