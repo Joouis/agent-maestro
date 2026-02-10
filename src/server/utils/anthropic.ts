@@ -241,46 +241,22 @@ export const convertAnthropicSystemToVSCode = (
 export const convertAnthropicToolToVSCode = (
   tools?: Anthropic.Messages.ToolUnion[],
 ): vscode.LanguageModelChatTool[] | undefined =>
-  tools
-    ? tools.map((tool) => {
-        if (tool.name === "bash") {
-          return {
-            name: tool.name,
-            description: "ToolBash20250124",
-            inputSchema: tool,
-          };
-        } else if (tool.name === "str_replace_editor") {
-          return {
-            name: tool.name,
-            description: "ToolTextEditor20250124",
-            inputSchema: tool,
-          };
-        } else if (tool.name === "str_replace_based_edit_tool") {
-          return {
-            name: tool.name,
-            description: "TextEditor20250429",
-            inputSchema: tool,
-          };
-        } else if (tool.name === "web_search") {
-          // Github Copilot API does not support built-in web search tool
-          return {
-            name: tool.name,
-            description: "WebSearchTool20250305",
-            inputSchema: {
-              ...tool,
-              type: "object",
-            },
-          };
-        }
-
-        const t = tool as Anthropic.Messages.Tool;
-        return {
-          name: t.name,
-          description: t.description || "",
-          inputSchema: t.input_schema,
-        };
-      })
-    : undefined;
+  tools?.map((tool) => {
+    const t = tool as Anthropic.Messages.Tool;
+    if (t.input_schema !== undefined) {
+      return {
+        name: t.name,
+        description: t.description || "",
+        inputSchema: t.input_schema,
+      };
+    }
+    // For built-in tools like ToolBash20250124 that don't have input_schema
+    return {
+      name: t.name,
+      description: t.description || (tool as { type?: string }).type || "",
+      inputSchema: tool,
+    };
+  });
 
 export const convertAnthropicToolChoiceToVSCode = (
   toolChoice?: Anthropic.Messages.ToolChoice,

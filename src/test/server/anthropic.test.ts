@@ -20,10 +20,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       const result = convertAnthropicMessageToVSCode(message);
 
       assert.ok(!Array.isArray(result));
-      assert.strictEqual(
-        result.role,
-        vscode.LanguageModelChatMessageRole.User,
-      );
+      assert.strictEqual(result.role, vscode.LanguageModelChatMessageRole.User);
     });
 
     test("should convert assistant message with string content", () => {
@@ -53,10 +50,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       const result = convertAnthropicMessageToVSCode(message);
 
       assert.ok(!Array.isArray(result));
-      assert.strictEqual(
-        result.role,
-        vscode.LanguageModelChatMessageRole.User,
-      );
+      assert.strictEqual(result.role, vscode.LanguageModelChatMessageRole.User);
     });
 
     test("should convert assistant message with tool use", () => {
@@ -96,10 +90,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       const result = convertAnthropicMessageToVSCode(message);
 
       assert.ok(!Array.isArray(result));
-      assert.strictEqual(
-        result.role,
-        vscode.LanguageModelChatMessageRole.User,
-      );
+      assert.strictEqual(result.role, vscode.LanguageModelChatMessageRole.User);
     });
 
     test("should handle thinking block", () => {
@@ -158,7 +149,9 @@ suite("Anthropic Conversion Utils Test Suite", () => {
 
   suite("convertAnthropicSystemToVSCode", () => {
     test("should convert string system prompt", () => {
-      const result = convertAnthropicSystemToVSCode("You are a helpful assistant");
+      const result = convertAnthropicSystemToVSCode(
+        "You are a helpful assistant",
+      );
 
       assert.strictEqual(result.length, 1);
       assert.strictEqual(
@@ -213,34 +206,14 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.strictEqual(result[0].description, "Get the weather for a city");
     });
 
-    test("should handle bash tool specially", () => {
+    test("should handle built-in tools without input_schema", () => {
       const tools = [{ name: "bash", type: "bash_20250124" }];
 
       const result = convertAnthropicToolToVSCode(tools as any);
 
       assert.ok(result);
       assert.strictEqual(result[0].name, "bash");
-      assert.strictEqual(result[0].description, "ToolBash20250124");
-    });
-
-    test("should handle str_replace_editor tool specially", () => {
-      const tools = [{ name: "str_replace_editor", type: "text_editor_20250124" }];
-
-      const result = convertAnthropicToolToVSCode(tools as any);
-
-      assert.ok(result);
-      assert.strictEqual(result[0].name, "str_replace_editor");
-      assert.strictEqual(result[0].description, "ToolTextEditor20250124");
-    });
-
-    test("should handle web_search tool specially", () => {
-      const tools = [{ name: "web_search", type: "web_search_20250305" }];
-
-      const result = convertAnthropicToolToVSCode(tools as any);
-
-      assert.ok(result);
-      assert.strictEqual(result[0].name, "web_search");
-      assert.strictEqual(result[0].description, "WebSearchTool20250305");
+      assert.strictEqual(result[0].description, "bash_20250124");
     });
 
     test("should return undefined for undefined tools", () => {
@@ -284,7 +257,9 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     });
 
     test("should return undefined for none tool choice", () => {
-      const result = convertAnthropicToolChoiceToVSCode({ type: "none" } as any);
+      const result = convertAnthropicToolChoiceToVSCode({
+        type: "none",
+      } as any);
       assert.strictEqual(result, undefined);
     });
 
