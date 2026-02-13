@@ -16,6 +16,7 @@ Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Clin
 Turn VS Code into your compliant AI playground with powerful API compatibility and one-click setup:
 
 - **Universal API Compatibility**: Anthropic (`/messages`), OpenAI (`/chat/completions`, `/responses`), and Gemini compatible endpoints - use Claude Code, Codex, Gemini CLI or any LLM client seamlessly
+  - **Context Window Management**: Configurable scale factors to prevent context window exceeded errors caused by tokenizer differences between VS Code's API and model providers
 - **One-Click Setup**: Automated configuration commands for instant Claude Code, Codex, and Gemini CLI integration
 - **Headless AI Agent Control**: Create and manage tasks through REST APIs for Roo Code and Cline extensions
   - **Comprehensive APIs**: Complete task lifecycle management with OpenAPI documentation at `/openapi.json`
@@ -222,6 +223,16 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 | `agent-maestro.codex.contextWindowScaleFactor`  | Scale factor for Codex context window calculation (range: 1.0–2.0) | `1.3`                          |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
+
+### Context Window Management
+
+Agent Maestro proxies requests through VS Code's Language Model API, which uses a different tokenizer (OpenAI's tiktoken / O200K) than the actual model providers. This mismatch means the token counts reported locally can be lower than the real usage, potentially causing requests to exceed the model's context window and fail unexpectedly.
+
+To prevent this, Agent Maestro provides configurable scale factors that inflate the local token counts to better approximate the actual usage. Different coding agent clients require different approaches:
+
+- **`anthropic.tokenCountScaleFactor`** (for Claude Code and other Anthropic API clients): Applied to every token count reported in API responses. The proxy multiplies the raw VS Code token count by this factor (e.g., 10,000 tokens × 1.2 = 12,000 reported). This helps the client detect when it's approaching the context limit and trigger actions like auto-compaction before hitting the wall. Increase this value if you still encounter context window errors; decrease it if you want to use more of the available context.
+
+- **`codex.contextWindowScaleFactor`** (for Codex): Used only when generating Codex's `config.toml` to set the `model_context_window` value (calculated as `maxInputTokens × scaleFactor`). This tells Codex the effective context window size upfront so it manages its own conversation history accordingly.
 
 ## API Overview
 
