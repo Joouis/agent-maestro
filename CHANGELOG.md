@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.8.1 - 2026.02.13
+
+- Simplify Anthropic token calibration from complex linear regression to a single configurable scale factor (`agent-maestro.anthropic.tokenCountScaleFactor`, default `1.2`)
+- Return structured response with "model_context_window_exceeded" stop reason when context window is exceeded, instead of passing through a misleading generic error.
+- Fix tool conversion to handle any tool naming convention by detecting built-in tools via input_schema presence instead of hardcoded name matching.
+
 ## v2.8.0 - 2026.01.31
 
 - Added OpenAI Responses API support (`POST /api/openai/v1/responses`) with streaming and function tools
