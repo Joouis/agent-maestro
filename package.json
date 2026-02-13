@@ -96,10 +96,10 @@
         },
         "agent-maestro.anthropic.tokenCountScaleFactor": {
           "type": "number",
-          "default": 1.2,
+          "default": 1.25,
           "minimum": 1,
           "maximum": 2,
-          "description": "Scale factor applied to token counts from VS Code's API to approximate Anthropic's actual token usage. Higher values provide more buffer against context window limits but reduce usable context. Default 1.2 means VS Code token counts are multiplied by 1.2.",
+          "description": "Scale factor applied to token counts from VS Code's API to approximate Anthropic's actual token usage. Higher values provide more buffer against context window limits but reduce usable context. Default 1.25 means VS Code token counts are multiplied by 1.25.",
           "scope": "application"
         }
       }

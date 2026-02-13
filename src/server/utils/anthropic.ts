@@ -281,7 +281,7 @@ export const convertAnthropicToolChoiceToVSCode = (
   }
 };
 
-const DEFAULT_TOKEN_SCALE_FACTOR = 1.2;
+const DEFAULT_TOKEN_SCALE_FACTOR = 1.25;
 
 export interface TokenCounts {
   original: number; // Original VSCode API token count

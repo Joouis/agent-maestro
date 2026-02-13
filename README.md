@@ -219,7 +219,7 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 | `agent-maestro.defaultRooIdentifier`            | Default Roo extension to use                                       | `"rooveterinaryinc.roo-cline"` |
 | `agent-maestro.proxyServerPort`                 | Proxy server port                                                  | `23333`                        |
 | `agent-maestro.mcpServerPort`                   | MCP server port                                                    | `23334`                        |
-| `agent-maestro.anthropic.tokenCountScaleFactor` | Scale factor for Anthropic token count estimation (range: 1.0–2.0) | `1.2`                          |
+| `agent-maestro.anthropic.tokenCountScaleFactor` | Scale factor for Anthropic token count estimation (range: 1.0–2.0) | `1.25`                         |
 | `agent-maestro.codex.contextWindowScaleFactor`  | Scale factor for Codex context window calculation (range: 1.0–2.0) | `1.3`                          |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
@@ -230,7 +230,7 @@ Agent Maestro proxies requests through VS Code's Language Model API, which uses 
 
 To prevent this, Agent Maestro provides configurable scale factors that inflate the local token counts to better approximate the actual usage. Different coding agent clients require different approaches:
 
-- **`anthropic.tokenCountScaleFactor`** (for Claude Code and other Anthropic API clients): Applied to every token count reported in API responses. The proxy multiplies the raw VS Code token count by this factor (e.g., 10,000 tokens × 1.2 = 12,000 reported). This helps the client detect when it's approaching the context limit and trigger actions like auto-compaction before hitting the wall. Increase this value if you still encounter context window errors; decrease it if you want to use more of the available context.
+- **`anthropic.tokenCountScaleFactor`** (for Claude Code and other Anthropic API clients): Applied to every token count reported in API responses. The proxy multiplies the raw VS Code token count by this factor (e.g., 10,000 tokens × 1.25 = 12,500 reported). This helps the client detect when it's approaching the context limit and trigger actions like auto-compaction before hitting the wall. Increase this value if you still encounter context window errors; decrease it if you want to use more of the available context.
 
 - **`codex.contextWindowScaleFactor`** (for Codex): Used only when generating Codex's `config.toml` to set the `model_context_window` value (calculated as `maxInputTokens × scaleFactor`). This tells Codex the effective context window size upfront so it manages its own conversation history accordingly.
 
