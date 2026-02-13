@@ -19,11 +19,9 @@ import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 const prepareAnthropicMessages = async ({
   requestBody,
   client,
-  modelId,
 }: {
   requestBody: Anthropic.Messages.MessageCreateParams;
   client: vscode.LanguageModelChat;
-  modelId: string;
 }) => {
   const requestBodyStr = JSON.stringify(requestBody);
   logger.debug("/v1/messages payload: ", requestBodyStr);
@@ -39,8 +37,6 @@ const prepareAnthropicMessages = async ({
   const inputTokenCount = await countAnthropicMessageTokens(
     requestBodyStr,
     client,
-    true,
-    modelId,
   );
 
   return {
@@ -223,7 +219,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         await prepareAnthropicMessages({
           requestBody,
           client,
-          modelId: effectiveModelId,
         });
       lmChatMessages = vsCodeLmMessages;
       inputTokens = inputTokenCount.calibrated;
@@ -278,12 +273,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
         // Count output tokens
         const outputTokenCount = accumulatedText
-          ? await countAnthropicMessageTokens(
-              accumulatedText,
-              client,
-              false,
-              effectiveModelId,
-            )
+          ? await countAnthropicMessageTokens(accumulatedText, client)
           : { original: 1, calibrated: 1 };
 
         // https://docs.anthropic.com/en/api/messages#response-id
@@ -442,12 +432,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
           // Count output tokens for the complete response
           const outputTokenCount = accumulatedText
-            ? await countAnthropicMessageTokens(
-                accumulatedText,
-                client,
-                false,
-                effectiveModelId,
-              )
+            ? await countAnthropicMessageTokens(accumulatedText, client)
             : { original: 1, calibrated: 1 };
 
           await writeSSE({
@@ -508,7 +493,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         );
 
         vscode.window.showWarningMessage(
-          "The model has reached its context window limit. Please use the /compact command to reduce the conversation history.",
+          "The model has reached its context window limit. Please use the /compact command to reduce the conversation history. You can adjust 'agent-maestro.anthropic.tokenCountScaleFactor' in settings to fine-tune token estimation.",
         );
 
         if (rawRequestBody?.stream) {
@@ -636,7 +621,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const { inputTokenCount } = await prepareAnthropicMessages({
         requestBody,
         client,
-        modelId: client.id,
       });
 
       return c.json(

@@ -281,140 +281,37 @@ export const convertAnthropicToolChoiceToVSCode = (
   }
 };
 
-/**
- * Token Calibration Coefficients
- * Linear regression model: ŷ = slope * token_count_by_VSCode_API + baseOffset
- */
-interface CalibrationCoefficients {
-  slope: number;
-  baseOffset: number; // Integer baseline adjustment for token count accuracy
-}
-
-interface TokenCalibrationConfig {
-  input: {
-    small: CalibrationCoefficients; // < 10K tokens
-    medium: CalibrationCoefficients; // 10K - 50K tokens
-    large: CalibrationCoefficients; // 50K - 100K tokens
-    xlarge: CalibrationCoefficients; // >= 100K tokens
-  };
-  output: {
-    small: CalibrationCoefficients; // < 10K tokens
-    medium: CalibrationCoefficients; // 10K - 50K tokens
-    large: CalibrationCoefficients; // 50K - 100K tokens
-    xlarge: CalibrationCoefficients; // >= 100K tokens
-  };
-}
-
-/**
- * Calibration parameters to correct VSCode API token counts to fit actual API usage.
- *
- * Uses linear regression coefficients optimized for different token size ranges.
- * Output tokens use uniform parameters across all ranges due to high variability.
- */
-const calibrationConfig: {
-  default: TokenCalibrationConfig;
-  opus: TokenCalibrationConfig;
-} = {
-  default: {
-    input: {
-      small: { slope: 1.065, baseOffset: -120 },
-      medium: { slope: 1.082, baseOffset: 1300 },
-      large: { slope: 1.05, baseOffset: 2000 },
-      xlarge: { slope: 1.05, baseOffset: 1500 },
-    },
-    output: {
-      // Use same parameters for all output token ranges due to insufficient data
-      small: { slope: 0.67, baseOffset: 170 },
-      medium: { slope: 0.67, baseOffset: 170 },
-      large: { slope: 0.67, baseOffset: 170 },
-      xlarge: { slope: 0.67, baseOffset: 170 },
-    },
-  },
-  opus: {
-    input: {
-      small: { slope: 1.1, baseOffset: 0 },
-      medium: { slope: 1.1, baseOffset: 1500 },
-      large: { slope: 1.12, baseOffset: 1500 },
-      xlarge: { slope: 1.14, baseOffset: 1500 },
-    },
-    output: {
-      small: { slope: 1, baseOffset: 150 },
-      medium: { slope: 1, baseOffset: 150 },
-      large: { slope: 1, baseOffset: 150 },
-      xlarge: { slope: 1, baseOffset: 150 },
-    },
-  },
-};
+const DEFAULT_TOKEN_SCALE_FACTOR = 1.2;
 
 export interface TokenCounts {
   original: number; // Original VSCode API token count
-  calibrated: number; // Calibrated token count matching actual API usage
-}
-
-/**
- * Calibrate token count to fit actual API usage
- *
- * @param vscodeTokens - Token count from VSCode API
- * @param isInput - True for input tokens, false for output tokens
- * @param modelId - Model ID to determine which calibration config to use
- * @returns Object containing both original and calibrated token counts
- */
-function calibrateTokens(
-  vscodeTokens: number,
-  isInput: boolean,
-  modelId?: string,
-): TokenCounts {
-  // Select config based on model ID
-  const configKey = modelId?.toLowerCase().includes("opus")
-    ? "opus"
-    : "default";
-  const config = calibrationConfig[configKey];
-
-  const coefficients = isInput ? config.input : config.output;
-
-  let calibration: CalibrationCoefficients;
-
-  // Select calibration parameters based on token size
-  // Thresholds (9K, 45K, 90K) approximate actual API thresholds (10K, 50K, 100K)
-  if (vscodeTokens < 9000) {
-    calibration = coefficients.small;
-  } else if (vscodeTokens < 45000) {
-    calibration = coefficients.medium;
-  } else if (vscodeTokens < 90000) {
-    calibration = coefficients.large;
-  } else {
-    calibration = coefficients.xlarge;
-  }
-
-  // Apply calibration: calibrated = slope × vscode + baseOffset
-  const calibrated = calibration.slope * vscodeTokens + calibration.baseOffset;
-
-  return {
-    original: vscodeTokens,
-    calibrated: Math.round(calibrated),
-  };
+  calibrated: number; // Scaled token count approximating actual API usage
 }
 
 /**
  * Counts the estimated number of tokens in a message for Anthropic models.
  *
- * Note: The underlying countTokens implementation reuses OpenAI's tiktoken tokenizers
- * (O200K), which may not perfectly match Anthropic's actual tokenization.
+ * Applies a configurable scale factor to compensate for the difference between
+ * VS Code's tiktoken-based counting and Anthropic's actual tokenization.
+ * The scale factor can be adjusted via the `agent-maestro.anthropic.tokenCountScaleFactor` setting.
  *
  * @param message - The message text to count tokens for
  * @param client - The VSCode language model chat client
- * @param isInput - True for input tokens, false for output tokens
- * @param modelId - Model ID to determine which calibration config to use
- * @returns Object containing both original and calibrated token counts
+ * @returns Object containing both original and scaled token counts
  */
 export const countAnthropicMessageTokens = async (
   message: string,
   client: vscode.LanguageModelChat,
-  isInput: boolean = true,
-  modelId?: string,
 ): Promise<TokenCounts> => {
+  const scaleFactor = vscode.workspace
+    .getConfiguration("agent-maestro.anthropic")
+    .get<number>("tokenCountScaleFactor", DEFAULT_TOKEN_SCALE_FACTOR);
+
   const cancellationToken = new vscode.CancellationTokenSource().token;
   const tokenCount = await client.countTokens(message, cancellationToken);
 
-  return calibrateTokens(tokenCount, isInput, modelId);
+  return {
+    original: tokenCount,
+    calibrated: Math.round(tokenCount * scaleFactor),
+  };
 };
