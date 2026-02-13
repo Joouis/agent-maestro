@@ -554,7 +554,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                   stop_sequence: null,
                 },
                 usage: {
-                  input_tokens: inputTokens * 2, // Double to indicate exceeded usage
+                  input_tokens: inputTokens * 2, // Inflate to ensure Claude Code triggers auto-compact before next message
                   output_tokens: 0,
                   cache_creation_input_tokens: 0,
                   cache_read_input_tokens: 0,
@@ -586,7 +586,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             cache_creation: null,
             cache_creation_input_tokens: null,
             cache_read_input_tokens: null,
-            input_tokens: inputTokens * 2, // Double to indicate exceeded usage,
+            input_tokens: inputTokens * 2, // Inflate to ensure Claude Code triggers auto-compact before next message
             output_tokens: 0,
             server_tool_use: null,
             service_tier: null,
