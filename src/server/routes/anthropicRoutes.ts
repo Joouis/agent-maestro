@@ -186,6 +186,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
     let effectiveModelId = "";
+    let maxInputTokens = 0;
     let rawRequestBody;
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let inputTokens = 0;
@@ -210,6 +211,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       if (client) {
         effectiveModelId = client.id;
+        maxInputTokens = client.maxInputTokens;
       }
 
       if (clientError) {
@@ -491,9 +493,106 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const errorMessage =
         error instanceof Error ? error.message : JSON.stringify(error);
 
-      const isToolResultError = errorMessage.includes(
-        "unexpected `tool_use_id` found in `tool_result` blocks",
-      );
+      const isContextWindowExceeded =
+        errorMessage.includes(
+          "unexpected `tool_use_id` found in `tool_result` blocks",
+        ) &&
+        maxInputTokens > 0 &&
+        inputTokens > maxInputTokens;
+
+      if (isContextWindowExceeded) {
+        const model = rawRequestBody?.model ?? effectiveModelId;
+
+        logger.warn(
+          `⚠ /v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens}`,
+        );
+
+        vscode.window.showWarningMessage(
+          "The model has reached its context window limit. Please use the /compact command to reduce the conversation history.",
+        );
+
+        if (rawRequestBody?.stream) {
+          return streamSSE(
+            c,
+            async (stream) => {
+              const writeSSE = async (
+                message: Anthropic.Messages.RawMessageStreamEvent,
+              ) => {
+                await stream.writeSSE({
+                  event: message.type,
+                  data: JSON.stringify(message),
+                });
+              };
+
+              await writeSSE({
+                type: "message_start",
+                message: {
+                  id: `msg_${Date.now()}`,
+                  type: "message",
+                  role: "assistant",
+                  model,
+                  content: [],
+                  stop_reason: null,
+                  stop_sequence: null,
+                  usage: {
+                    cache_creation: null,
+                    input_tokens: inputTokens,
+                    output_tokens: 0,
+                    cache_creation_input_tokens: null,
+                    cache_read_input_tokens: null,
+                    server_tool_use: null,
+                    service_tier: "standard",
+                  },
+                },
+              });
+
+              await writeSSE({
+                type: "message_delta",
+                delta: {
+                  stop_reason:
+                    "model_context_window_exceeded" as Anthropic.Messages.StopReason,
+                  stop_sequence: null,
+                },
+                usage: {
+                  input_tokens: inputTokens * 2, // Double to indicate exceeded usage
+                  output_tokens: 0,
+                  cache_creation_input_tokens: 0,
+                  cache_read_input_tokens: 0,
+                  server_tool_use: null,
+                },
+              });
+
+              await writeSSE({ type: "message_stop" });
+            },
+            async (err, _stream) => {
+              logger.error(
+                "✕ /v1/messages (context window exceeded stream) |",
+                err,
+              );
+            },
+          );
+        }
+
+        return c.json({
+          id: `msg_${Date.now()}`,
+          type: "message",
+          role: "assistant",
+          model,
+          content: [],
+          stop_reason:
+            "model_context_window_exceeded" as Anthropic.Messages.StopReason,
+          stop_sequence: null,
+          usage: {
+            cache_creation: null,
+            cache_creation_input_tokens: null,
+            cache_read_input_tokens: null,
+            input_tokens: inputTokens * 2, // Double to indicate exceeded usage,
+            output_tokens: 0,
+            server_tool_use: null,
+            service_tier: null,
+          },
+        } as Anthropic.Messages.Message);
+      }
 
       const isModelNotSupportedError = errorMessage.includes(
         "model_not_supported",
@@ -501,10 +600,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       let hintMessage: string | undefined;
 
-      if (isToolResultError) {
-        hintMessage =
-          "This error may occur when input tokens exceed the model's context limit. Please use the /compact command to reduce the conversation history.";
-      } else if (isModelNotSupportedError) {
+      if (isModelNotSupportedError) {
         hintMessage =
           "This error may be caused by network connectivity issues. Try these steps: 1. Check your network connection and VPN settings; 2. Reload VS Code to refresh the model cache (Cmd/Ctrl+R or Cmd/Ctrl+Shift+P > 'Developer: Reload Window').";
       }
