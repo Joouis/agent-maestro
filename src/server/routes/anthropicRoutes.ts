@@ -13,6 +13,8 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
   countAnthropicMessageTokens,
+  repairToolUseResultPairing,
+  repairVSCodeToolPairing,
 } from "../utils/anthropic";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 
@@ -32,6 +34,11 @@ const prepareAnthropicMessages = async ({
     ...convertAnthropicSystemToVSCode(system),
     ...convertAnthropicMessagesToVSCode(messages),
   ];
+
+  // Repair tool pairing in the final VS Code message array.
+  // System prompts are prepended as User messages, which can break the
+  // tool_use/tool_result pairing that the Copilot backend enforces.
+  repairVSCodeToolPairing(vsCodeLmMessages);
 
   const cancellationToken = new vscode.CancellationTokenSource().token;
   const inputTokenCount = await countAnthropicMessageTokens(
@@ -214,10 +221,17 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         return c.json(clientError, 404);
       }
 
-      // 3. Map Anthropic messages to VS Code LM API messages and count input tokens
+      // 3. Repair tool_use/tool_result pairing before conversion
+      const repairedMessages = repairToolUseResultPairing(messages);
+      const repairedRequestBody = {
+        ...requestBody,
+        messages: repairedMessages,
+      };
+
+      // 4. Map Anthropic messages to VS Code LM API messages and count input tokens
       const { vsCodeLmMessages, inputTokenCount, cancellationToken } =
         await prepareAnthropicMessages({
-          requestBody,
+          requestBody: repairedRequestBody,
           client,
         });
       lmChatMessages = vsCodeLmMessages;
@@ -229,7 +243,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         } | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated}`,
       );
 
-      // 4. Build VS Code Language Model request options
+      // 5. Build VS Code Language Model request options
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
         justification:
           "Anthropic-compatible /v1/messages endpoint with streaming support using VS Code Language Model API",
@@ -238,14 +252,38 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         toolMode: convertAnthropicToolChoiceToVSCode(tool_choice),
       };
 
-      // 5. Send request to the VS Code LM API
+      // 6. Send request to the VS Code LM API
+      // Log message structure for debugging tool pairing issues
+      const msgStructure = vsCodeLmMessages.map((m, idx) => {
+        const role =
+          m.role === vscode.LanguageModelChatMessageRole.User
+            ? "User"
+            : "Assistant";
+        const parts = m.content.map((p: any) => {
+          if (p instanceof vscode.LanguageModelToolResultPart) {
+            return `ToolResult(${p.callId})`;
+          }
+          if (p instanceof vscode.LanguageModelToolCallPart) {
+            return `ToolCall(${p.callId})`;
+          }
+          if (p instanceof vscode.LanguageModelTextPart) {
+            return `Text(${p.value.length}ch)`;
+          }
+          return `Unknown(${p.constructor?.name})`;
+        });
+        return `[${idx}] ${role}: ${parts.join(", ")}`;
+      });
+      logger.debug(
+        `vsCodeLmMessages structure (${vsCodeLmMessages.length} msgs):\n${msgStructure.join("\n")}`,
+      );
+
       const response = await client.sendRequest(
         vsCodeLmMessages,
         lmRequestOptions,
         cancellationToken,
       );
 
-      // 6. Non-streaming response: collect content blocks using unified approach
+      // 7. Non-streaming response: collect content blocks using unified approach
       if (!msgCreateParams.stream) {
         const content: Anthropic.Messages.ContentBlock[] = [];
         let accumulatedText = "";
@@ -306,7 +344,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         return c.json(resp);
       }
 
-      // 7. If streaming, pipe chunks as SSE
+      // 8. If streaming, pipe chunks as SSE
       return streamSSE(
         c,
         async (stream) => {
@@ -478,12 +516,33 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const errorMessage =
         error instanceof Error ? error.message : JSON.stringify(error);
 
+      const isToolUseIdError = errorMessage.includes(
+        "unexpected `tool_use_id` found in `tool_result` blocks",
+      );
+
+      // The VS Code Language Model API (Copilot backend) may return generic
+      // "400 Bad Request" errors when tool_use/tool_result pairings are broken.
+      // The Copilot Chat extension strips the detailed error body, so we only
+      // see "Request Failed: 400 Bad Request" without the specific
+      // "unexpected tool_use_id" message. When we detect a 400 error and the
+      // request contains tool_result blocks, treat it as a context window /
+      // pairing issue and return model_context_window_exceeded to trigger
+      // auto-compact on the client side.
+      const hasToolResults =
+        rawRequestBody?.messages?.some(
+          (m: Anthropic.Messages.MessageParam) =>
+            Array.isArray(m.content) &&
+            m.content.some(
+              (b: Anthropic.Messages.ContentBlockParam) =>
+                b.type === "tool_result" || b.type === "web_search_tool_result",
+            ),
+        ) ?? false;
+      const is400BadRequest = errorMessage.includes("400 Bad Request");
+
       const isContextWindowExceeded =
-        errorMessage.includes(
-          "unexpected `tool_use_id` found in `tool_result` blocks",
-        ) &&
-        maxInputTokens > 0 &&
-        inputTokens > maxInputTokens;
+        isToolUseIdError ||
+        (is400BadRequest && hasToolResults) ||
+        (maxInputTokens > 0 && inputTokens > maxInputTokens);
 
       if (isContextWindowExceeded) {
         const model = rawRequestBody?.model ?? effectiveModelId;
