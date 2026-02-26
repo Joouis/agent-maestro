@@ -327,6 +327,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         async (sseStream) => {
           const responseId = generateResponseId();
           const createdAt = getCurrentTimestamp();
+          const sequenceNumberRef = { value: 0 };
 
           // Build base response object
           const baseResponse = {
@@ -339,16 +340,32 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
             metadata,
           };
 
+          // Build full response envelope (matching upstream format)
+          const buildResponseEnvelope = (
+            status: string,
+            output: OutputItem[],
+            usage?: Record<string, unknown> | null,
+            completedAt?: number | null,
+          ) => ({
+            ...baseResponse,
+            status,
+            background: false,
+            completed_at: completedAt ?? null,
+            output,
+            parallel_tool_calls: true,
+            reasoning: { effort: "none", summary: null },
+            tool_choice: tool_choice ?? "auto",
+            tools: tools ?? [],
+            usage: usage ?? null,
+          });
+
           // Emit response.created
           await sseStream.writeSSE({
             event: "response.created",
             data: JSON.stringify({
               type: "response.created",
-              response: {
-                ...baseResponse,
-                status: "in_progress",
-                output: [],
-              },
+              response: buildResponseEnvelope("in_progress", []),
+              sequence_number: sequenceNumberRef.value++,
             }),
           });
 
@@ -357,11 +374,8 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
             event: "response.in_progress",
             data: JSON.stringify({
               type: "response.in_progress",
-              response: {
-                ...baseResponse,
-                status: "in_progress",
-                output: [],
-              },
+              response: buildResponseEnvelope("in_progress", []),
+              sequence_number: sequenceNumberRef.value++,
             }),
           });
 
@@ -392,6 +406,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                       content: [],
                       status: "in_progress",
                     },
+                    sequence_number: sequenceNumberRef.value++,
                   }),
                 });
 
@@ -403,6 +418,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                     output_index: outputIndex,
                     content_index: contentIndex,
                     part: { type: "output_text", text: "", annotations: [] },
+                    sequence_number: sequenceNumberRef.value++,
                   }),
                 });
               }
@@ -418,6 +434,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                   output_index: outputIndex,
                   content_index: contentIndex,
                   delta: chunk.value,
+                  sequence_number: sequenceNumberRef.value++,
                 }),
               });
             } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
@@ -429,6 +446,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                   outputIndex,
                   contentIndex,
                   accumulatedText,
+                  sequenceNumberRef,
                 );
                 output.push(outputItem);
                 outputIndex++;
@@ -455,6 +473,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                     arguments: "",
                     status: "in_progress",
                   },
+                  sequence_number: sequenceNumberRef.value++,
                 }),
               });
 
@@ -465,6 +484,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                   item_id: fcId,
                   output_index: outputIndex,
                   delta: argsStr,
+                  sequence_number: sequenceNumberRef.value++,
                 }),
               });
 
@@ -475,6 +495,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                   item_id: fcId,
                   output_index: outputIndex,
                   arguments: argsStr,
+                  sequence_number: sequenceNumberRef.value++,
                 }),
               });
 
@@ -493,6 +514,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                   type: "response.output_item.done",
                   output_index: outputIndex,
                   item: output[outputIndex],
+                  sequence_number: sequenceNumberRef.value++,
                 }),
               });
 
@@ -508,6 +530,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               outputIndex,
               contentIndex,
               accumulatedText,
+              sequenceNumberRef,
             );
             output.push(outputItem);
             outputIndex++;
@@ -534,12 +557,13 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
             event: "response.completed",
             data: JSON.stringify({
               type: "response.completed",
-              response: {
-                ...baseResponse,
-                status: "completed",
+              response: buildResponseEnvelope(
+                "completed",
                 output,
                 usage,
-              },
+                getCurrentTimestamp(),
+              ),
+              sequence_number: sequenceNumberRef.value++,
             }),
           });
 

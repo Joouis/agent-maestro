@@ -85,7 +85,11 @@ export const closeMessageOutputItem = async (
   outputIndex: number,
   contentIndex: number,
   accumulatedText: string,
+  sequenceNumberRef?: { value: number },
 ): Promise<OutputItem> => {
+  const nextSeq = () =>
+    sequenceNumberRef ? sequenceNumberRef.value++ : undefined;
+
   await sseStream.writeSSE({
     event: "response.output_text.done",
     data: JSON.stringify({
@@ -94,6 +98,7 @@ export const closeMessageOutputItem = async (
       output_index: outputIndex,
       content_index: contentIndex,
       text: accumulatedText,
+      sequence_number: nextSeq(),
     }),
   });
 
@@ -109,6 +114,7 @@ export const closeMessageOutputItem = async (
         text: accumulatedText,
         annotations: [],
       },
+      sequence_number: nextSeq(),
     }),
   });
 
@@ -132,6 +138,7 @@ export const closeMessageOutputItem = async (
       type: "response.output_item.done",
       output_index: outputIndex,
       item: outputItem,
+      sequence_number: nextSeq(),
     }),
   });
 
