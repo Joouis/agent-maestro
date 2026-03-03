@@ -47,6 +47,8 @@ This automatically creates or updates `.claude/settings.json` with Agent Maestro
 
 **That's it!** You can now use Claude Code with VS Code's built-in language models.
 
+> **1M Context Support**: Agent Maestro supports Claude 1M context models (e.g. `claude-opus-4.6-1m`). To use the extended context window, switch to the 1M variant in Claude Code via the `/model` command (e.g. select `Opus (1M)`). Without this, Claude Code defaults to the standard 200K context window even though Agent Maestro proxies to the 1M model.
+
 ### One-Click Setup for Codex
 
 Configure Codex to use VS Code's language models with a single command `Agent Maestro: Configure Codex Settings` via Command Palette.

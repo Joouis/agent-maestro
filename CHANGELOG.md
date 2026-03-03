@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.8.2 - 2026.03.03
+
+- Support Claude 1M context models by detecting `context-1m` in `anthropic-beta` header — users must select the 1M variant (e.g. `Opus (1M)`) via `/model` command in Claude Code, otherwise the client remains unaware of the extended context window
+- Add `sequence_number` to all Responses API streaming events and align response envelope with upstream format
+- Lower minimum `tokenCountScaleFactor` from `1` to `0.1`
+
 ## v2.8.1 - 2026.02.13
 
 - Simplify Anthropic token calibration from complex linear regression to a single configurable scale factor (`agent-maestro.anthropic.tokenCountScaleFactor`, default `1.25`)
