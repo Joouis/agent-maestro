@@ -226,7 +226,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       logger.info(
         `→ /v1/messages | model: ${
           model === effectiveModelId ? model : `${model} → ${effectiveModelId}`
-        } | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated}`,
+        } | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated} | maxInput: ${maxInputTokens}`,
       );
 
       // 4. Build VS Code Language Model request options
