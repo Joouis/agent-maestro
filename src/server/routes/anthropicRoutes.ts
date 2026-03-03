@@ -186,10 +186,17 @@ const countTokensRoute = createRoute({
  * LM API exposes these as separate model IDs (e.g. `claude-opus-4.6-1m`), so we append
  * `-1m` to the model ID when the beta header is present to allow fuzzy matching to find
  * the correct variant.
+ *
+ * This function is idempotent with respect to the `-1m` suffix: if the model already
+ * ends with `-1m`, it is returned unchanged.
  */
 function resolveModelId(model: string, c: Context): string {
   const betaHeader = c.req.header("anthropic-beta");
   if (betaHeader && /\bcontext-1m\b/.test(betaHeader)) {
+    // Avoid double-appending the 1M context suffix (e.g. "model-1m-1m").
+    if (model.endsWith("-1m")) {
+      return model;
+    }
     const resolved = `${model}-1m`;
     logger.info(
       `Detected context-1m beta header, resolving model "${model}" → "${resolved}"`,
