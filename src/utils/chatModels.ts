@@ -2,23 +2,27 @@ import * as vscode from "vscode";
 
 import { logger } from "./logger";
 
-function formatModelsTable(
-  models: vscode.LanguageModelChat[],
-  eligibleCount: number,
-): string {
+const SUPPORTED_VENDOR = "copilot";
+
+async function selectSupportedModels(): Promise<vscode.LanguageModelChat[]> {
+  const allModels = await vscode.lm.selectChatModels();
+  const supported = allModels.filter((m) => m.vendor === SUPPORTED_VENDOR);
+
   const col = (s: string, w: number) =>
     s.length > w ? s.slice(0, w - 3) + "..." : s.padEnd(w);
-  const colW = { eligible: 6, name: 36, id: 28, vendor: 15, tokens: 15 };
-  const header = `  ${col("Picked", colW.eligible)} ${col("Name", colW.name)} ${col("ID", colW.id)} ${col("Vendor", colW.vendor)} ${col("MaxInputTokens", colW.tokens)}`;
-  const divider = `  ${"-".repeat(colW.eligible)} ${"-".repeat(colW.name)} ${"-".repeat(colW.id)} ${"-".repeat(colW.vendor)} ${"-".repeat(colW.tokens)}`;
-  const rows = models.map((m) => {
-    const eligible = m.vendor === "copilot";
-    return `  ${col(`[${eligible ? "x" : " "}]`, colW.eligible)} ${col(m.name, colW.name)} ${col(m.id, colW.id)} ${col(m.vendor, colW.vendor)} ${m.maxInputTokens}`;
+  const colW = { proxy: 6, name: 36, id: 28, vendor: 15, tokens: 15 };
+  const header = `  ${col("Proxy", colW.proxy)} ${col("Name", colW.name)} ${col("ID", colW.id)} ${col("Vendor", colW.vendor)} ${col("MaxInputTokens", colW.tokens)}`;
+  const divider = `  ${"-".repeat(colW.proxy)} ${"-".repeat(colW.name)} ${"-".repeat(colW.id)} ${"-".repeat(colW.vendor)} ${"-".repeat(colW.tokens)}`;
+  const rows = allModels.map((m) => {
+    const eligible = m.vendor === SUPPORTED_VENDOR;
+    return `  ${col(`[${eligible ? "x" : " "}]`, colW.proxy)} ${col(m.name, colW.name)} ${col(m.id, colW.id)} ${col(m.vendor, colW.vendor)} ${m.maxInputTokens}`;
   });
-  return (
-    `Available models (${models.length} total, ${eligibleCount} proxy-eligible):\n` +
-    [header, divider, ...rows].join("\n")
+  logger.info(
+    `Available models (${allModels.length} total, ${supported.length} proxy-eligible):\n` +
+      [header, divider, ...rows].join("\n"),
   );
+
+  return supported;
 }
 
 class ChatModelsCache {
@@ -48,12 +52,7 @@ class ChatModelsCache {
     this.initializationPromise = (async () => {
       try {
         logger.info("Initializing chat models cache...");
-        const allModels = await vscode.lm.selectChatModels();
-        this.cachedModels = allModels.filter(
-          // Filter to "copilot" vendor only; "copilotcli" and "claude-code" vendors are not yet supported
-          (m) => m.vendor === "copilot",
-        );
-        logger.info(formatModelsTable(allModels, this.cachedModels.length));
+        this.cachedModels = await selectSupportedModels();
 
         // Check for Claude models availability and show warning once if none found
         if (this.cachedModels.length > 0 && !this.hasShownNoClaudeWarning) {
