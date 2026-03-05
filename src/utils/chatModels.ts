@@ -2,6 +2,25 @@ import * as vscode from "vscode";
 
 import { logger } from "./logger";
 
+function formatModelsTable(
+  models: vscode.LanguageModelChat[],
+  eligibleCount: number,
+): string {
+  const col = (s: string, w: number) =>
+    s.length > w ? s.slice(0, w - 3) + "..." : s.padEnd(w);
+  const colW = { eligible: 6, name: 36, id: 28, vendor: 15, tokens: 15 };
+  const header = `  ${col("Picked", colW.eligible)} ${col("Name", colW.name)} ${col("ID", colW.id)} ${col("Vendor", colW.vendor)} ${col("MaxInputTokens", colW.tokens)}`;
+  const divider = `  ${"-".repeat(colW.eligible)} ${"-".repeat(colW.name)} ${"-".repeat(colW.id)} ${"-".repeat(colW.vendor)} ${"-".repeat(colW.tokens)}`;
+  const rows = models.map((m) => {
+    const eligible = m.vendor === "copilot";
+    return `  ${col(`[${eligible ? "x" : " "}]`, colW.eligible)} ${col(m.name, colW.name)} ${col(m.id, colW.id)} ${col(m.vendor, colW.vendor)} ${m.maxInputTokens}`;
+  });
+  return (
+    `Available models (${models.length} total, ${eligibleCount} proxy-eligible):\n` +
+    [header, divider, ...rows].join("\n")
+  );
+}
+
 class ChatModelsCache {
   private static instance: ChatModelsCache;
   private cachedModels: vscode.LanguageModelChat[] = [];
@@ -29,8 +48,12 @@ class ChatModelsCache {
     this.initializationPromise = (async () => {
       try {
         logger.info("Initializing chat models cache...");
-        this.cachedModels = await vscode.lm.selectChatModels();
-        logger.info(`Cached ${this.cachedModels.length} chat models`);
+        const allModels = await vscode.lm.selectChatModels();
+        this.cachedModels = allModels.filter(
+          // Filter to "copilot" vendor only; "copilotcli" and "claude-code" vendors are not yet supported
+          (m) => m.vendor === "copilot",
+        );
+        logger.info(formatModelsTable(allModels, this.cachedModels.length));
 
         // Check for Claude models availability and show warning once if none found
         if (this.cachedModels.length > 0 && !this.hasShownNoClaudeWarning) {
