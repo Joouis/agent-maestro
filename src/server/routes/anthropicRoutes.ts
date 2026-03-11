@@ -487,13 +487,17 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       if (isContextWindowExceeded) {
         const model = rawRequestBody?.model ?? effectiveModelId;
+        const modelLabel =
+          model === effectiveModelId
+            ? effectiveModelId
+            : `${model} → ${effectiveModelId}`;
 
         logger.warn(
-          `⚠ /v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens} for ${model}`,
+          `⚠ /v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens} | model: ${modelLabel}`,
         );
 
         vscode.window.showWarningMessage(
-          `The model has reached its context window limit. Estimated token count: ${inputTokens}, max allowed token count for ${model}: ${maxInputTokens}. Please use the /compact command to reduce the conversation history. You can adjust 'agent-maestro.anthropic.tokenCountScaleFactor' in settings to fine-tune token estimation.`,
+          "The model has reached its context window limit. Please use the /compact command to reduce the conversation history. You can adjust 'agent-maestro.anthropic.tokenCountScaleFactor' in settings to fine-tune token estimation.",
         );
 
         if (rawRequestBody?.stream) {
