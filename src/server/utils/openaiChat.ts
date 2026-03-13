@@ -10,9 +10,24 @@ const convertOpenAIChatCompletionContentPartToUserContent = (
     return new vscode.LanguageModelTextPart(part.text);
   }
 
+  // Handle image_url content parts (vision requests)
+  if (part.type === "image_url") {
+    const LanguageModelDataPart = (vscode as any).LanguageModelDataPart;
+    if (part.image_url?.url && LanguageModelDataPart) {
+      const match = part.image_url.url.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (match) {
+        const mimeType = match[1];
+        const base64Data = match[2];
+        return new LanguageModelDataPart(
+          Buffer.from(base64Data, "base64"),
+          mimeType,
+        );
+      }
+    }
+  }
+
   /**
    * Not supported content part types in user messages:
-   * - ChatCompletionContentPartImage
    * - ChatCompletionContentPartInputAudio
    * - ChatCompletionContentPart.File
    *

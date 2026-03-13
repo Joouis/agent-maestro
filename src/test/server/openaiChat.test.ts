@@ -163,6 +163,57 @@ suite("OpenAI Conversion Utils Test Suite", () => {
       );
     });
 
+    test("should convert user message with image_url base64 data URI", () => {
+      const base64Data =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const messages = [
+        {
+          role: "user" as const,
+          content: [
+            { type: "text" as const, text: "What is in this image?" },
+            {
+              type: "image_url" as const,
+              image_url: {
+                url: `data:image/png;base64,${base64Data}`,
+              },
+            },
+          ],
+        },
+      ];
+
+      const result = convertOpenAIMessagesToVSCode(messages);
+
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(
+        result[0].role,
+        vscode.LanguageModelChatMessageRole.User,
+      );
+    });
+
+    test("should handle image_url with non-data-URI by falling back to JSON", () => {
+      const messages = [
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "image_url" as const,
+              image_url: {
+                url: "https://example.com/image.png",
+              },
+            },
+          ],
+        },
+      ];
+
+      const result = convertOpenAIMessagesToVSCode(messages);
+
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(
+        result[0].role,
+        vscode.LanguageModelChatMessageRole.User,
+      );
+    });
+
     test("should handle malformed function arguments gracefully", () => {
       const messages = [
         {
