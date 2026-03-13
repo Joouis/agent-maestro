@@ -14,7 +14,9 @@ const convertOpenAIChatCompletionContentPartToUserContent = (
   if (part.type === "image_url") {
     const LanguageModelDataPart = (vscode as any).LanguageModelDataPart;
     if (part.image_url?.url && LanguageModelDataPart) {
-      const match = part.image_url.url.match(/^data:(image\/\w+);base64,(.+)$/);
+      const match = part.image_url.url.match(
+        /^data:(image\/[\w+.-]+);base64,(.+)$/,
+      );
       if (match) {
         const mimeType = match[1];
         const base64Data = match[2];

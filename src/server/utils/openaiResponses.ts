@@ -156,7 +156,9 @@ const convertInputImageToVSCodePart = (
 
   if (content.image_url && LanguageModelDataPart) {
     // Parse data URI: data:image/png;base64,<data>
-    const match = content.image_url.match(/^data:(image\/\w+);base64,(.+)$/);
+    const match = content.image_url.match(
+      /^data:(image\/[\w+.-]+);base64,(.+)$/,
+    );
     if (match) {
       const mimeType = match[1];
       const base64Data = match[2];
