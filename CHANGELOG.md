@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8.4 - 2026.03.13
+
+- Add image (vision) support to Chat Completions route — convert base64 data URI `image_url` parts to `LanguageModelDataPart` instead of JSON-serializing them as text, fixing token limit errors for vision requests (#154)
+
 ## v2.8.3 - 2026.03.05
 
 - Filter supported chat models to `copilot` vendor only and log a formatted table of all discovered models with proxy-eligibility status
