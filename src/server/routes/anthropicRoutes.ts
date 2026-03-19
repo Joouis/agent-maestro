@@ -13,6 +13,7 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
   countAnthropicMessageTokens,
+  getVSCodeLmToolsAsLmChatTools,
 } from "../utils/anthropic";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 
@@ -245,7 +246,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       }
 
       // 3. Map Anthropic messages to VS Code LM API messages and count input tokens
-      const { vsCodeLmMessages, inputTokenCount, cancellationToken } =
+      const { vsCodeLmMessages, inputTokenCount } =
         await prepareAnthropicMessages({
           requestBody,
           client,
@@ -260,34 +261,54 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       );
 
       // 4. Build VS Code Language Model request options
+      // Merge tools from the request with all registered VS Code LM tools (e.g. MCP tools)
+      const requestTools = convertAnthropicToolToVSCode(tools) ?? [];
+      const requestToolNames = new Set(requestTools.map((t) => t.name));
+      const mcpTools = getVSCodeLmToolsAsLmChatTools().filter(
+        (t) => !requestToolNames.has(t.name),
+      );
+      const mergedTools = [...requestTools, ...mcpTools];
+
+      logger.info(
+        `→ /v1/messages tools | request: ${requestTools.length} | mcp injected: ${mcpTools.length} | total: ${mergedTools.length}`,
+      );
+
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
         justification:
           "Anthropic-compatible /v1/messages endpoint with streaming support using VS Code Language Model API",
         modelOptions: msgCreateParams,
-        tools: convertAnthropicToolToVSCode(tools),
+        tools: mergedTools.length > 0 ? mergedTools : undefined,
         toolMode: convertAnthropicToolChoiceToVSCode(tool_choice),
       };
 
-      // 5. Send request to the VS Code LM API
-      const response = await client.sendRequest(
-        vsCodeLmMessages,
-        lmRequestOptions,
-        cancellationToken,
-      );
+      // 5. Send request to the VS Code LM API, with agentic loop for MCP tool calls
+      const mcpToolNames = new Set(mcpTools.map((t) => t.name));
+      const cancellationTokenSource = new vscode.CancellationTokenSource();
+      const cancellationToken = cancellationTokenSource.token;
 
-      // 6. Non-streaming response: collect content blocks using unified approach
-      if (!msgCreateParams.stream) {
+      /**
+       * Execute a single LM request and collect all content blocks from the stream.
+       * Returns the content blocks and stop reason.
+       */
+      const runSingleRequest = async (
+        msgs: vscode.LanguageModelChatMessage[],
+      ) => {
+        const resp = await client.sendRequest(
+          msgs,
+          lmRequestOptions,
+          cancellationToken,
+        );
         const content: Anthropic.Messages.ContentBlock[] = [];
         let accumulatedText = "";
 
-        for await (const chunk of response.stream) {
+        for await (const chunk of resp.stream) {
           if (chunk instanceof vscode.LanguageModelTextPart) {
             let lastBlock = content.at(-1);
             if (!lastBlock || lastBlock.type !== "text") {
               lastBlock = { type: "text", text: "", citations: null };
               content.push(lastBlock);
             }
-            lastBlock.text += chunk.value;
+            (lastBlock as Anthropic.Messages.TextBlock).text += chunk.value;
             accumulatedText += chunk.value;
           } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
             content.push({
@@ -296,15 +317,124 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               name: chunk.name,
               input: chunk.input,
             });
-
             accumulatedText += JSON.stringify(chunk);
           }
         }
 
+        const stopReason: Anthropic.Messages.StopReason =
+          content.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn";
+        return { content, accumulatedText, stopReason };
+      };
+
+      /**
+       * Invoke a single MCP tool via VS Code LM API and return the result as text.
+       */
+      const invokeMcpTool = async (
+        _toolCallId: string,
+        toolName: string,
+        toolInput: object,
+      ): Promise<string> => {
+        try {
+          logger.info(`→ invoking MCP tool: ${toolName}`);
+          const result = await vscode.lm.invokeTool(
+            toolName,
+            { input: toolInput, toolInvocationToken: undefined as any },
+            cancellationToken,
+          );
+          const textParts = result.content
+            .filter((p) => p instanceof vscode.LanguageModelTextPart)
+            .map((p) => (p as vscode.LanguageModelTextPart).value)
+            .join("");
+          logger.info(
+            `← MCP tool ${toolName} result length: ${textParts.length}`,
+          );
+          return textParts;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : JSON.stringify(err);
+          logger.error(`✕ MCP tool ${toolName} failed: ${msg}`);
+          return `Error invoking tool ${toolName}: ${msg}`;
+        }
+      };
+
+      // 6. Non-streaming response with MCP agentic loop
+      if (!msgCreateParams.stream) {
+        let currentMessages = vsCodeLmMessages;
+        let finalContent: Anthropic.Messages.ContentBlock[] = [];
+        let totalAccumulatedText = "";
+        const MAX_TOOL_ROUNDS = 10;
+
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          const { content, accumulatedText, stopReason } =
+            await runSingleRequest(currentMessages);
+          totalAccumulatedText += accumulatedText;
+
+          // Collect MCP tool calls in this round
+          const mcpToolCalls = content.filter(
+            (b) => b.type === "tool_use" && mcpToolNames.has(b.name),
+          ) as Anthropic.Messages.ToolUseBlock[];
+
+          if (mcpToolCalls.length === 0 || stopReason !== "tool_use") {
+            // No MCP tool calls — return final response to Claude Code
+            finalContent = content;
+            break;
+          }
+
+          // Execute all MCP tool calls and build tool_result messages
+          const assistantParts: (
+            | vscode.LanguageModelTextPart
+            | vscode.LanguageModelToolCallPart
+          )[] = content.map((b) => {
+            if (b.type === "tool_use") {
+              return new vscode.LanguageModelToolCallPart(
+                b.id,
+                b.name,
+                b.input as object,
+              );
+            }
+            return new vscode.LanguageModelTextPart(
+              b.type === "text" ? b.text : JSON.stringify(b),
+            );
+          });
+          currentMessages = [
+            ...currentMessages,
+            vscode.LanguageModelChatMessage.Assistant(assistantParts),
+          ];
+
+          const toolResultParts: vscode.LanguageModelToolResultPart[] = [];
+          for (const toolCall of mcpToolCalls) {
+            const resultText = await invokeMcpTool(
+              toolCall.id,
+              toolCall.name,
+              toolCall.input as object,
+            );
+            toolResultParts.push(
+              new vscode.LanguageModelToolResultPart(toolCall.id, [
+                new vscode.LanguageModelTextPart(resultText),
+              ]),
+            );
+          }
+          currentMessages = [
+            ...currentMessages,
+            vscode.LanguageModelChatMessage.User(toolResultParts),
+          ];
+
+          // If there are non-MCP tool calls, return this round's content to Claude Code
+          const nonMcpToolCalls = content.filter(
+            (b) => b.type === "tool_use" && !mcpToolNames.has(b.name),
+          );
+          if (nonMcpToolCalls.length > 0) {
+            finalContent = content;
+            break;
+          }
+        }
+
         // Count output tokens
-        const outputTokenCount = accumulatedText
-          ? await countAnthropicMessageTokens(accumulatedText, client)
+        const outputTokenCount = totalAccumulatedText
+          ? await countAnthropicMessageTokens(totalAccumulatedText, client)
           : { original: 1, calibrated: 1 };
+
+        const finalStopReason: Anthropic.Messages.StopReason =
+          finalContent.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn";
 
         // https://docs.anthropic.com/en/api/messages#response-id
         const resp: Anthropic.Messages.Message = {
@@ -312,9 +442,8 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           type: "message",
           role: "assistant",
           model,
-          content,
-          stop_reason:
-            content.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn",
+          content: finalContent,
+          stop_reason: finalStopReason,
           stop_sequence: null,
           usage: {
             cache_creation: null,
@@ -371,123 +500,216 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             },
           });
 
-          const contentBlocks: Anthropic.Messages.ContentBlock[] = [];
-          let accumulatedText = "";
+          // Agentic loop: silently handle MCP tool calls, stream the final round
+          let streamMessages = vsCodeLmMessages;
+          const MAX_STREAM_TOOL_ROUNDS = 10;
 
-          for await (const chunk of response.stream) {
-            const lastBlock = contentBlocks.at(-1);
-            if (chunk instanceof vscode.LanguageModelTextPart) {
-              // Stop last non-text block if it exists
-              if (lastBlock && lastBlock.type !== "text") {
-                await writeSSE({
-                  type: "content_block_stop",
-                  index: contentBlocks.length - 1,
-                });
+          for (let round = 0; round < MAX_STREAM_TOOL_ROUNDS; round++) {
+            const resp = await client.sendRequest(
+              streamMessages,
+              lmRequestOptions,
+              cancellationToken,
+            );
+
+            // Collect all chunks first to check for MCP tool calls
+            const roundContent: Anthropic.Messages.ContentBlock[] = [];
+            let roundAccumulatedText = "";
+            const chunks: (
+              | vscode.LanguageModelTextPart
+              | vscode.LanguageModelToolCallPart
+            )[] = [];
+
+            for await (const chunk of resp.stream) {
+              if (
+                chunk instanceof vscode.LanguageModelTextPart ||
+                chunk instanceof vscode.LanguageModelToolCallPart
+              ) {
+                chunks.push(chunk);
               }
+            }
 
-              // Start a new text block
-              if (!lastBlock || lastBlock.type !== "text") {
-                contentBlocks.push({
-                  type: "text",
-                  text: "",
-                  citations: null,
-                });
-                await writeSSE({
-                  type: "content_block_start",
-                  index: contentBlocks.length - 1,
-                  content_block: { type: "text", text: "", citations: null },
-                });
-              }
-
-              // Append text to the current text block
-              (contentBlocks.at(-1) as Anthropic.Messages.TextBlock).text +=
-                chunk.value;
-              await writeSSE({
-                type: "content_block_delta",
-                index: contentBlocks.length - 1,
-                delta: { type: "text_delta", text: chunk.value },
-              });
-
-              accumulatedText += chunk.value;
-            } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-              // Every tool call is a new content block
-              if (lastBlock) {
-                await writeSSE({
-                  type: "content_block_stop",
-                  index: contentBlocks.length - 1,
-                });
-              }
-
-              contentBlocks.push({
-                type: "tool_use",
-                id: chunk.callId,
-                name: chunk.name,
-                input: chunk.input,
-              });
-
-              await writeSSE({
-                type: "content_block_start",
-                index: contentBlocks.length - 1,
-                content_block: {
+            for (const chunk of chunks) {
+              if (chunk instanceof vscode.LanguageModelTextPart) {
+                let lastBlock = roundContent.at(-1);
+                if (!lastBlock || lastBlock.type !== "text") {
+                  lastBlock = { type: "text", text: "", citations: null };
+                  roundContent.push(lastBlock);
+                }
+                (lastBlock as Anthropic.Messages.TextBlock).text += chunk.value;
+                roundAccumulatedText += chunk.value;
+              } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+                roundContent.push({
                   type: "tool_use",
                   id: chunk.callId,
                   name: chunk.name,
-                  input: {},
-                },
-              });
+                  input: chunk.input,
+                });
+                roundAccumulatedText += JSON.stringify(chunk);
+              }
+            }
+
+            const mcpToolCallsInRound = roundContent.filter(
+              (b) => b.type === "tool_use" && mcpToolNames.has(b.name),
+            ) as Anthropic.Messages.ToolUseBlock[];
+            const nonMcpToolCallsInRound = roundContent.filter(
+              (b) => b.type === "tool_use" && !mcpToolNames.has(b.name),
+            );
+
+            const hasMcpCalls = mcpToolCallsInRound.length > 0;
+            const hasNonMcpCalls = nonMcpToolCallsInRound.length > 0;
+
+            if (!hasMcpCalls || hasNonMcpCalls) {
+              // Final round: stream content to Claude Code
+              const contentBlocks: Anthropic.Messages.ContentBlock[] = [];
+              let accumulatedText = "";
+
+              for (const chunk of chunks) {
+                const lastBlock = contentBlocks.at(-1);
+                if (chunk instanceof vscode.LanguageModelTextPart) {
+                  if (lastBlock && lastBlock.type !== "text") {
+                    await writeSSE({
+                      type: "content_block_stop",
+                      index: contentBlocks.length - 1,
+                    });
+                  }
+                  if (!lastBlock || lastBlock.type !== "text") {
+                    contentBlocks.push({
+                      type: "text",
+                      text: "",
+                      citations: null,
+                    });
+                    await writeSSE({
+                      type: "content_block_start",
+                      index: contentBlocks.length - 1,
+                      content_block: {
+                        type: "text",
+                        text: "",
+                        citations: null,
+                      },
+                    });
+                  }
+                  (contentBlocks.at(-1) as Anthropic.Messages.TextBlock).text +=
+                    chunk.value;
+                  await writeSSE({
+                    type: "content_block_delta",
+                    index: contentBlocks.length - 1,
+                    delta: { type: "text_delta", text: chunk.value },
+                  });
+                  accumulatedText += chunk.value;
+                } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+                  if (lastBlock) {
+                    await writeSSE({
+                      type: "content_block_stop",
+                      index: contentBlocks.length - 1,
+                    });
+                  }
+                  contentBlocks.push({
+                    type: "tool_use",
+                    id: chunk.callId,
+                    name: chunk.name,
+                    input: chunk.input,
+                  });
+                  await writeSSE({
+                    type: "content_block_start",
+                    index: contentBlocks.length - 1,
+                    content_block: {
+                      type: "tool_use",
+                      id: chunk.callId,
+                      name: chunk.name,
+                      input: {},
+                    },
+                  });
+                  await writeSSE({
+                    type: "content_block_delta",
+                    index: contentBlocks.length - 1,
+                    delta: {
+                      type: "input_json_delta",
+                      partial_json: JSON.stringify(chunk.input),
+                    },
+                  });
+                  accumulatedText += JSON.stringify(chunk);
+                }
+              }
+
+              logger.debug(
+                "/v1/messages streamed content block responses: ",
+                JSON.stringify(contentBlocks, null, 2),
+              );
 
               await writeSSE({
-                type: "content_block_delta",
+                type: "content_block_stop",
                 index: contentBlocks.length - 1,
+              });
+
+              const outputTokenCount = accumulatedText
+                ? await countAnthropicMessageTokens(accumulatedText, client)
+                : { original: 1, calibrated: 1 };
+
+              await writeSSE({
+                type: "message_delta",
                 delta: {
-                  type: "input_json_delta",
-                  partial_json: JSON.stringify(chunk.input),
+                  stop_reason:
+                    contentBlocks.at(-1)?.type === "tool_use"
+                      ? "tool_use"
+                      : "end_turn",
+                  stop_sequence: null,
+                },
+                usage: {
+                  input_tokens: inputTokenCount.calibrated,
+                  output_tokens: outputTokenCount.calibrated,
+                  cache_creation_input_tokens: 0,
+                  cache_read_input_tokens: 0,
+                  server_tool_use: null,
                 },
               });
 
-              accumulatedText += JSON.stringify(chunk);
+              await writeSSE({ type: "message_stop" });
+
+              logger.info(
+                `← /v1/messages (stream) | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated} | output: ${outputTokenCount.original} → ${outputTokenCount.calibrated}`,
+              );
+              break;
             }
+
+            // MCP-only tool calls: execute silently and continue the loop
+            const assistantParts: (
+              | vscode.LanguageModelTextPart
+              | vscode.LanguageModelToolCallPart
+            )[] = roundContent.map((b) => {
+              if (b.type === "tool_use") {
+                return new vscode.LanguageModelToolCallPart(
+                  b.id,
+                  b.name,
+                  b.input as object,
+                );
+              }
+              return new vscode.LanguageModelTextPart(
+                b.type === "text" ? b.text : JSON.stringify(b),
+              );
+            });
+            streamMessages = [
+              ...streamMessages,
+              vscode.LanguageModelChatMessage.Assistant(assistantParts),
+            ];
+
+            const toolResultParts: vscode.LanguageModelToolResultPart[] = [];
+            for (const toolCall of mcpToolCallsInRound) {
+              const resultText = await invokeMcpTool(
+                toolCall.id,
+                toolCall.name,
+                toolCall.input as object,
+              );
+              toolResultParts.push(
+                new vscode.LanguageModelToolResultPart(toolCall.id, [
+                  new vscode.LanguageModelTextPart(resultText),
+                ]),
+              );
+            }
+            streamMessages = [
+              ...streamMessages,
+              vscode.LanguageModelChatMessage.User(toolResultParts),
+            ];
           }
-
-          logger.debug(
-            "/v1/messages streamed content block responses: ",
-            JSON.stringify(contentBlocks, null, 2),
-          );
-
-          // Finalize last content block if it exists
-          await writeSSE({
-            type: "content_block_stop",
-            index: contentBlocks.length - 1,
-          });
-
-          // Count output tokens for the complete response
-          const outputTokenCount = accumulatedText
-            ? await countAnthropicMessageTokens(accumulatedText, client)
-            : { original: 1, calibrated: 1 };
-
-          await writeSSE({
-            type: "message_delta",
-            delta: {
-              stop_reason:
-                contentBlocks.at(-1)?.type === "tool_use"
-                  ? "tool_use"
-                  : "end_turn",
-              stop_sequence: null,
-            },
-            usage: {
-              input_tokens: inputTokenCount.calibrated,
-              output_tokens: outputTokenCount.calibrated,
-              cache_creation_input_tokens: 0,
-              cache_read_input_tokens: 0,
-              server_tool_use: null,
-            },
-          });
-
-          await writeSSE({ type: "message_stop" });
-
-          logger.info(
-            `← /v1/messages (stream) | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated} | output: ${outputTokenCount.original} → ${outputTokenCount.calibrated}`,
-          );
         },
         async (error, _stream) => {
           logger.error("✕ /v1/messages |", error);

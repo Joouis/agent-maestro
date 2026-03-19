@@ -258,6 +258,30 @@ export const convertAnthropicToolToVSCode = (
     };
   });
 
+/**
+ * Convert registered VS Code LM tools (e.g. MCP tools) to LanguageModelChatTool format.
+ * Filters to only the tool names provided, or returns all if no filter is given.
+ */
+export const getVSCodeLmToolsAsLmChatTools = (
+  filterNames?: string[],
+): vscode.LanguageModelChatTool[] => {
+  const allTools: readonly vscode.LanguageModelToolInformation[] =
+    vscode.lm.tools || [];
+
+  const filtered = filterNames
+    ? allTools.filter((t) => filterNames.includes(t.name))
+    : allTools;
+
+  return filtered.map((t) => ({
+    name: t.name,
+    description: t.description || "",
+    inputSchema: (t.inputSchema as object) || {
+      type: "object",
+      properties: {},
+    },
+  }));
+};
+
 export const convertAnthropicToolChoiceToVSCode = (
   toolChoice?: Anthropic.Messages.ToolChoice,
 ): vscode.LanguageModelChatToolMode | undefined => {
