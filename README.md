@@ -222,7 +222,7 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 | `agent-maestro.proxyServerPort`                 | Proxy server port                                                  | `23333`                        |
 | `agent-maestro.mcpServerPort`                   | MCP server port                                                    | `23334`                        |
 | `agent-maestro.anthropic.tokenCountScaleFactor` | Scale factor for Anthropic token count estimation (range: 1.0–2.0) | `1.25`                         |
-| `agent-maestro.codex.contextWindowScaleFactor`  | Scale factor for Codex context window calculation (range: 1.0–2.0) | `1.3`                          |
+| `agent-maestro.codex.contextWindowScaleFactor`  | Scale factor for Codex context window calculation (range: 1.0–2.0) | `1`                            |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
 

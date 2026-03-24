@@ -261,7 +261,7 @@ export function registerConfiguratorCommands(
         const proxyPort = proxy.getStatus().port;
 
         // Calculate model_context_window with scale factor
-        const DEFAULT_SCALE_FACTOR = 1.3;
+        const DEFAULT_SCALE_FACTOR = 1;
         const MIN_SCALE_FACTOR = 1;
         const MAX_SCALE_FACTOR = 2;
         let scaleFactor = vscode.workspace
