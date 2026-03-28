@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.8.5 - 2026.03.28
+
+- Change default `codex.contextWindowScaleFactor` from 1.3 to 1 to better align with model context limits.
+- Auto-upgrade to 1M context variant when input exceeds model's context window
+
 ## v2.8.4 - 2026.03.13
 
 - Add image (vision) support to Chat Completions route — convert base64 data URI `image_url` parts to `LanguageModelDataPart` instead of JSON-serializing them as text, fixing token limit errors for vision requests (#154)
