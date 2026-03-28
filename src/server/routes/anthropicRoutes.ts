@@ -190,7 +190,7 @@ const countTokensRoute = createRoute({
  * This function is idempotent with respect to the `-1m` suffix: if the model already
  * ends with `-1m`, it is returned unchanged.
  */
-function resolveModelId(model: string, c: Context): string {
+export function resolveModelId(model: string, c: Context): string {
   const betaHeader = c.req.header("anthropic-beta");
   if (betaHeader && /\bcontext-1m\b/.test(betaHeader)) {
     // Avoid double-appending the 1M context suffix (e.g. "model-1m-1m").
@@ -232,17 +232,19 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       // 1. Get chat model client (handles model mapping internally)
       const resolvedModel = resolveModelId(model, c);
-      const { client, error: clientError } =
+      const { client: initialClient, error: clientError } =
         await getChatModelClient(resolvedModel);
 
-      if (client) {
-        effectiveModelId = client.id;
-        maxInputTokens = client.maxInputTokens;
+      if (initialClient) {
+        effectiveModelId = initialClient.id;
+        maxInputTokens = initialClient.maxInputTokens;
       }
 
       if (clientError) {
         return c.json(clientError, 404);
       }
+
+      let client = initialClient!;
 
       // 3. Map Anthropic messages to VS Code LM API messages and count input tokens
       const { vsCodeLmMessages, inputTokenCount, cancellationToken } =
@@ -252,6 +254,25 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         });
       lmChatMessages = vsCodeLmMessages;
       inputTokens = inputTokenCount.calibrated;
+
+      // Auto-upgrade to 1M variant if input exceeds current model's context window
+      if (
+        inputTokens > maxInputTokens &&
+        maxInputTokens > 0 &&
+        !effectiveModelId.includes("-1m")
+      ) {
+        const { client: upgraded } = await getChatModelClient(
+          `${effectiveModelId}-1m`,
+        );
+        if (upgraded) {
+          logger.info(
+            `Auto-upgrading to 1M variant: input ${inputTokens} > max ${maxInputTokens} | ${effectiveModelId} → ${upgraded.id}`,
+          );
+          client = upgraded;
+          effectiveModelId = upgraded.id;
+          maxInputTokens = upgraded.maxInputTokens;
+        }
+      }
 
       logger.info(
         `→ /v1/messages | model: ${

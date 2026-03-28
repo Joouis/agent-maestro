@@ -214,7 +214,7 @@ export const getChatModelsQuickPickItems = async (
 /**
  * Calculate Jaccard similarity between two strings based on character bigrams
  */
-function jaccardSimilarity(str1: string, str2: string): number {
+export function jaccardSimilarity(str1: string, str2: string): number {
   const getBigrams = (str: string): Set<string> => {
     const bigrams = new Set<string>();
     const normalized = str.toLowerCase().replace(/[^a-z0-9]/g, "");
