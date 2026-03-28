@@ -264,7 +264,11 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         const { client: upgraded } = await getChatModelClient(
           `${effectiveModelId}-1m`,
         );
-        if (upgraded) {
+        if (
+          upgraded &&
+          upgraded.id.includes("-1m") &&
+          upgraded.maxInputTokens > maxInputTokens
+        ) {
           logger.info(
             `Auto-upgrading to 1M variant: input ${inputTokens} > max ${maxInputTokens} | ${effectiveModelId} → ${upgraded.id}`,
           );
