@@ -15,8 +15,13 @@ import os from "os";
 import path from "path";
 import { parse } from "smol-toml";
 
-type ApiType = "chat" | "responses" | "anthropic";
-const ALL_APIS: ApiType[] = ["chat", "responses", "anthropic"];
+type ApiType = "chat" | "responses" | "anthropic" | "anthropic-tool-result";
+const ALL_APIS: ApiType[] = [
+  "chat",
+  "responses",
+  "anthropic",
+  "anthropic-tool-result",
+];
 
 const DEFAULT_PORT = 23333;
 const DEFAULT_MODEL = "gpt-5.1";
@@ -47,11 +52,16 @@ function parseArgs(): { apis: ApiType[]; imagePath: string } {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--api" && args[i + 1]) {
       const val = args[++i];
-      if (val === "chat" || val === "responses" || val === "anthropic") {
+      if (
+        val === "chat" ||
+        val === "responses" ||
+        val === "anthropic" ||
+        val === "anthropic-tool-result"
+      ) {
         api = val;
       } else {
         console.error(
-          `Unknown API type: ${val}. Use chat, responses, or anthropic.`,
+          `Unknown API type: ${val}. Use chat, responses, anthropic, or anthropic-tool-result.`,
         );
         process.exit(1);
       }
@@ -62,7 +72,7 @@ function parseArgs(): { apis: ApiType[]; imagePath: string } {
 
   if (!imagePath) {
     console.error(
-      "Usage: npx tsx scripts/test-vision.ts [--api chat|responses|anthropic] <image-path>",
+      "Usage: npx tsx scripts/test-vision.ts [--api chat|responses|anthropic|anthropic-tool-result] <image-path>",
     );
     process.exit(1);
   }
@@ -133,6 +143,61 @@ function buildAnthropicRequest(
   };
 }
 
+// Mimics what Claude Code's Read tool produces: an assistant turn calls a
+// tool, then the user turn delivers the tool result containing an image block.
+// Exercises the tool_result.content path in convertAnthropicMessagesToVSCode.
+function buildAnthropicToolResultRequest(
+  model: string,
+  mimeType: string,
+  base64: string,
+) {
+  return {
+    url: "/api/anthropic/v1/messages",
+    headers: { "x-api-key": "test", "anthropic-version": "2023-06-01" },
+    body: {
+      model,
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Read the attached image." }],
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_test_read_image",
+              name: "Read",
+              input: { file_path: "/tmp/test.png" },
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_test_read_image",
+              content: [
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: mimeType,
+                    data: base64,
+                  },
+                },
+              ],
+            },
+            { type: "text", text: PROMPT },
+          ],
+        },
+      ],
+    },
+  };
+}
+
 async function runApi(
   api: ApiType,
   model: string,
@@ -160,6 +225,13 @@ async function runApi(
     }
     case "anthropic": {
       const req = buildAnthropicRequest(model, mimeType, base64);
+      url = req.url;
+      body = req.body;
+      extraHeaders = req.headers;
+      break;
+    }
+    case "anthropic-tool-result": {
+      const req = buildAnthropicToolResultRequest(model, mimeType, base64);
       url = req.url;
       body = req.body;
       extraHeaders = req.headers;
