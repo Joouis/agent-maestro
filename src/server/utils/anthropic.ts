@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import * as vscode from "vscode";
 
+import { logger } from "../../utils/logger";
+
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
 
@@ -238,25 +240,50 @@ export const convertAnthropicSystemToVSCode = (
   );
 };
 
+/**
+ * Anthropic server-side tools (web_search, code_execution, computer_use,
+ * bash, text_editor, memory, web_fetch, etc.) are executed by Anthropic's
+ * backend, not the client. They are identified by the presence of a `type`
+ * field other than `"custom"` and the absence of `input_schema`.
+ *
+ * VS Code's Language Model API has no way to execute them — forwarding them
+ * causes the upstream to reject the request (`tools.0.custom.input_schema.type:
+ * Input should be 'object'`) or silently hang waiting for a tool result that
+ * never comes. We drop them here so the model is not told they exist.
+ */
+const isUnsupportedServerSideTool = (tool: unknown): boolean => {
+  const t = tool as { type?: string; input_schema?: unknown };
+  return (
+    typeof t.type === "string" && t.type !== "custom" && !t.input_schema
+  );
+};
+
 export const convertAnthropicToolToVSCode = (
   tools?: Anthropic.Messages.ToolUnion[],
-): vscode.LanguageModelChatTool[] | undefined =>
-  tools?.map((tool) => {
-    const t = tool as Anthropic.Messages.Tool;
-    if (t.input_schema) {
-      return {
-        name: t.name,
-        description: t.description || "",
-        inputSchema: t.input_schema,
-      };
+): vscode.LanguageModelChatTool[] | undefined => {
+  if (!tools) {
+    return undefined;
+  }
+
+  const filtered: vscode.LanguageModelChatTool[] = [];
+  for (const tool of tools) {
+    if (isUnsupportedServerSideTool(tool)) {
+      logger.warn(
+        `Dropping unsupported Anthropic server-side tool: ${
+          (tool as { type?: string }).type
+        } — VS Code Language Model API cannot execute it`,
+      );
+      continue;
     }
-    // For built-in tools like ToolBash20250124 that don't have input_schema
-    return {
+    const t = tool as Anthropic.Messages.Tool;
+    filtered.push({
       name: t.name,
-      description: t.description || (tool as { type?: string }).type || "",
-      inputSchema: tool,
-    };
-  });
+      description: t.description || "",
+      inputSchema: t.input_schema,
+    });
+  }
+  return filtered;
+};
 
 export const convertAnthropicToolChoiceToVSCode = (
   toolChoice?: Anthropic.Messages.ToolChoice,
