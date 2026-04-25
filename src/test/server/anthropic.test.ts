@@ -237,7 +237,12 @@ suite("Anthropic Conversion Utils Test Suite", () => {
         {
           name: "lookup",
           type: "custom",
-          input_schema: { type: "object", properties: {} },
+          description: "Look something up",
+          input_schema: {
+            type: "object",
+            properties: { id: { type: "string" } },
+            required: ["id"],
+          },
         },
       ];
 
@@ -246,6 +251,8 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.ok(result);
       assert.strictEqual(result.length, 1);
       assert.strictEqual(result[0].name, "lookup");
+      assert.strictEqual(result[0].description, "Look something up");
+      assert.deepStrictEqual(result[0].inputSchema, tools[0].input_schema);
     });
 
     test("should return undefined for undefined tools", () => {
