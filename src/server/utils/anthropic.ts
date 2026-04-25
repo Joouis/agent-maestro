@@ -53,7 +53,9 @@ const toolResultBlockParamToVSCodePart = (
       : param.content.map((c) =>
           c.type === "text"
             ? textBlockParamToVSCodePart(c)
-            : new vscode.LanguageModelTextPart(JSON.stringify(c)),
+            : c.type === "image"
+              ? imageBlockParamToVSCodePart(c)
+              : new vscode.LanguageModelTextPart(JSON.stringify(c)),
         );
   return new vscode.LanguageModelToolResultPart(param.tool_use_id, content);
 };
