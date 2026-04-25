@@ -29,16 +29,44 @@ export const DEFAULT_WEB_SEARCH_CONFIG: WebSearchConfig = {
   timeoutMs: 8000,
 };
 
+const SUPPORTED_PROVIDERS = ["tavily", "brave"] as const;
+type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
+
+const isSupportedProvider = (v: unknown): v is SupportedProvider =>
+  typeof v === "string" &&
+  (SUPPORTED_PROVIDERS as readonly string[]).includes(v);
+
 export const getWebSearchConfig = (): WebSearchConfig => {
   const cfg = vscode.workspace.getConfiguration("agent-maestro.webSearch");
   const apiKey =
     process.env.AGENT_MAESTRO_WEBSEARCH_API_KEY ||
     cfg.get<string>("apiKey", "");
-  const provider =
-    (process.env.AGENT_MAESTRO_WEBSEARCH_PROVIDER as
-      | "tavily"
-      | "brave"
-      | undefined) || cfg.get<"tavily" | "brave">("provider", "tavily");
+
+  const settingProvider = cfg.get<string>(
+    "provider",
+    DEFAULT_WEB_SEARCH_CONFIG.provider,
+  );
+  const envProviderRaw = process.env.AGENT_MAESTRO_WEBSEARCH_PROVIDER;
+  let provider: SupportedProvider;
+  if (envProviderRaw !== undefined) {
+    if (isSupportedProvider(envProviderRaw)) {
+      provider = envProviderRaw;
+    } else {
+      logger.warn(
+        `Ignoring AGENT_MAESTRO_WEBSEARCH_PROVIDER='${envProviderRaw}' (not one of ${SUPPORTED_PROVIDERS.join(
+          "/",
+        )}); falling back to setting`,
+      );
+      provider = isSupportedProvider(settingProvider)
+        ? settingProvider
+        : DEFAULT_WEB_SEARCH_CONFIG.provider;
+    }
+  } else {
+    provider = isSupportedProvider(settingProvider)
+      ? settingProvider
+      : DEFAULT_WEB_SEARCH_CONFIG.provider;
+  }
+
   return {
     enabled: cfg.get<boolean>("enabled", DEFAULT_WEB_SEARCH_CONFIG.enabled),
     provider,

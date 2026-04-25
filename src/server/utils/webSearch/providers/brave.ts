@@ -63,21 +63,26 @@ export class BraveSearchProvider implements WebSearchProvider {
       }
 
       const data = (await res.json()) as BraveResponse;
+      const normalize = (d: string) =>
+        d.toLowerCase().replace(/^\.+/, "").replace(/\/+$/, "");
+      const matchesDomain = (host: string, domain: string) =>
+        host === domain || host.endsWith("." + domain);
+
       const allowed = opts.allowedDomains
-        ? new Set(opts.allowedDomains.map((d) => d.toLowerCase()))
+        ? opts.allowedDomains.map(normalize)
         : null;
       const blocked = opts.blockedDomains
-        ? new Set(opts.blockedDomains.map((d) => d.toLowerCase()))
+        ? opts.blockedDomains.map(normalize)
         : null;
 
       return (data.web?.results ?? [])
         .filter((r) => {
           try {
             const host = new URL(r.url).hostname.toLowerCase();
-            if (allowed && !Array.from(allowed).some((d) => host.endsWith(d))) {
+            if (allowed && !allowed.some((d) => matchesDomain(host, d))) {
               return false;
             }
-            if (blocked && Array.from(blocked).some((d) => host.endsWith(d))) {
+            if (blocked && blocked.some((d) => matchesDomain(host, d))) {
               return false;
             }
             return true;

@@ -285,10 +285,21 @@ export const convertAnthropicToolToVSCode = (
       continue;
     }
     const t = tool as Anthropic.Messages.Tool;
+    const schema =
+      t.input_schema &&
+      typeof t.input_schema === "object" &&
+      (t.input_schema as { type?: unknown }).type === "object"
+        ? t.input_schema
+        : undefined;
+    if (!schema) {
+      logger.warn(
+        `Tool '${t.name}' has missing or invalid input_schema; substituting empty object schema`,
+      );
+    }
     filtered.push({
       name: t.name,
       description: t.description || "",
-      inputSchema: t.input_schema,
+      inputSchema: schema ?? { type: "object", properties: {} },
     });
   }
   return filtered;

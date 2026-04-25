@@ -15,7 +15,11 @@ import {
   renderErrorAsToolResultText,
   renderResultsAsToolResultText,
 } from "./webSearch/synth";
-import { WebSearchProvider, WebSearchResult } from "./webSearch/types";
+import {
+  WebSearchError,
+  WebSearchProvider,
+  WebSearchResult,
+} from "./webSearch/types";
 
 export interface WebSearchTurnEvent {
   /**
@@ -153,10 +157,15 @@ export const runWebSearchLoop = async ({
         return { webSearchRequests, used };
       }
 
-      const query = String((call.input as { query?: unknown }).query ?? "");
+      const rawInput =
+        typeof call.input === "object" && call.input !== null
+          ? (call.input as { query?: unknown })
+          : null;
+      const query = String(rawInput?.query ?? "").trim();
       const srvToolUseId = newServerToolUseId();
 
-      // Surface server_tool_use block
+      // Surface server_tool_use block (always, even on guard failure, so the
+      // client can correlate our tool_use_id with the upcoming result block).
       await onWebSearchBlock({
         block: buildServerToolUseBlock(query, srvToolUseId),
       });
@@ -165,15 +174,22 @@ export const runWebSearchLoop = async ({
       let results: WebSearchResult[] = [];
       let errored = false;
 
-      if (webSearchRequests >= budget) {
+      if (!query) {
+        const err = new WebSearchError("Empty query", "invalid_input");
         await onWebSearchBlock({
-          block: buildWebSearchErrorBlock(srvToolUseId, {
-            name: "WebSearchError",
-            message: "Per-request budget exhausted",
-            code: "max_uses_exceeded",
-          } as unknown as Error),
+          block: buildWebSearchErrorBlock(srvToolUseId, err),
         });
-        resultText = "Search quota exhausted for this request.";
+        resultText = renderErrorAsToolResultText(err);
+        errored = true;
+      } else if (webSearchRequests >= budget) {
+        const err = new WebSearchError(
+          "Per-request budget exhausted",
+          "max_uses_exceeded",
+        );
+        await onWebSearchBlock({
+          block: buildWebSearchErrorBlock(srvToolUseId, err),
+        });
+        resultText = renderErrorAsToolResultText(err);
         errored = true;
       } else {
         webSearchRequests++;
