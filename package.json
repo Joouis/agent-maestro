@@ -101,6 +101,52 @@
           "maximum": 2,
           "description": "Scale factor applied to token counts from VS Code's API to approximate Anthropic's actual token usage. Higher values provide more buffer against context window limits but reduce usable context. Default 1.25 means VS Code token counts are multiplied by 1.25.",
           "scope": "application"
+        },
+        "agent-maestro.webSearch.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable execution of Anthropic's web_search server-side tool by routing it to a third-party search API. When disabled, web_search tool definitions sent by clients are dropped (no hang, no error, but no search either).",
+          "scope": "application"
+        },
+        "agent-maestro.webSearch.provider": {
+          "type": "string",
+          "enum": [
+            "tavily",
+            "brave"
+          ],
+          "default": "tavily",
+          "description": "Search backend used when web_search is enabled. Tavily (https://tavily.com) and Brave Search (https://brave.com/search/api/) both offer free tiers.",
+          "scope": "application"
+        },
+        "agent-maestro.webSearch.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for the selected web search provider. Can also be supplied via the AGENT_MAESTRO_WEBSEARCH_API_KEY environment variable.",
+          "scope": "application"
+        },
+        "agent-maestro.webSearch.maxResults": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Maximum number of search results returned per query.",
+          "scope": "application"
+        },
+        "agent-maestro.webSearch.maxUsesPerRequest": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Maximum number of web_search calls allowed per /v1/messages request, regardless of what max_uses the client requests.",
+          "scope": "application"
+        },
+        "agent-maestro.webSearch.timeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 1000,
+          "maximum": 60000,
+          "description": "Per-search HTTP timeout in milliseconds.",
+          "scope": "application"
         }
       }
     },

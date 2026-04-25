@@ -2,6 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import {
+  buildWebSearchVSCodeTool,
+  isWebSearchToolDefinition,
+} from "./webSearch";
 
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
@@ -255,13 +259,12 @@ export const convertAnthropicSystemToVSCode = (
  */
 const isUnsupportedServerSideTool = (tool: unknown): boolean => {
   const t = tool as { type?: string; input_schema?: unknown };
-  return (
-    typeof t.type === "string" && t.type !== "custom" && !t.input_schema
-  );
+  return typeof t.type === "string" && t.type !== "custom" && !t.input_schema;
 };
 
 export const convertAnthropicToolToVSCode = (
   tools?: Anthropic.Messages.ToolUnion[],
+  options: { webSearchActive?: boolean } = {},
 ): vscode.LanguageModelChatTool[] | undefined => {
   if (!tools) {
     return undefined;
@@ -269,6 +272,10 @@ export const convertAnthropicToolToVSCode = (
 
   const filtered: vscode.LanguageModelChatTool[] = [];
   for (const tool of tools) {
+    if (isWebSearchToolDefinition(tool) && options.webSearchActive) {
+      filtered.push(buildWebSearchVSCodeTool());
+      continue;
+    }
     if (isUnsupportedServerSideTool(tool)) {
       logger.warn(
         `Dropping unsupported Anthropic server-side tool: ${

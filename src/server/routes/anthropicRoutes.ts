@@ -15,6 +15,13 @@ import {
   countAnthropicMessageTokens,
 } from "../utils/anthropic";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
+import {
+  getProvider,
+  getWebSearchConfig,
+  isWebSearchActive,
+  logWebSearchActivation,
+} from "../utils/webSearch";
+import { runWebSearchLoop } from "../utils/webSearchLoop";
 
 const prepareAnthropicMessages = async ({
   requestBody,
@@ -285,13 +292,271 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       );
 
       // 4. Build VS Code Language Model request options
+      const webSearchCfg = getWebSearchConfig();
+      const webSearchActive =
+        isWebSearchActive(webSearchCfg) &&
+        (tools ?? []).some(
+          (t) =>
+            typeof (t as { type?: string }).type === "string" &&
+            (t as { type?: string }).type!.startsWith("web_search_"),
+        );
+      if (webSearchActive) {
+        logWebSearchActivation(webSearchCfg);
+      }
+
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
         justification:
           "Anthropic-compatible /v1/messages endpoint with streaming support using VS Code Language Model API",
         modelOptions: msgCreateParams,
-        tools: convertAnthropicToolToVSCode(tools),
+        tools: convertAnthropicToolToVSCode(tools, { webSearchActive }),
         toolMode: convertAnthropicToolChoiceToVSCode(tool_choice),
       };
+
+      // 5. Send request to the VS Code LM API (or, when web_search is active,
+      //    drive a multi-turn loop that intercepts web_search calls and
+      //    synthesizes Anthropic-shape server_tool_use / web_search_tool_result
+      //    blocks for the client.)
+      if (webSearchActive) {
+        const provider = getProvider(webSearchCfg);
+
+        if (!msgCreateParams.stream) {
+          const content: Anthropic.Messages.ContentBlock[] = [];
+          let accumulatedText = "";
+
+          const result = await runWebSearchLoop({
+            client,
+            initialMessages: vsCodeLmMessages,
+            initialOptions: lmRequestOptions,
+            cancellationToken,
+            cfg: webSearchCfg,
+            provider,
+            tools,
+            onModelChunk: async (chunk) => {
+              if (chunk instanceof vscode.LanguageModelTextPart) {
+                let lastBlock = content.at(-1);
+                if (!lastBlock || lastBlock.type !== "text") {
+                  lastBlock = { type: "text", text: "", citations: null };
+                  content.push(lastBlock);
+                }
+                lastBlock.text += chunk.value;
+                accumulatedText += chunk.value;
+              } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+                content.push({
+                  type: "tool_use",
+                  id: chunk.callId,
+                  name: chunk.name,
+                  input: chunk.input,
+                });
+                accumulatedText += JSON.stringify(chunk);
+              }
+            },
+            onWebSearchBlock: async ({ block }) => {
+              content.push(block);
+              accumulatedText += JSON.stringify(block);
+            },
+          });
+
+          const outputTokenCount = accumulatedText
+            ? await countAnthropicMessageTokens(accumulatedText, client)
+            : { original: 1, calibrated: 1 };
+
+          const resp: Anthropic.Messages.Message = {
+            id: `msg_${Date.now()}`,
+            type: "message",
+            role: "assistant",
+            model,
+            content,
+            stop_reason:
+              content.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn",
+            stop_sequence: null,
+            usage: {
+              cache_creation: null,
+              cache_creation_input_tokens: null,
+              cache_read_input_tokens: null,
+              input_tokens: inputTokenCount.calibrated,
+              output_tokens: outputTokenCount.calibrated,
+              server_tool_use: result.used
+                ? { web_search_requests: result.webSearchRequests }
+                : null,
+              service_tier: null,
+            },
+          };
+
+          logger.info(
+            `← /v1/messages | input: ${inputTokenCount.original} → ${
+              inputTokenCount.calibrated
+            } | output: ${outputTokenCount.original} → ${
+              outputTokenCount.calibrated
+            } | web_search: ${result.webSearchRequests}`,
+          );
+
+          return c.json(resp);
+        }
+
+        // Streaming + web_search active
+        return streamSSE(
+          c,
+          async (stream) => {
+            const writeSSE = async (
+              message: Anthropic.Messages.RawMessageStreamEvent,
+            ) => {
+              await stream.writeSSE({
+                event: message.type,
+                data: JSON.stringify(message),
+              });
+            };
+
+            await writeSSE({
+              type: "message_start",
+              message: {
+                id: `msg_${Date.now()}`,
+                type: "message",
+                role: "assistant",
+                model,
+                content: [],
+                stop_reason: null,
+                stop_sequence: null,
+                usage: {
+                  cache_creation: null,
+                  input_tokens: inputTokenCount.calibrated,
+                  output_tokens: 1,
+                  cache_creation_input_tokens: null,
+                  cache_read_input_tokens: null,
+                  server_tool_use: null,
+                  service_tier: "standard",
+                },
+              },
+            });
+
+            const contentBlocks: Anthropic.Messages.ContentBlock[] = [];
+            let accumulatedText = "";
+
+            const closeLastBlock = async () => {
+              if (contentBlocks.length === 0) {
+                return;
+              }
+              await writeSSE({
+                type: "content_block_stop",
+                index: contentBlocks.length - 1,
+              });
+            };
+
+            const startBlock = async (
+              block: Anthropic.Messages.ContentBlock,
+            ) => {
+              contentBlocks.push(block);
+              await writeSSE({
+                type: "content_block_start",
+                index: contentBlocks.length - 1,
+                content_block: block,
+              });
+            };
+
+            const result = await runWebSearchLoop({
+              client,
+              initialMessages: vsCodeLmMessages,
+              initialOptions: lmRequestOptions,
+              cancellationToken,
+              cfg: webSearchCfg,
+              provider,
+              tools,
+              onModelChunk: async (chunk) => {
+                const lastBlock = contentBlocks.at(-1);
+                if (chunk instanceof vscode.LanguageModelTextPart) {
+                  if (lastBlock && lastBlock.type !== "text") {
+                    await closeLastBlock();
+                  }
+                  if (!lastBlock || lastBlock.type !== "text") {
+                    await startBlock({
+                      type: "text",
+                      text: "",
+                      citations: null,
+                    });
+                  }
+                  (contentBlocks.at(-1) as Anthropic.Messages.TextBlock).text +=
+                    chunk.value;
+                  await writeSSE({
+                    type: "content_block_delta",
+                    index: contentBlocks.length - 1,
+                    delta: { type: "text_delta", text: chunk.value },
+                  });
+                  accumulatedText += chunk.value;
+                } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+                  if (lastBlock) {
+                    await closeLastBlock();
+                  }
+                  await startBlock({
+                    type: "tool_use",
+                    id: chunk.callId,
+                    name: chunk.name,
+                    input: {},
+                  });
+                  await writeSSE({
+                    type: "content_block_delta",
+                    index: contentBlocks.length - 1,
+                    delta: {
+                      type: "input_json_delta",
+                      partial_json: JSON.stringify(chunk.input),
+                    },
+                  });
+                  (
+                    contentBlocks.at(-1) as Anthropic.Messages.ToolUseBlock
+                  ).input = chunk.input;
+                  accumulatedText += JSON.stringify(chunk);
+                }
+              },
+              onWebSearchBlock: async ({ block }) => {
+                if (contentBlocks.length > 0) {
+                  await closeLastBlock();
+                }
+                await startBlock(block);
+                accumulatedText += JSON.stringify(block);
+              },
+            });
+
+            await closeLastBlock();
+
+            const outputTokenCount = accumulatedText
+              ? await countAnthropicMessageTokens(accumulatedText, client)
+              : { original: 1, calibrated: 1 };
+
+            await writeSSE({
+              type: "message_delta",
+              delta: {
+                stop_reason:
+                  contentBlocks.at(-1)?.type === "tool_use"
+                    ? "tool_use"
+                    : "end_turn",
+                stop_sequence: null,
+              },
+              usage: {
+                input_tokens: inputTokenCount.calibrated,
+                output_tokens: outputTokenCount.calibrated,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                server_tool_use: result.used
+                  ? { web_search_requests: result.webSearchRequests }
+                  : null,
+              },
+            });
+
+            await writeSSE({ type: "message_stop" });
+
+            logger.info(
+              `← /v1/messages (stream) | input: ${
+                inputTokenCount.original
+              } → ${inputTokenCount.calibrated} | output: ${
+                outputTokenCount.original
+              } → ${outputTokenCount.calibrated} | web_search: ${
+                result.webSearchRequests
+              }`,
+            );
+          },
+          async (error, _stream) => {
+            logger.error("✕ /v1/messages |", error);
+          },
+        );
+      }
 
       // 5. Send request to the VS Code LM API
       const response = await client.sendRequest(
