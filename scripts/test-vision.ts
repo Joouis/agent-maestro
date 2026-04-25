@@ -6,6 +6,7 @@
  *   npx tsx scripts/test-vision.ts --api chat <image-path>            # chat completions only
  *   npx tsx scripts/test-vision.ts --api responses <image-path>       # responses only
  *   npx tsx scripts/test-vision.ts --api anthropic <image-path>       # anthropic messages only
+ *   npx tsx scripts/test-vision.ts --api anthropic-tool-result <image-path>  # anthropic tool_result(image) shape
  *
  * Reads model and base_url from ~/.codex/config.toml when available.
  * Make sure Agent Maestro extension is running with the proxy server active.

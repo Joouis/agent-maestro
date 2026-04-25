@@ -93,6 +93,99 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.strictEqual(result.role, vscode.LanguageModelChatMessageRole.User);
     });
 
+    test("should convert tool_result with image content block", () => {
+      const base64Data =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const message = {
+        role: "user" as const,
+        content: [
+          {
+            type: "tool_result" as const,
+            tool_use_id: "tool-456",
+            content: [
+              {
+                type: "image" as const,
+                source: {
+                  type: "base64" as const,
+                  media_type: "image/png" as const,
+                  data: base64Data,
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = convertAnthropicMessageToVSCode(message);
+
+      assert.ok(!Array.isArray(result));
+      assert.strictEqual(result.role, vscode.LanguageModelChatMessageRole.User);
+      assert.strictEqual(result.content.length, 1);
+      const toolResultPart = result
+        .content[0] as vscode.LanguageModelToolResultPart;
+      assert.ok(toolResultPart instanceof vscode.LanguageModelToolResultPart);
+      assert.strictEqual(toolResultPart.callId, "tool-456");
+      assert.strictEqual(toolResultPart.content.length, 1);
+      // LanguageModelDataPart may not be available in the test environment,
+      // so the image part could be either a DataPart or a TextPart fallback.
+      // The key regression check is that it is NOT a JSON-stringified blob:
+      // before this fix, the image block was serialized via JSON.stringify(c)
+      // and the resulting TextPart's value started with `{"type":"image"`.
+      const imagePart = toolResultPart.content[0];
+      assert.ok(imagePart);
+      if (imagePart instanceof vscode.LanguageModelTextPart) {
+        assert.ok(
+          !imagePart.value.startsWith("{\"type\":\"image\""),
+          "image block should not be delivered as a JSON-stringified text blob",
+        );
+      }
+    });
+
+    test("should convert tool_result with mixed text and image content", () => {
+      const base64Data =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const message = {
+        role: "user" as const,
+        content: [
+          {
+            type: "tool_result" as const,
+            tool_use_id: "tool-789",
+            content: [
+              { type: "text" as const, text: "Here is the screenshot:" },
+              {
+                type: "image" as const,
+                source: {
+                  type: "base64" as const,
+                  media_type: "image/png" as const,
+                  data: base64Data,
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = convertAnthropicMessageToVSCode(message);
+
+      assert.ok(!Array.isArray(result));
+      const toolResultPart = result
+        .content[0] as vscode.LanguageModelToolResultPart;
+      assert.strictEqual(toolResultPart.content.length, 2);
+      assert.ok(toolResultPart.content[0] instanceof vscode.LanguageModelTextPart);
+      assert.strictEqual(
+        (toolResultPart.content[0] as vscode.LanguageModelTextPart).value,
+        "Here is the screenshot:",
+      );
+      const imagePart = toolResultPart.content[1];
+      assert.ok(imagePart);
+      if (imagePart instanceof vscode.LanguageModelTextPart) {
+        assert.ok(
+          !imagePart.value.startsWith("{\"type\":\"image\""),
+          "image block should not be delivered as a JSON-stringified text blob",
+        );
+      }
+    });
+
     test("should handle thinking block", () => {
       const message = {
         role: "assistant" as const,
