@@ -52,15 +52,18 @@ export const convertOpenAIMessagesToVSCode = (
     switch (msg.role) {
       case "developer": // ChatCompletionDeveloperMessageParam
       case "system": // ChatCompletionSystemMessageParam
-        content =
-          typeof msg.content === "string"
-            ? msg.content
-            : msg.content.map((m) => ({
-                value: m.text,
-              }));
+        // Copilot Chat's _convertMessages rejects bare {value} objects with
+        // "Unexpected chat message content type llm 2". Always wrap text in
+        // LanguageModelTextPart, mirroring the user-role branch below.
+        if (typeof msg.content === "string") {
+          return new vscode.LanguageModelChatMessage(
+            vscode.LanguageModelChatMessageRole.User,
+            msg.content,
+          );
+        }
         return new vscode.LanguageModelChatMessage(
           vscode.LanguageModelChatMessageRole.User,
-          content,
+          msg.content.map((m) => new vscode.LanguageModelTextPart(m.text)),
         );
 
       case "user": // ChatCompletionUserMessageParam
