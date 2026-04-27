@@ -274,14 +274,24 @@ export const convertGeminiContentsToVSCode = (
           );
         }
       }
-      // For functionResponse without an explicit id: drain the FIFO queue for
-      // the matching name and pass that callId into the part converter so it
-      // produces a properly-paired LanguageModelToolResultPart.
+      // For functionResponse: keep the per-name pending queue in sync.
+      // If an explicit id is present, remove that matched callId so it cannot
+      // later be reused by an id-less response for the same function name.
+      // Otherwise, drain the FIFO queue for the matching name and pass that
+      // callId into the part converter so it produces a properly-paired
+      // LanguageModelToolResultPart.
       let resolvedCallId: string | undefined;
-      if (part.functionResponse?.name && !part.functionResponse.id) {
+      if (part.functionResponse?.name) {
         const queue = pendingByName.get(part.functionResponse.name);
         if (queue && queue.length > 0) {
-          resolvedCallId = queue.shift();
+          if (part.functionResponse.id) {
+            const matchedIndex = queue.indexOf(part.functionResponse.id);
+            if (matchedIndex !== -1) {
+              queue.splice(matchedIndex, 1);
+            }
+          } else {
+            resolvedCallId = queue.shift();
+          }
         }
       }
       return convertGeminiPartToVSCodePart(part, resolvedCallId);
