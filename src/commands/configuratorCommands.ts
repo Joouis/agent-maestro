@@ -14,6 +14,17 @@ import { logger } from "../utils/logger";
 import { updateEnvFile } from "../utils/updateEnvFile";
 import { createCommandHandler } from "./commandHandler";
 
+/**
+ * Append `[1m]` to a model ID containing `1m` so Claude Code enables its
+ * 1M-context code path. The proxy strips this suffix before model resolution.
+ */
+function tagModelFor1mContext(modelId: string): string {
+  if (!modelId.includes("1m") || modelId.endsWith("[1m]")) {
+    return modelId;
+  }
+  return `${modelId}[1m]`;
+}
+
 export function registerConfiguratorCommands(
   proxy: ProxyServer,
   context: vscode.ExtensionContext,
@@ -149,8 +160,10 @@ export function registerConfiguratorCommands(
             ...existingSettings?.env,
             ANTHROPIC_BASE_URL: `http://localhost:${proxyPort}/api/anthropic`,
             ANTHROPIC_AUTH_TOKEN: authToken,
-            ANTHROPIC_MODEL: selectedMainModel.modelId,
-            ANTHROPIC_SMALL_FAST_MODEL: selectedFastModel.modelId,
+            ANTHROPIC_MODEL: tagModelFor1mContext(selectedMainModel.modelId),
+            ANTHROPIC_SMALL_FAST_MODEL: tagModelFor1mContext(
+              selectedFastModel.modelId,
+            ),
             // Equivalent of setting `DISABLE_AUTOUPDATER`, `DISABLE_BUG_COMMAND`, `DISABLE_ERROR_REPORTING`, and `DISABLE_TELEMETRY` to true
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
           },

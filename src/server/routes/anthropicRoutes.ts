@@ -179,35 +179,16 @@ const countTokensRoute = createRoute({
 });
 
 /**
- * Suffix appended to outbound model names so Claude Code detects the 1M context
- * variant. Claude Code looks for this exact literal — do not change it.
+ * Strip the `[1m]` suffix that users add to ANTHROPIC_MODEL so Claude Code enables
+ * its 1M-context code path. The real VS Code LM model ID never contains this suffix,
+ * so we remove it before model resolution.
  */
 const CC_1M_SUFFIX = "[1m]";
 
-/**
- * Strip the `[1m]` suffix that Claude Code may echo back in subsequent requests.
- * The real VS Code LM model ID never contains this suffix.
- */
 export function stripCc1mSuffix(model: string): string {
   return model.endsWith(CC_1M_SUFFIX)
     ? model.slice(0, -CC_1M_SUFFIX.length)
     : model;
-}
-
-/**
- * Tag the outbound model name with `[1m]` when the underlying model ID contains
- * `1m`, so Claude Code enables its 1M-context code path.
- */
-export function tagCc1mSuffix(
-  clientModel: string,
-  effectiveModelId: string,
-): string {
-  if (!effectiveModelId.includes("1m")) {
-    return clientModel;
-  }
-  return clientModel.endsWith(CC_1M_SUFFIX)
-    ? clientModel
-    : `${clientModel}${CC_1M_SUFFIX}`;
 }
 
 /**
@@ -371,7 +352,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           id: `msg_${Date.now()}`,
           type: "message",
           role: "assistant",
-          model: tagCc1mSuffix(model, effectiveModelId),
+          model: rawModel,
           content,
           stop_reason:
             content.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn",
@@ -415,7 +396,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               id: `msg_${Date.now()}`,
               type: "message",
               role: "assistant",
-              model: tagCc1mSuffix(model, effectiveModelId),
+              model: rawModel,
               content: [],
               stop_reason: null,
               stop_sequence: null,
@@ -576,14 +557,12 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         inputTokens > maxInputTokens;
 
       if (isContextWindowExceeded) {
-        const clientModel = stripCc1mSuffix(
-          rawRequestBody?.model ?? effectiveModelId,
-        );
-        const model = tagCc1mSuffix(clientModel, effectiveModelId);
+        const model = rawRequestBody?.model ?? effectiveModelId;
+        const strippedModel = stripCc1mSuffix(model);
         const modelLabel =
-          clientModel === effectiveModelId
+          strippedModel === effectiveModelId
             ? effectiveModelId
-            : `${clientModel} → ${effectiveModelId}`;
+            : `${strippedModel} → ${effectiveModelId}`;
 
         logger.warn(
           `⚠ /v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens} | model: ${modelLabel}`,
