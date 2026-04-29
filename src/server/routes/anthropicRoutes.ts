@@ -4,6 +4,7 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
+import { stripCc1mSuffix } from "../../utils/cc1m";
 import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
@@ -179,19 +180,6 @@ const countTokensRoute = createRoute({
 });
 
 /**
- * Strip the `[1m]` suffix that users add to ANTHROPIC_MODEL so Claude Code enables
- * its 1M-context code path. The real VS Code LM model ID never contains this suffix,
- * so we remove it before model resolution.
- */
-const CC_1M_SUFFIX = "[1m]";
-
-export function stripCc1mSuffix(model: string): string {
-  return model.endsWith(CC_1M_SUFFIX)
-    ? model.slice(0, -CC_1M_SUFFIX.length)
-    : model;
-}
-
-/**
  * Resolve model ID by checking the anthropic-beta header for context window variants.
  *
  * Claude Code sends `model: "claude-opus-4-6"` in the body and signals the 1M context
@@ -265,7 +253,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       // 3. Map Anthropic messages to VS Code LM API messages and count input tokens
       const { vsCodeLmMessages, inputTokenCount, cancellationToken } =
         await prepareAnthropicMessages({
-          requestBody,
+          requestBody: { ...requestBody, model },
           client,
         });
       lmChatMessages = vsCodeLmMessages;
@@ -698,7 +686,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       }
 
       const { inputTokenCount } = await prepareAnthropicMessages({
-        requestBody,
+        requestBody: { ...requestBody, model: resolvedModel },
         client,
       });
 
