@@ -25,11 +25,12 @@ export function stripCc1mSuffix(model: unknown): string {
 
 /**
  * Append `[1m]` to a model ID that targets the 1M-context variant, so Claude
- * Code enables its 1M-context code path. Idempotent and only tags IDs whose
- * variant suffix is `-1m` to avoid false positives on incidental "1m" matches.
+ * Code enables its 1M-context code path. Idempotent. Detection matches the
+ * convention used elsewhere in the proxy: any `-1m` segment in the ID marks
+ * a 1M variant (e.g. `claude-opus-4.7-1m-internal`), not just a terminal one.
  */
 export function tagCc1mSuffix(modelId: string): string {
-  if (!modelId.endsWith("-1m") || modelId.endsWith(CC_1M_SUFFIX)) {
+  if (!modelId.includes("-1m") || modelId.endsWith(CC_1M_SUFFIX)) {
     return modelId;
   }
   return `${modelId}${CC_1M_SUFFIX}`;

@@ -97,8 +97,15 @@ suite("Model Resolution Test Suite", () => {
       );
     });
 
-    test("does not tag non -1m models even if they contain '1m'", () => {
-      assert.strictEqual(tagCc1mSuffix("claude-1m-opus"), "claude-1m-opus");
+    test("tags -1m variants with extra trailing segments", () => {
+      assert.strictEqual(
+        tagCc1mSuffix("claude-opus-4.7-1m-internal"),
+        "claude-opus-4.7-1m-internal[1m]",
+      );
+    });
+
+    test("does not tag IDs whose '1m' lacks a leading dash", () => {
+      assert.strictEqual(tagCc1mSuffix("claude1m-opus"), "claude1m-opus");
     });
 
     test("does not tag plain models", () => {
