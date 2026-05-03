@@ -4,8 +4,8 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
-import { stripCc1mSuffix } from "../../utils/cc1m";
 import { getChatModelClient } from "../../utils/chatModels";
+import { resolveClaudeCodeModelId } from "../../utils/claude";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
@@ -179,34 +179,6 @@ const countTokensRoute = createRoute({
   },
 });
 
-/**
- * Resolve model ID by checking the anthropic-beta header for context window variants.
- *
- * Claude Code sends `model: "claude-opus-4-6"` in the body and signals the 1M context
- * variant via the `anthropic-beta` header (e.g. `context-1m-2025-08-07`). The VS Code
- * LM API exposes these as separate model IDs (e.g. `claude-opus-4.6-1m`), so we append
- * `-1m` to the model ID when the beta header is present to allow fuzzy matching to find
- * the correct variant.
- *
- * This function is idempotent with respect to the `-1m` suffix: if the model already
- * ends with `-1m`, it is returned unchanged.
- */
-export function resolveModelId(model: string, c: Context): string {
-  const betaHeader = c.req.header("anthropic-beta");
-  if (betaHeader && /\bcontext-1m\b/.test(betaHeader)) {
-    // Avoid double-appending the 1M context suffix (e.g. "model-1m-1m").
-    if (model.endsWith("-1m")) {
-      return model;
-    }
-    const resolved = `${model}-1m`;
-    logger.info(
-      `Detected context-1m beta header, resolving model "${model}" → "${resolved}"`,
-    );
-    return resolved;
-  }
-  return model;
-}
-
 export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
@@ -221,21 +193,20 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
       rawRequestBody = requestBody;
-
       const {
-        model: rawModel,
+        model,
         system,
         messages,
         tools,
         tool_choice,
         ...msgCreateParams
       } = requestBody;
-
-      // Strip the Claude Code 1M-context detection suffix that the client may echo back.
-      const model = stripCc1mSuffix(rawModel);
+      const resolvedModel = resolveClaudeCodeModelId(
+        model,
+        c.req.header("anthropic-beta"),
+      );
 
       // 1. Get chat model client (handles model mapping internally)
-      const resolvedModel = resolveModelId(model, c);
       const { client: initialClient, error: clientError } =
         await getChatModelClient(resolvedModel);
 
@@ -253,35 +224,11 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       // 3. Map Anthropic messages to VS Code LM API messages and count input tokens
       const { vsCodeLmMessages, inputTokenCount, cancellationToken } =
         await prepareAnthropicMessages({
-          requestBody: { ...requestBody, model },
+          requestBody: { ...requestBody, model: resolvedModel },
           client,
         });
       lmChatMessages = vsCodeLmMessages;
       inputTokens = inputTokenCount.calibrated;
-
-      // Auto-upgrade to 1M variant if input exceeds current model's context window
-      if (
-        inputTokens > maxInputTokens &&
-        maxInputTokens > 0 &&
-        !effectiveModelId.includes("-1m")
-      ) {
-        const { client: upgraded } = await getChatModelClient(
-          `${effectiveModelId}-1m`,
-        );
-        if (
-          upgraded &&
-          upgraded.id.includes("-1m") &&
-          upgraded.maxInputTokens > maxInputTokens
-        ) {
-          logger.info(
-            `Auto-upgrading to 1M variant: input ${inputTokens} > max ${maxInputTokens} | ${effectiveModelId} → ${upgraded.id}`,
-          );
-          client = upgraded;
-          effectiveModelId = upgraded.id;
-          maxInputTokens = upgraded.maxInputTokens;
-        }
-      }
-
       logger.info(
         `→ /v1/messages | model: ${
           model === effectiveModelId ? model : `${model} → ${effectiveModelId}`
@@ -340,7 +287,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           id: `msg_${Date.now()}`,
           type: "message",
           role: "assistant",
-          model: rawModel,
+          model,
           content,
           stop_reason:
             content.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn",
@@ -384,7 +331,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               id: `msg_${Date.now()}`,
               type: "message",
               role: "assistant",
-              model: rawModel,
+              model,
               content: [],
               stop_reason: null,
               stop_sequence: null,
@@ -546,11 +493,10 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       if (isContextWindowExceeded) {
         const model = rawRequestBody?.model ?? effectiveModelId;
-        const strippedModel = stripCc1mSuffix(model);
         const modelLabel =
-          strippedModel === effectiveModelId
+          model === effectiveModelId
             ? effectiveModelId
-            : `${strippedModel} → ${effectiveModelId}`;
+            : `${model} → ${effectiveModelId}`;
 
         logger.warn(
           `⚠ /v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens} | model: ${modelLabel}`,
@@ -673,10 +619,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
     try {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
-
-      const resolvedModel = resolveModelId(
-        stripCc1mSuffix(requestBody.model),
-        c,
+      const resolvedModel = resolveClaudeCodeModelId(
+        requestBody.model,
+        c.req.header("anthropic-beta"),
       );
       const { client, error: clientError } =
         await getChatModelClient(resolvedModel);
@@ -684,7 +629,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       if (clientError) {
         return c.json(clientError, 404);
       }
-
       const { inputTokenCount } = await prepareAnthropicMessages({
         requestBody: { ...requestBody, model: resolvedModel },
         client,

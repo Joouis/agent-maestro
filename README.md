@@ -47,13 +47,13 @@ This automatically creates or updates `.claude/settings.json` with Agent Maestro
 
 **That's it!** You can now use Claude Code with VS Code's built-in language models.
 
-> **1M Context Support**: Agent Maestro supports Claude 1M context models (e.g. `claude-opus-4.6-1m`). To use the extended context window, switch to the 1M variant in Claude Code via the `/model` command (e.g. select `Opus (1M)`). Without this, Claude Code defaults to the standard 200K context window even though Agent Maestro proxies to the 1M model.
+> **1M Context Support**: Agent Maestro supports Claude 1M context models (e.g. `claude-opus-4.7-1m-internal`). To use the extended context window, run `Agent Maestro: Configure Claude Code Settings` and select the desired 1M model. Agent Maestro writes the model in the format Claude Code expects so the 1M path is selected consistently.
 
 ### One-Click Setup for Codex
 
 Configure Codex to use VS Code's language models with a single command `Agent Maestro: Configure Codex Settings` via Command Palette.
 
-This automatically creates or updates `~/.codex/config.toml` with Agent Maestro endpoint and sets up `GPT-5-Codex` as the recommended model.
+This automatically creates or updates `~/.codex/config.toml` with Agent Maestro endpoint and sets up `GPT-5.5` as the recommended model.
 
 ### One-Click Setup for Gemini CLI
 
@@ -222,7 +222,7 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 | `agent-maestro.proxyServerPort`                 | Proxy server port                                                  | `23333`                        |
 | `agent-maestro.mcpServerPort`                   | MCP server port                                                    | `23334`                        |
 | `agent-maestro.anthropic.tokenCountScaleFactor` | Scale factor for Anthropic token count estimation (range: 1.0–2.0) | `1.25`                         |
-| `agent-maestro.codex.contextWindowScaleFactor`  | Scale factor for Codex context window calculation (range: 1.0–2.0) | `1`                            |
+| `agent-maestro.codex.contextWindowScaleFactor`  | Scale factor for Codex context window calculation (range: 0.1–2.0) | `1`                            |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
 
