@@ -8,18 +8,6 @@ import { logger } from "./logger";
 const CLAUDE_MODEL_1M_SUFFIX = "[1m]";
 
 /**
- * Remove the trailing `[1m]` suffix that Claude Code may echo back.
- */
-export function stripClaudeCode1mSuffix(model: unknown): string {
-  if (typeof model !== "string") {
-    return model as string;
-  }
-  return model.endsWith(CLAUDE_MODEL_1M_SUFFIX)
-    ? model.slice(0, -CLAUDE_MODEL_1M_SUFFIX.length)
-    : model;
-}
-
-/**
  * Append `[1m]` to 1M-context model IDs so Claude Code enables its 1M path.
  */
 export function withClaudeCode1mSuffix(modelId: string): string {

@@ -5,7 +5,6 @@ import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
 import { getChatModelClient } from "../../utils/chatModels";
-import { stripClaudeCode1mSuffix } from "../../utils/claude";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
@@ -193,18 +192,14 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
       rawRequestBody = requestBody;
-
       const {
-        model: rawModel,
+        model,
         system,
         messages,
         tools,
         tool_choice,
         ...msgCreateParams
       } = requestBody;
-
-      // Strip the Claude Code 1M-context detection suffix that the client may echo back.
-      const model = stripClaudeCode1mSuffix(rawModel);
 
       // 1. Get chat model client (handles model mapping internally)
       const { client: initialClient, error: clientError } =
@@ -311,7 +306,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           id: `msg_${Date.now()}`,
           type: "message",
           role: "assistant",
-          model: rawModel,
+          model,
           content,
           stop_reason:
             content.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn",
@@ -355,7 +350,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               id: `msg_${Date.now()}`,
               type: "message",
               role: "assistant",
-              model: rawModel,
+              model,
               content: [],
               stop_reason: null,
               stop_sequence: null,
@@ -517,11 +512,10 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       if (isContextWindowExceeded) {
         const model = rawRequestBody?.model ?? effectiveModelId;
-        const strippedModel = stripClaudeCode1mSuffix(model);
         const modelLabel =
-          strippedModel === effectiveModelId
+          model === effectiveModelId
             ? effectiveModelId
-            : `${strippedModel} → ${effectiveModelId}`;
+            : `${model} → ${effectiveModelId}`;
 
         logger.warn(
           `⚠ /v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens} | model: ${modelLabel}`,
@@ -644,17 +638,16 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
     try {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
-
-      const resolvedModel = stripClaudeCode1mSuffix(requestBody.model);
-      const { client, error: clientError } =
-        await getChatModelClient(resolvedModel);
+      const { client, error: clientError } = await getChatModelClient(
+        requestBody.model,
+      );
 
       if (clientError) {
         return c.json(clientError, 404);
       }
 
       const { inputTokenCount } = await prepareAnthropicMessages({
-        requestBody: { ...requestBody, model: resolvedModel },
+        requestBody,
         client,
       });
 

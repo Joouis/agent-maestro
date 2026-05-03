@@ -1,49 +1,9 @@
 import * as assert from "assert";
 
 import { jaccardSimilarity } from "../../utils/chatModels";
-import {
-  stripClaudeCode1mSuffix,
-  withClaudeCode1mSuffix,
-} from "../../utils/claude";
+import { withClaudeCode1mSuffix } from "../../utils/claude";
 
 suite("Model Resolution Test Suite", () => {
-  suite("stripClaudeCode1mSuffix", () => {
-    test("removes trailing [1m] suffix", () => {
-      assert.strictEqual(
-        stripClaudeCode1mSuffix("claude-opus-4-6-1m[1m]"),
-        "claude-opus-4-6-1m",
-      );
-    });
-
-    test("returns model unchanged when no suffix is present", () => {
-      assert.strictEqual(
-        stripClaudeCode1mSuffix("claude-opus-4-6"),
-        "claude-opus-4-6",
-      );
-    });
-
-    test("only strips a terminal suffix, not occurrences elsewhere", () => {
-      assert.strictEqual(
-        stripClaudeCode1mSuffix("claude-[1m]-opus"),
-        "claude-[1m]-opus",
-      );
-    });
-
-    test("is idempotent on repeated application", () => {
-      const once = stripClaudeCode1mSuffix("claude-opus-4-6-1m[1m]");
-      assert.strictEqual(stripClaudeCode1mSuffix(once), once);
-    });
-
-    test("handles empty string", () => {
-      assert.strictEqual(stripClaudeCode1mSuffix(""), "");
-    });
-
-    test("returns non-string input untouched without throwing", () => {
-      assert.strictEqual(stripClaudeCode1mSuffix(undefined), undefined);
-      assert.strictEqual(stripClaudeCode1mSuffix(null), null);
-    });
-  });
-
   suite("withClaudeCode1mSuffix", () => {
     test("appends [1m] to a -1m variant", () => {
       assert.strictEqual(
