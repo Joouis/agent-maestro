@@ -179,34 +179,6 @@ const countTokensRoute = createRoute({
   },
 });
 
-/**
- * Resolve model ID by checking the anthropic-beta header for context window variants.
- *
- * Claude Code sends `model: "claude-opus-4-6"` in the body and signals the 1M context
- * variant via the `anthropic-beta` header (e.g. `context-1m-2025-08-07`). The VS Code
- * LM API exposes these as separate model IDs (e.g. `claude-opus-4.6-1m`), so we append
- * `-1m` to the model ID when the beta header is present to allow fuzzy matching to find
- * the correct variant.
- *
- * This function is idempotent with respect to the `-1m` suffix: if the model already
- * ends with `-1m`, it is returned unchanged.
- */
-export function resolveModelId(model: string, c: Context): string {
-  const betaHeader = c.req.header("anthropic-beta");
-  if (betaHeader && /\bcontext-1m\b/.test(betaHeader)) {
-    // Avoid double-appending the 1M context suffix (e.g. "model-1m-1m").
-    if (model.endsWith("-1m")) {
-      return model;
-    }
-    const resolved = `${model}-1m`;
-    logger.info(
-      `Detected context-1m beta header, resolving model "${model}" → "${resolved}"`,
-    );
-    return resolved;
-  }
-  return model;
-}
-
 export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
@@ -235,9 +207,8 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const model = stripClaudeCode1mSuffix(rawModel);
 
       // 1. Get chat model client (handles model mapping internally)
-      const resolvedModel = resolveModelId(model, c);
       const { client: initialClient, error: clientError } =
-        await getChatModelClient(resolvedModel);
+        await getChatModelClient(model);
 
       if (initialClient) {
         effectiveModelId = initialClient.id;
@@ -674,10 +645,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
 
-      const resolvedModel = resolveModelId(
-        stripClaudeCode1mSuffix(requestBody.model),
-        c,
-      );
+      const resolvedModel = stripClaudeCode1mSuffix(requestBody.model);
       const { client, error: clientError } =
         await getChatModelClient(resolvedModel);
 

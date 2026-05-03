@@ -130,13 +130,10 @@ export function registerConfiguratorCommands(
           : "Powered by Agent Maestro";
 
         const proxyPort = proxy.getStatus().port;
-        const settingsWithoutModel = { ...existingSettings };
-        // Top-level `model` takes precedence over env.ANTHROPIC_MODEL in Claude Code.
-        delete settingsWithoutModel.model;
 
         // Create new settings
         const newSettings = {
-          ...settingsWithoutModel,
+          ...existingSettings,
           env: {
             ...existingSettings?.env,
             ANTHROPIC_BASE_URL: `http://localhost:${proxyPort}/api/anthropic`,

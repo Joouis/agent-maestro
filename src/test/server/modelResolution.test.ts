@@ -1,63 +1,12 @@
 import * as assert from "assert";
-import type { Context } from "hono";
 
-import { resolveModelId } from "../../server/routes/anthropicRoutes";
 import { jaccardSimilarity } from "../../utils/chatModels";
 import {
   stripClaudeCode1mSuffix,
   withClaudeCode1mSuffix,
 } from "../../utils/claude";
 
-function createMockContext(headers: Record<string, string> = {}): Context {
-  return {
-    req: {
-      header: (name: string) => headers[name.toLowerCase()],
-    },
-  } as any as Context;
-}
-
 suite("Model Resolution Test Suite", () => {
-  suite("resolveModelId", () => {
-    test("should append -1m when context-1m beta header is present", () => {
-      const ctx = createMockContext({
-        "anthropic-beta":
-          "context-1m-2025-08-07,interleaved-thinking-2025-05-14",
-      });
-      assert.strictEqual(
-        resolveModelId("claude-opus-4-6", ctx),
-        "claude-opus-4-6-1m",
-      );
-    });
-
-    test("should not double-append -1m if model already ends with -1m", () => {
-      const ctx = createMockContext({
-        "anthropic-beta": "context-1m-2025-08-07",
-      });
-      assert.strictEqual(
-        resolveModelId("claude-opus-4-6-1m", ctx),
-        "claude-opus-4-6-1m",
-      );
-    });
-
-    test("should return model unchanged when no beta header", () => {
-      const ctx = createMockContext();
-      assert.strictEqual(
-        resolveModelId("claude-opus-4-6", ctx),
-        "claude-opus-4-6",
-      );
-    });
-
-    test("should return model unchanged when beta header has no context-1m", () => {
-      const ctx = createMockContext({
-        "anthropic-beta": "interleaved-thinking-2025-05-14",
-      });
-      assert.strictEqual(
-        resolveModelId("claude-opus-4-6", ctx),
-        "claude-opus-4-6",
-      );
-    });
-  });
-
   suite("stripClaudeCode1mSuffix", () => {
     test("removes trailing [1m] suffix", () => {
       assert.strictEqual(
