@@ -178,6 +178,35 @@ const countTokensRoute = createRoute({
   },
 });
 
+/**
+ * Resolve model ID by checking the anthropic-beta header for context window variants.
+ *
+ * Claude Code sends `model: "claude-opus-4-6"` in the body and signals the 1M context
+ * variant via the `anthropic-beta` header (e.g. `context-1m-2025-08-07`).
+ * GitHub Copilot currently exposes these as internal 1M model IDs (e.g.
+ * `claude-opus-4.7-1m-internal`). Appending `-1m-internal` makes fuzzy
+ * matching prefer that provider-specific variant first while still allowing
+ * fallback to a plain `-1m` variant when no internal model is available.
+ *
+ * This is best-effort compatibility: users who need a specific 1M model
+ * should run Configure Claude Code Settings and select that model explicitly.
+ */
+export function resolveModelId(model: string, c: Context): string {
+  const betaHeader = c.req.header("anthropic-beta");
+  if (
+    betaHeader &&
+    /\bcontext-1m\b/.test(betaHeader) &&
+    !model.includes("1m")
+  ) {
+    const resolved = `${model}-1m-internal`;
+    logger.info(
+      `Detected context-1m beta header, resolving model ${model} → ${resolved}`,
+    );
+    return resolved;
+  }
+  return model;
+}
+
 export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
@@ -200,10 +229,11 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         tool_choice,
         ...msgCreateParams
       } = requestBody;
+      const resolvedModel = resolveModelId(model, c);
 
       // 1. Get chat model client (handles model mapping internally)
       const { client: initialClient, error: clientError } =
-        await getChatModelClient(model);
+        await getChatModelClient(resolvedModel);
 
       if (initialClient) {
         effectiveModelId = initialClient.id;
@@ -219,35 +249,11 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       // 3. Map Anthropic messages to VS Code LM API messages and count input tokens
       const { vsCodeLmMessages, inputTokenCount, cancellationToken } =
         await prepareAnthropicMessages({
-          requestBody: { ...requestBody, model },
+          requestBody: { ...requestBody, model: resolvedModel },
           client,
         });
       lmChatMessages = vsCodeLmMessages;
       inputTokens = inputTokenCount.calibrated;
-
-      // Auto-upgrade to 1M variant if input exceeds current model's context window
-      if (
-        inputTokens > maxInputTokens &&
-        maxInputTokens > 0 &&
-        !effectiveModelId.includes("-1m")
-      ) {
-        const { client: upgraded } = await getChatModelClient(
-          `${effectiveModelId}-1m`,
-        );
-        if (
-          upgraded &&
-          upgraded.id.includes("-1m") &&
-          upgraded.maxInputTokens > maxInputTokens
-        ) {
-          logger.info(
-            `Auto-upgrading to 1M variant: input ${inputTokens} > max ${maxInputTokens} | ${effectiveModelId} → ${upgraded.id}`,
-          );
-          client = upgraded;
-          effectiveModelId = upgraded.id;
-          maxInputTokens = upgraded.maxInputTokens;
-        }
-      }
-
       logger.info(
         `→ /v1/messages | model: ${
           model === effectiveModelId ? model : `${model} → ${effectiveModelId}`
@@ -638,16 +644,15 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
     try {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
-      const { client, error: clientError } = await getChatModelClient(
-        requestBody.model,
-      );
+      const resolvedModel = resolveModelId(requestBody.model, c);
+      const { client, error: clientError } =
+        await getChatModelClient(resolvedModel);
 
       if (clientError) {
         return c.json(clientError, 404);
       }
-
       const { inputTokenCount } = await prepareAnthropicMessages({
-        requestBody,
+        requestBody: { ...requestBody, model: resolvedModel },
         client,
       });
 
