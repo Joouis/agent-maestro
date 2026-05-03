@@ -111,27 +111,15 @@ export function registerConfiguratorCommands(
           return;
         }
 
-        const selectedMainModel = await vscode.window.showQuickPick(
+        const selectedDefaultModel = await vscode.window.showQuickPick(
           modelOptions,
           {
-            title: "Select main model (ANTHROPIC_MODEL)",
-            placeHolder: "Name of custom model to use",
+            title: "Select default model (ANTHROPIC_MODEL)",
+            placeHolder: "Name of default model to use",
           },
         );
 
-        if (!selectedMainModel?.modelId) {
-          return;
-        }
-
-        const selectedFastModel = await vscode.window.showQuickPick(
-          modelOptions,
-          {
-            title: "Select small fast model (ANTHROPIC_SMALL_FAST_MODEL)",
-            placeHolder: "Name of Haiku-class model for background tasks",
-          },
-        );
-
-        if (!selectedFastModel?.modelId) {
+        if (!selectedDefaultModel?.modelId) {
           return;
         }
 
@@ -142,18 +130,18 @@ export function registerConfiguratorCommands(
           : "Powered by Agent Maestro";
 
         const proxyPort = proxy.getStatus().port;
+        const settingsWithoutModel = { ...existingSettings };
+        // Top-level `model` takes precedence over env.ANTHROPIC_MODEL in Claude Code.
+        delete settingsWithoutModel.model;
 
         // Create new settings
         const newSettings = {
-          ...existingSettings,
+          ...settingsWithoutModel,
           env: {
             ...existingSettings?.env,
             ANTHROPIC_BASE_URL: `http://localhost:${proxyPort}/api/anthropic`,
             ANTHROPIC_AUTH_TOKEN: authToken,
-            ANTHROPIC_MODEL: tagCc1mSuffix(selectedMainModel.modelId),
-            ANTHROPIC_SMALL_FAST_MODEL: tagCc1mSuffix(
-              selectedFastModel.modelId,
-            ),
+            ANTHROPIC_MODEL: tagCc1mSuffix(selectedDefaultModel.modelId),
             // Equivalent of setting `DISABLE_AUTOUPDATER`, `DISABLE_BUG_COMMAND`, `DISABLE_ERROR_REPORTING`, and `DISABLE_TELEMETRY` to true
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
           },
