@@ -24,9 +24,8 @@ const prepareAnthropicMessages = async ({
   requestBody: Anthropic.Messages.MessageCreateParams;
   client: vscode.LanguageModelChat;
 }) => {
-  const requestBodyStr = JSON.stringify(requestBody, null, 2);
   logger.debug("/v1/messages payload:");
-  logger.debug(requestBodyStr);
+  logger.debug(JSON.stringify(requestBody, null, 2));
 
   const { system, messages } = requestBody;
 
@@ -37,7 +36,7 @@ const prepareAnthropicMessages = async ({
 
   const cancellationToken = new vscode.CancellationTokenSource().token;
   const inputTokenCount = await countAnthropicMessageTokens(
-    requestBodyStr,
+    JSON.stringify(requestBody),
     client,
   );
 
@@ -427,7 +426,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             }
           }
 
-          logger.debug("/v1/messages streamed content block responses: ");
+          logger.debug("/v1/messages streamed content block responses:");
           logger.debug(JSON.stringify(contentBlocks, null, 2));
 
           // Finalize last content block if it exists

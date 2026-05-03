@@ -34,9 +34,8 @@ const prepareGeminiRequest = async ({
   requestBody: GenerateContentRequest;
   client: vscode.LanguageModelChat;
 }) => {
-  const requestBodyStr = JSON.stringify(requestBody, null, 2);
   logger.debug("Gemini request payload:");
-  logger.debug(requestBodyStr);
+  logger.debug(JSON.stringify(requestBody, null, 2));
 
   const { systemInstruction, contents, tools, generationConfig, toolConfig } =
     requestBody;
@@ -53,7 +52,7 @@ const prepareGeminiRequest = async ({
   // do this to leverage the official tokenizer instead of building our own wheel.
   const cancellationToken = new vscode.CancellationTokenSource().token;
   const inputTokenCount = await client.countTokens(
-    requestBodyStr,
+    JSON.stringify(requestBody),
     cancellationToken,
   );
 
