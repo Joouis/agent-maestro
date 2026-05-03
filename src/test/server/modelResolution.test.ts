@@ -30,6 +30,13 @@ suite("Model Resolution Test Suite", () => {
         ),
         "claude-opus-4.7-1m-internal",
       );
+      assert.strictEqual(
+        resolveClaudeCodeModelId(
+          "claude-opus-4.7-1m-internal[1m]",
+          "context-1m-2025-08-07",
+        ),
+        "claude-opus-4.7-1m-internal[1m]",
+      );
     });
 
     test("returns model unchanged without context-1m beta header", () => {

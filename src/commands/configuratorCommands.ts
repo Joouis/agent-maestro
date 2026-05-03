@@ -130,12 +130,15 @@ export function registerConfiguratorCommands(
           : "Powered by Agent Maestro";
 
         const proxyPort = proxy.getStatus().port;
+        const existingEnv = { ...existingSettings?.env };
+        // Remove the deprecated Claude Code small-fast override when rewriting settings.
+        delete existingEnv.ANTHROPIC_SMALL_FAST_MODEL;
 
         // Create new settings
         const newSettings = {
           ...existingSettings,
           env: {
-            ...existingSettings?.env,
+            ...existingEnv,
             ANTHROPIC_BASE_URL: `http://localhost:${proxyPort}/api/anthropic`,
             ANTHROPIC_AUTH_TOKEN: authToken,
             ANTHROPIC_MODEL: withClaudeCode1mSuffix(
@@ -252,7 +255,7 @@ export function registerConfiguratorCommands(
 
         // Calculate model_context_window with scale factor
         const DEFAULT_SCALE_FACTOR = 1;
-        const MIN_SCALE_FACTOR = 1;
+        const MIN_SCALE_FACTOR = 0.1;
         const MAX_SCALE_FACTOR = 2;
         let scaleFactor = vscode.workspace
           .getConfiguration("agent-maestro.codex")
