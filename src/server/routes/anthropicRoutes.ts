@@ -4,8 +4,8 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
-import { stripCc1mSuffix } from "../../utils/cc1m";
 import { getChatModelClient } from "../../utils/chatModels";
+import { stripClaudeCode1mSuffix } from "../../utils/claude";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
@@ -232,7 +232,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       } = requestBody;
 
       // Strip the Claude Code 1M-context detection suffix that the client may echo back.
-      const model = stripCc1mSuffix(rawModel);
+      const model = stripClaudeCode1mSuffix(rawModel);
 
       // 1. Get chat model client (handles model mapping internally)
       const resolvedModel = resolveModelId(model, c);
@@ -546,7 +546,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       if (isContextWindowExceeded) {
         const model = rawRequestBody?.model ?? effectiveModelId;
-        const strippedModel = stripCc1mSuffix(model);
+        const strippedModel = stripClaudeCode1mSuffix(model);
         const modelLabel =
           strippedModel === effectiveModelId
             ? effectiveModelId
@@ -675,7 +675,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
 
       const resolvedModel = resolveModelId(
-        stripCc1mSuffix(requestBody.model),
+        stripClaudeCode1mSuffix(requestBody.model),
         c,
       );
       const { client, error: clientError } =

@@ -5,8 +5,8 @@ import { parse, stringify } from "smol-toml";
 import * as vscode from "vscode";
 
 import { ProxyServer } from "../server/ProxyServer";
-import { tagCc1mSuffix } from "../utils/cc1m";
 import { getChatModelsQuickPickItems } from "../utils/chatModels";
+import { withClaudeCode1mSuffix } from "../utils/claude";
 import {
   ensureClaudeConfigExists,
   ensureClaudeOnboardingComplete,
@@ -141,7 +141,9 @@ export function registerConfiguratorCommands(
             ...existingSettings?.env,
             ANTHROPIC_BASE_URL: `http://localhost:${proxyPort}/api/anthropic`,
             ANTHROPIC_AUTH_TOKEN: authToken,
-            ANTHROPIC_MODEL: tagCc1mSuffix(selectedDefaultModel.modelId),
+            ANTHROPIC_MODEL: withClaudeCode1mSuffix(
+              selectedDefaultModel.modelId,
+            ),
             // Equivalent of setting `DISABLE_AUTOUPDATER`, `DISABLE_BUG_COMMAND`, `DISABLE_ERROR_REPORTING`, and `DISABLE_TELEMETRY` to true
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
           },
