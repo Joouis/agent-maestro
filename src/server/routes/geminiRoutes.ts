@@ -34,8 +34,9 @@ const prepareGeminiRequest = async ({
   requestBody: GenerateContentRequest;
   client: vscode.LanguageModelChat;
 }) => {
-  const requestBodyStr = JSON.stringify(requestBody);
-  logger.debug("Gemini request payload: ", requestBodyStr);
+  const requestBodyStr = JSON.stringify(requestBody, null, 2);
+  logger.debug("Gemini request payload:");
+  logger.debug(requestBodyStr);
 
   const { systemInstruction, contents, tools, generationConfig, toolConfig } =
     requestBody;
@@ -387,10 +388,8 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         modelVersion: modelId,
       };
 
-      logger.debug(
-        "generateContent response:",
-        JSON.stringify(geminiResponse, null, 2),
-      );
+      logger.debug("generateContent response:");
+      logger.debug(JSON.stringify(geminiResponse, null, 2));
       logger.info(
         `← /v1beta/models/${modelWithMethod} | input: ${inputTokenCount} | output: ${outputTokenCount}`,
       );
