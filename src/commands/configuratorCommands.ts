@@ -228,7 +228,7 @@ export function registerConfiguratorCommands(
         }
 
         const modelOptions = await getChatModelsQuickPickItems({
-          recommendedModelId: "gpt-5.2-codex",
+          recommendedModelId: "gpt-5.5",
           priorityFamily: "openai",
         });
 
