@@ -1,51 +1,43 @@
 import * as assert from "assert";
-import type { Context } from "hono";
 
-import { resolveModelId } from "../../server/routes/anthropicRoutes";
 import { jaccardSimilarity } from "../../utils/chatModels";
-import { withClaudeCode1mSuffix } from "../../utils/claude";
-
-function createMockContext(headers: Record<string, string> = {}): Context {
-  return {
-    req: {
-      header: (name: string) => headers[name.toLowerCase()],
-    },
-  } as any as Context;
-}
+import {
+  resolveClaudeCodeModelId,
+  withClaudeCode1mSuffix,
+} from "../../utils/claude";
 
 suite("Model Resolution Test Suite", () => {
-  suite("resolveModelId", () => {
+  suite("resolveClaudeCodeModelId", () => {
     test("appends -1m-internal when context-1m beta header is present", () => {
-      const ctx = createMockContext({
-        "anthropic-beta":
-          "context-1m-2025-08-07,interleaved-thinking-2025-05-14",
-      });
       assert.strictEqual(
-        resolveModelId("claude-opus-4-7", ctx),
+        resolveClaudeCodeModelId(
+          "claude-opus-4-7",
+          "context-1m-2025-08-07,interleaved-thinking-2025-05-14",
+        ),
         "claude-opus-4-7-1m-internal",
       );
     });
 
     test("does not append when model already contains 1m", () => {
-      const ctx = createMockContext({
-        "anthropic-beta": "context-1m-2025-08-07",
-      });
       assert.strictEqual(
-        resolveModelId("claude-opus-4-7-1m", ctx),
+        resolveClaudeCodeModelId("claude-opus-4-7-1m", "context-1m-2025-08-07"),
         "claude-opus-4-7-1m",
       );
       assert.strictEqual(
-        resolveModelId("claude-opus-4.7-1m-internal", ctx),
+        resolveClaudeCodeModelId(
+          "claude-opus-4.7-1m-internal",
+          "context-1m-2025-08-07",
+        ),
         "claude-opus-4.7-1m-internal",
       );
     });
 
     test("returns model unchanged without context-1m beta header", () => {
-      const ctx = createMockContext({
-        "anthropic-beta": "interleaved-thinking-2025-05-14",
-      });
       assert.strictEqual(
-        resolveModelId("claude-opus-4-7", ctx),
+        resolveClaudeCodeModelId(
+          "claude-opus-4-7",
+          "interleaved-thinking-2025-05-14",
+        ),
         "claude-opus-4-7",
       );
     });

@@ -18,6 +18,37 @@ export function withClaudeCode1mSuffix(modelId: string): string {
 }
 
 /**
+ * Resolve Claude Code model IDs from its 1M context signal.
+ *
+ * Claude Code sends `model: "claude-opus-4-6"` in the body and signals the 1M context
+ * variant via the `anthropic-beta` header (e.g. `context-1m-2025-08-07`).
+ * GitHub Copilot currently exposes these as internal 1M model IDs (e.g.
+ * `claude-opus-4.7-1m-internal`). Appending `-1m-internal` makes fuzzy
+ * matching prefer that provider-specific variant first while still allowing
+ * fallback to a plain `-1m` variant when no internal model is available.
+ *
+ * This is best-effort compatibility: users who need a specific 1M model
+ * should run Configure Claude Code Settings and select that model explicitly.
+ */
+export function resolveClaudeCodeModelId(
+  model: string,
+  betaHeader?: string,
+): string {
+  if (
+    betaHeader &&
+    /\bcontext-1m\b/.test(betaHeader) &&
+    !model.includes("1m")
+  ) {
+    const resolved = `${model}-1m-internal`;
+    logger.info(
+      `Detected context-1m beta header, resolving model "${model}" → "${resolved}"`,
+    );
+    return resolved;
+  }
+  return model;
+}
+
+/**
  * Interface for Claude config.json structure
  */
 interface ClaudeConfig {

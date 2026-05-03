@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
 import { getChatModelClient } from "../../utils/chatModels";
+import { resolveClaudeCodeModelId } from "../../utils/claude";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
@@ -178,35 +179,6 @@ const countTokensRoute = createRoute({
   },
 });
 
-/**
- * Resolve model ID by checking the anthropic-beta header for context window variants.
- *
- * Claude Code sends `model: "claude-opus-4-6"` in the body and signals the 1M context
- * variant via the `anthropic-beta` header (e.g. `context-1m-2025-08-07`).
- * GitHub Copilot currently exposes these as internal 1M model IDs (e.g.
- * `claude-opus-4.7-1m-internal`). Appending `-1m-internal` makes fuzzy
- * matching prefer that provider-specific variant first while still allowing
- * fallback to a plain `-1m` variant when no internal model is available.
- *
- * This is best-effort compatibility: users who need a specific 1M model
- * should run Configure Claude Code Settings and select that model explicitly.
- */
-export function resolveModelId(model: string, c: Context): string {
-  const betaHeader = c.req.header("anthropic-beta");
-  if (
-    betaHeader &&
-    /\bcontext-1m\b/.test(betaHeader) &&
-    !model.includes("1m")
-  ) {
-    const resolved = `${model}-1m-internal`;
-    logger.info(
-      `Detected context-1m beta header, resolving model ${model} → ${resolved}`,
-    );
-    return resolved;
-  }
-  return model;
-}
-
 export function registerAnthropicRoutes(app: OpenAPIHono) {
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
@@ -229,7 +201,10 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         tool_choice,
         ...msgCreateParams
       } = requestBody;
-      const resolvedModel = resolveModelId(model, c);
+      const resolvedModel = resolveClaudeCodeModelId(
+        model,
+        c.req.header("anthropic-beta"),
+      );
 
       // 1. Get chat model client (handles model mapping internally)
       const { client: initialClient, error: clientError } =
@@ -644,7 +619,10 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
     try {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
-      const resolvedModel = resolveModelId(requestBody.model, c);
+      const resolvedModel = resolveClaudeCodeModelId(
+        requestBody.model,
+        c.req.header("anthropic-beta"),
+      );
       const { client, error: clientError } =
         await getChatModelClient(resolvedModel);
 
