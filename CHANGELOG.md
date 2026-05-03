@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.8.6 - 2026.05.03
+
+- Route Claude Code 1M context requests through its 1M model signal and remove automatic oversized-prompt upgrades. For exact 1M model selection, run `Configure Claude Code Settings` and choose the desired 1M model explicitly.
+- Fix `/v1/messages` failing or hanging when Claude Code (or any client) sends Anthropic server-side tool definitions such as `web_search_20250305`, `computer_20250124`, `bash_20250124`, etc. The previous tool converter stuffed the entire tool object into `inputSchema`, producing invalid JSON Schema (`tools.0.custom.input_schema.type: Input should be 'object'`) and, when no upstream error surfaced, leaving the client waiting forever for a `tool_result` that VS Code's Language Model API cannot produce. These tools are now dropped with a logged warning so the model never sees them and the request proceeds normally. Fixes #163, addresses #150.
+- Fix Anthropic `tool_result` image blocks by routing image content through `LanguageModelDataPart` instead of serialized JSON text, matching top-level user-message image handling.
+- Fix multi-turn Gemini tool calls failing with `the number of function response parts is equal to the number of function call parts of the function call turn`. `langchain-google-genai` 4.x emits `functionResponse` parts with only `name` (no `id`), relying on Gemini's positional pairing rules; the previous strict id check dropped those parts entirely. The converter now walks all parts in document order, assigns a stable `callId` to every `functionCall`, and uses a per-name FIFO queue to recover the matching `callId` when a `functionResponse` arrives without one.
+- Fix `/v1/chat/completions` failing with `Unexpected chat message content type llm 2` when the OpenAI client sends a `system` or `developer` message whose content is an array of text blocks (deepagents, langchain-openai, etc. do this when splitting long system prompts). The converter previously mapped each block to a bare `{ value: text }` object, which Copilot Chat's `_convertMessages` does not accept. Each block is now wrapped in `LanguageModelTextPart`, mirroring the user-role branch.
+
 ## v2.8.5 - 2026.03.28
 
 - Change default `codex.contextWindowScaleFactor` from 1.3 to 1 to better align with model context limits.
@@ -203,19 +211,17 @@
 - Support get Roo task with id
 - Fix 'message "number" is required' issue when requesting /roo/tasks
 
-## v0.3.0 - 2025-06-17
+## v0.3.0 - 2025.06.17
 
 - Support fetch Roo task history
 - Support `newTab` argument for new Roo task creation
 
-## v0.2.5 - 2025-06-17
+## v0.2.5 - 2025.06.17
 
 - Fix logo missing issue and reduce package size by removing unnecessary files
 - Do not show output panel at extension activation
 
-## v0.2.4 - 2025-06-16
-
-### Features
+## v0.2.4 - 2025.06.16
 
 - Added file system read API for project file access
 - Added configuration support when creating new Roo tasks
@@ -223,9 +229,7 @@
 - Added Server-Sent Events (SSE) documentation for Roo API
 - Proxy server skips start if another one is already running, otherwise find an available port if default one has been used
 
-## v0.1.0 - 2025-06-14
-
-### Features
+## v0.1.0 - 2025.06.14
 
 - Multi-agent support for RooCode and Cline extensions
 - RESTful API server with OpenAPI documentation

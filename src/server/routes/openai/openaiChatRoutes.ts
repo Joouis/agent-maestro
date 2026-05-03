@@ -120,11 +120,11 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
       // We pass the stringified request body to VSCode's countTokens() API, which is technically
       // a misuse since it's designed for LanguageModelChatMessage objects. However, we intentionally
       // do this to leverage the official tokenizer instead of building our own wheel.
-      const requestBodyStr = JSON.stringify(requestBody);
-      logger.debug("/v1/chat/completions payload: ", requestBodyStr);
+      logger.debug("/v1/chat/completions payload:");
+      logger.debug(JSON.stringify(requestBody, null, 2));
       const cancellationToken = new vscode.CancellationTokenSource().token;
       const inputTokenCount = await client.countTokens(
-        requestBodyStr,
+        JSON.stringify(requestBody),
         cancellationToken,
       );
       inputTokens = inputTokenCount;
@@ -210,10 +210,8 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
           },
         };
 
-        logger.debug(
-          "/v1/chat/completions response: ",
-          JSON.stringify(openaiResponse, null, 2),
-        );
+        logger.debug("/v1/chat/completions response:");
+        logger.debug(JSON.stringify(openaiResponse, null, 2));
         logger.info(
           `← /v1/chat/completions | input: ${inputTokenCount} | output: ${completionTokens}`,
         );

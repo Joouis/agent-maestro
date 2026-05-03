@@ -34,8 +34,8 @@ const prepareGeminiRequest = async ({
   requestBody: GenerateContentRequest;
   client: vscode.LanguageModelChat;
 }) => {
-  const requestBodyStr = JSON.stringify(requestBody);
-  logger.debug("Gemini request payload: ", requestBodyStr);
+  logger.debug("Gemini request payload:");
+  logger.debug(JSON.stringify(requestBody, null, 2));
 
   const { systemInstruction, contents, tools, generationConfig, toolConfig } =
     requestBody;
@@ -52,7 +52,7 @@ const prepareGeminiRequest = async ({
   // do this to leverage the official tokenizer instead of building our own wheel.
   const cancellationToken = new vscode.CancellationTokenSource().token;
   const inputTokenCount = await client.countTokens(
-    requestBodyStr,
+    JSON.stringify(requestBody),
     cancellationToken,
   );
 
@@ -387,10 +387,8 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         modelVersion: modelId,
       };
 
-      logger.debug(
-        "generateContent response:",
-        JSON.stringify(geminiResponse, null, 2),
-      );
+      logger.debug("generateContent response:");
+      logger.debug(JSON.stringify(geminiResponse, null, 2));
       logger.info(
         `← /v1beta/models/${modelWithMethod} | input: ${inputTokenCount} | output: ${outputTokenCount}`,
       );
