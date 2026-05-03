@@ -154,6 +154,88 @@ suite("Gemini Conversion Utils Test Suite", () => {
       const result = convertGeminiContentsToVSCode([]);
       assert.strictEqual(result.length, 0);
     });
+
+    test("should pair functionResponse without id via FIFO queue", () => {
+      // langchain-google-genai 4.x emits functionResponse with only `name`
+      // (no `id`). The pre-walk must assign a callId to the functionCall and
+      // the second pass must drain the per-name FIFO queue to recover it.
+      const contents = [
+        {
+          role: "model",
+          parts: [
+            { functionCall: { name: "fund_search", args: { q: "tech" } } },
+          ],
+        },
+        {
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                name: "fund_search",
+                response: { result: "Found 026211" },
+              },
+            },
+          ],
+        },
+      ];
+
+      const result = convertGeminiContentsToVSCode(contents);
+
+      assert.strictEqual(result.length, 2);
+      const callPart = result[0].content[0] as vscode.LanguageModelToolCallPart;
+      const resultPart = result[1]
+        .content[0] as vscode.LanguageModelToolResultPart;
+      assert.ok(callPart instanceof vscode.LanguageModelToolCallPart);
+      assert.ok(resultPart instanceof vscode.LanguageModelToolResultPart);
+      assert.strictEqual(
+        resultPart.callId,
+        callPart.callId,
+        "functionResponse should inherit the callId of its paired functionCall",
+      );
+    });
+
+    test("should not reuse an id-matched callId for a later id-less response", () => {
+      // Two functionCalls for the same name. First response matches by id,
+      // second response omits id. The second one must pair with the SECOND
+      // call, not the first — i.e. the id-matched callId must be removed
+      // from the FIFO queue when the explicit id consumes it.
+      const contents = [
+        {
+          role: "model",
+          parts: [
+            { functionCall: { id: "call_A", name: "f", args: {} } },
+            { functionCall: { id: "call_B", name: "f", args: {} } },
+          ],
+        },
+        {
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                id: "call_A",
+                name: "f",
+                response: { ok: 1 },
+              },
+            },
+            {
+              functionResponse: { name: "f", response: { ok: 2 } },
+            },
+          ],
+        },
+      ];
+
+      const result = convertGeminiContentsToVSCode(contents);
+
+      const responses = result[1]
+        .content as vscode.LanguageModelToolResultPart[];
+      assert.strictEqual(responses.length, 2);
+      assert.strictEqual(responses[0].callId, "call_A");
+      assert.strictEqual(
+        responses[1].callId,
+        "call_B",
+        "id-less response must drain to call_B, not stale call_A",
+      );
+    });
   });
 
   suite("convertGeminiSystemInstructionToVSCode", () => {
