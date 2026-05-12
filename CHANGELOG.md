@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8.7 - 2026.05.12
+
+- Fix Anthropic `/v1/messages` length-truncated responses from VS Code/Copilot so partial content can be returned successfully with `stop_reason: "max_tokens"` instead of a 500 error.
+
 ## v2.8.6 - 2026.05.03
 
 - Route Claude Code 1M context requests through its 1M model signal and remove automatic oversized-prompt upgrades. For exact 1M model selection, run `Configure Claude Code Settings` and choose the desired 1M model explicitly.

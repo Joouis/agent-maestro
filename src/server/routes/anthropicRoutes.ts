@@ -16,7 +16,7 @@ import {
   countAnthropicMessageTokens,
 } from "../utils/anthropic";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
-import { isTokenLengthErrorLike } from "../utils/languageModelErrors";
+import { isResponseTooLongError } from "../utils/languageModelErrors";
 
 const prepareAnthropicMessages = async ({
   requestBody,
@@ -280,13 +280,13 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             }
           }
         } catch (streamError) {
-          if (!isTokenLengthErrorLike(streamError)) {
+          if (!isResponseTooLongError(streamError)) {
             throw streamError;
           }
 
           stopReason = "max_tokens";
           logger.warn(
-            `⚠ /v1/messages | returning truncated response after length error | contentBlocks: ${content.length}`,
+            `/v1/messages | returning truncated response after length error | contentBlocks: ${content.length}`,
           );
         }
 
@@ -445,13 +445,13 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               }
             }
           } catch (streamError) {
-            if (!isTokenLengthErrorLike(streamError)) {
+            if (!isResponseTooLongError(streamError)) {
               throw streamError;
             }
 
             stopReason = "max_tokens";
             logger.warn(
-              `⚠ /v1/messages (stream) | returning truncated response after length error | contentBlocks: ${contentBlocks.length}`,
+              `/v1/messages (stream) | returning truncated response after length error | contentBlocks: ${contentBlocks.length}`,
             );
           }
 
@@ -531,7 +531,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             : `${model} → ${effectiveModelId}`;
 
         logger.warn(
-          `⚠ /v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens} | model: ${modelLabel}`,
+          `/v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens} | model: ${modelLabel}`,
         );
 
         vscode.window.showWarningMessage(

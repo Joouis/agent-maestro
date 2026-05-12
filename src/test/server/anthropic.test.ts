@@ -8,7 +8,7 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
 } from "../../server/utils/anthropic";
-import { isTokenLengthErrorLike } from "../../server/utils/languageModelErrors";
+import { isResponseTooLongError } from "../../server/utils/languageModelErrors";
 
 suite("Anthropic Conversion Utils Test Suite", () => {
   suite("convertAnthropicMessageToVSCode", () => {
@@ -408,20 +408,20 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     test("should detect Copilot response-too-long errors", () => {
       const error = new Error("Response too long.");
 
-      assert.strictEqual(isTokenLengthErrorLike(error), true);
+      assert.strictEqual(isResponseTooLongError(error), true);
     });
 
     test("should return false for non-length errors", () => {
       assert.strictEqual(
-        isTokenLengthErrorLike(new Error("network failure")),
+        isResponseTooLongError(new Error("network failure")),
         false,
       );
     });
 
     test("should return false for non-Error values", () => {
-      assert.strictEqual(isTokenLengthErrorLike("Response too long"), false);
-      assert.strictEqual(isTokenLengthErrorLike(null), false);
-      assert.strictEqual(isTokenLengthErrorLike(undefined), false);
+      assert.strictEqual(isResponseTooLongError("Response too long"), false);
+      assert.strictEqual(isResponseTooLongError(null), false);
+      assert.strictEqual(isResponseTooLongError(undefined), false);
     });
   });
 });
