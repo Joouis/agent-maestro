@@ -16,6 +16,7 @@ import {
   countAnthropicMessageTokens,
 } from "../utils/anthropic";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
+import { isResponseTooLongError } from "../utils/languageModelErrors";
 
 const prepareAnthropicMessages = async ({
   requestBody,
@@ -255,26 +256,38 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       if (!msgCreateParams.stream) {
         const content: Anthropic.Messages.ContentBlock[] = [];
         let accumulatedText = "";
+        let stopReason: Anthropic.Messages.StopReason = "end_turn";
 
-        for await (const chunk of response.stream) {
-          if (chunk instanceof vscode.LanguageModelTextPart) {
-            let lastBlock = content.at(-1);
-            if (!lastBlock || lastBlock.type !== "text") {
-              lastBlock = { type: "text", text: "", citations: null };
-              content.push(lastBlock);
+        try {
+          for await (const chunk of response.stream) {
+            if (chunk instanceof vscode.LanguageModelTextPart) {
+              let lastBlock = content.at(-1);
+              if (!lastBlock || lastBlock.type !== "text") {
+                lastBlock = { type: "text", text: "", citations: null };
+                content.push(lastBlock);
+              }
+              lastBlock.text += chunk.value;
+              accumulatedText += chunk.value;
+            } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+              content.push({
+                type: "tool_use",
+                id: chunk.callId,
+                name: chunk.name,
+                input: chunk.input,
+              });
+
+              accumulatedText += JSON.stringify(chunk);
             }
-            lastBlock.text += chunk.value;
-            accumulatedText += chunk.value;
-          } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-            content.push({
-              type: "tool_use",
-              id: chunk.callId,
-              name: chunk.name,
-              input: chunk.input,
-            });
-
-            accumulatedText += JSON.stringify(chunk);
           }
+        } catch (streamError) {
+          if (!isResponseTooLongError(streamError)) {
+            throw streamError;
+          }
+
+          stopReason = "max_tokens";
+          logger.warn(
+            `/v1/messages | returning truncated response after length error | contentBlocks: ${content.length}`,
+          );
         }
 
         // Count output tokens
@@ -290,7 +303,11 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           model,
           content,
           stop_reason:
-            content.at(-1)?.type === "tool_use" ? "tool_use" : "end_turn",
+            stopReason === "max_tokens"
+              ? "max_tokens"
+              : content.at(-1)?.type === "tool_use"
+                ? "tool_use"
+                : "end_turn",
           stop_sequence: null,
           usage: {
             cache_creation: null,
@@ -350,90 +367,104 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
           const contentBlocks: Anthropic.Messages.ContentBlock[] = [];
           let accumulatedText = "";
+          let stopReason: Anthropic.Messages.StopReason = "end_turn";
 
-          for await (const chunk of response.stream) {
-            const lastBlock = contentBlocks.at(-1);
-            if (chunk instanceof vscode.LanguageModelTextPart) {
-              // Stop last non-text block if it exists
-              if (lastBlock && lastBlock.type !== "text") {
+          try {
+            for await (const chunk of response.stream) {
+              const lastBlock = contentBlocks.at(-1);
+              if (chunk instanceof vscode.LanguageModelTextPart) {
+                // Stop last non-text block if it exists
+                if (lastBlock && lastBlock.type !== "text") {
+                  await writeSSE({
+                    type: "content_block_stop",
+                    index: contentBlocks.length - 1,
+                  });
+                }
+
+                // Start a new text block
+                if (!lastBlock || lastBlock.type !== "text") {
+                  contentBlocks.push({
+                    type: "text",
+                    text: "",
+                    citations: null,
+                  });
+                  await writeSSE({
+                    type: "content_block_start",
+                    index: contentBlocks.length - 1,
+                    content_block: { type: "text", text: "", citations: null },
+                  });
+                }
+
+                // Append text to the current text block
+                (contentBlocks.at(-1) as Anthropic.Messages.TextBlock).text +=
+                  chunk.value;
                 await writeSSE({
-                  type: "content_block_stop",
+                  type: "content_block_delta",
                   index: contentBlocks.length - 1,
+                  delta: { type: "text_delta", text: chunk.value },
                 });
-              }
 
-              // Start a new text block
-              if (!lastBlock || lastBlock.type !== "text") {
+                accumulatedText += chunk.value;
+              } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+                // Every tool call is a new content block
+                if (lastBlock) {
+                  await writeSSE({
+                    type: "content_block_stop",
+                    index: contentBlocks.length - 1,
+                  });
+                }
+
                 contentBlocks.push({
-                  type: "text",
-                  text: "",
-                  citations: null,
-                });
-                await writeSSE({
-                  type: "content_block_start",
-                  index: contentBlocks.length - 1,
-                  content_block: { type: "text", text: "", citations: null },
-                });
-              }
-
-              // Append text to the current text block
-              (contentBlocks.at(-1) as Anthropic.Messages.TextBlock).text +=
-                chunk.value;
-              await writeSSE({
-                type: "content_block_delta",
-                index: contentBlocks.length - 1,
-                delta: { type: "text_delta", text: chunk.value },
-              });
-
-              accumulatedText += chunk.value;
-            } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-              // Every tool call is a new content block
-              if (lastBlock) {
-                await writeSSE({
-                  type: "content_block_stop",
-                  index: contentBlocks.length - 1,
-                });
-              }
-
-              contentBlocks.push({
-                type: "tool_use",
-                id: chunk.callId,
-                name: chunk.name,
-                input: chunk.input,
-              });
-
-              await writeSSE({
-                type: "content_block_start",
-                index: contentBlocks.length - 1,
-                content_block: {
                   type: "tool_use",
                   id: chunk.callId,
                   name: chunk.name,
-                  input: {},
-                },
-              });
+                  input: chunk.input,
+                });
 
-              await writeSSE({
-                type: "content_block_delta",
-                index: contentBlocks.length - 1,
-                delta: {
-                  type: "input_json_delta",
-                  partial_json: JSON.stringify(chunk.input),
-                },
-              });
+                await writeSSE({
+                  type: "content_block_start",
+                  index: contentBlocks.length - 1,
+                  content_block: {
+                    type: "tool_use",
+                    id: chunk.callId,
+                    name: chunk.name,
+                    input: {},
+                  },
+                });
 
-              accumulatedText += JSON.stringify(chunk);
+                await writeSSE({
+                  type: "content_block_delta",
+                  index: contentBlocks.length - 1,
+                  delta: {
+                    type: "input_json_delta",
+                    partial_json: JSON.stringify(chunk.input),
+                  },
+                });
+
+                accumulatedText += JSON.stringify(chunk);
+              }
             }
+          } catch (streamError) {
+            if (!isResponseTooLongError(streamError)) {
+              throw streamError;
+            }
+
+            stopReason = "max_tokens";
+            logger.warn(
+              `/v1/messages (stream) | returning truncated response after length error | contentBlocks: ${contentBlocks.length}`,
+            );
           }
 
           logger.debug("/v1/messages streamed content block responses:");
           logger.debug(JSON.stringify(contentBlocks, null, 2));
 
           // Finalize last content block if it exists
-          await writeSSE({
-            type: "content_block_stop",
-            index: contentBlocks.length - 1,
-          });
+          if (contentBlocks.length > 0) {
+            await writeSSE({
+              type: "content_block_stop",
+              index: contentBlocks.length - 1,
+            });
+          }
 
           // Count output tokens for the complete response
           const outputTokenCount = accumulatedText
@@ -444,9 +475,11 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             type: "message_delta",
             delta: {
               stop_reason:
-                contentBlocks.at(-1)?.type === "tool_use"
-                  ? "tool_use"
-                  : "end_turn",
+                stopReason === "max_tokens"
+                  ? "max_tokens"
+                  : contentBlocks.at(-1)?.type === "tool_use"
+                    ? "tool_use"
+                    : "end_turn",
               stop_sequence: null,
             },
             usage: {
@@ -498,7 +531,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             : `${model} → ${effectiveModelId}`;
 
         logger.warn(
-          `⚠ /v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens} | model: ${modelLabel}`,
+          `/v1/messages | context window exceeded | input: ${inputTokens} > max: ${maxInputTokens} | model: ${modelLabel}`,
         );
 
         vscode.window.showWarningMessage(

@@ -8,6 +8,7 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
 } from "../../server/utils/anthropic";
+import { isResponseTooLongError } from "../../server/utils/languageModelErrors";
 
 suite("Anthropic Conversion Utils Test Suite", () => {
   suite("convertAnthropicMessageToVSCode", () => {
@@ -135,7 +136,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.ok(imagePart);
       if (imagePart instanceof vscode.LanguageModelTextPart) {
         assert.ok(
-          !imagePart.value.startsWith("{\"type\":\"image\""),
+          !imagePart.value.startsWith('{"type":"image"'),
           "image block should not be delivered as a JSON-stringified text blob",
         );
       }
@@ -171,7 +172,9 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       const toolResultPart = result
         .content[0] as vscode.LanguageModelToolResultPart;
       assert.strictEqual(toolResultPart.content.length, 2);
-      assert.ok(toolResultPart.content[0] instanceof vscode.LanguageModelTextPart);
+      assert.ok(
+        toolResultPart.content[0] instanceof vscode.LanguageModelTextPart,
+      );
       assert.strictEqual(
         (toolResultPart.content[0] as vscode.LanguageModelTextPart).value,
         "Here is the screenshot:",
@@ -180,7 +183,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.ok(imagePart);
       if (imagePart instanceof vscode.LanguageModelTextPart) {
         assert.ok(
-          !imagePart.value.startsWith("{\"type\":\"image\""),
+          !imagePart.value.startsWith('{"type":"image"'),
           "image block should not be delivered as a JSON-stringified text blob",
         );
       }
@@ -398,6 +401,27 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     test("should return undefined for undefined tool choice", () => {
       const result = convertAnthropicToolChoiceToVSCode(undefined);
       assert.strictEqual(result, undefined);
+    });
+  });
+
+  suite("Anthropic max_tokens length stop handling", () => {
+    test("should detect Copilot response-too-long errors", () => {
+      const error = new Error("Response too long.");
+
+      assert.strictEqual(isResponseTooLongError(error), true);
+    });
+
+    test("should return false for non-length errors", () => {
+      assert.strictEqual(
+        isResponseTooLongError(new Error("network failure")),
+        false,
+      );
+    });
+
+    test("should return false for non-Error values", () => {
+      assert.strictEqual(isResponseTooLongError("Response too long"), false);
+      assert.strictEqual(isResponseTooLongError(null), false);
+      assert.strictEqual(isResponseTooLongError(undefined), false);
     });
   });
 });
