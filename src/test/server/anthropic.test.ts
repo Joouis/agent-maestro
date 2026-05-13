@@ -54,6 +54,30 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.strictEqual(result.role, vscode.LanguageModelChatMessageRole.User);
     });
 
+    test("should ignore cache_control metadata on text blocks", () => {
+      const message = {
+        role: "user" as const,
+        content: [
+          {
+            type: "text" as const,
+            text: "Stable cached context",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      };
+
+      const result = convertAnthropicMessageToVSCode(message as any);
+
+      assert.ok(!Array.isArray(result));
+      assert.strictEqual(result.role, vscode.LanguageModelChatMessageRole.User);
+      assert.strictEqual(result.content.length, 1);
+      assert.ok(result.content[0] instanceof vscode.LanguageModelTextPart);
+      assert.strictEqual(
+        (result.content[0] as vscode.LanguageModelTextPart).value,
+        "Stable cached context",
+      );
+    });
+
     test("should convert assistant message with tool use", () => {
       const message = {
         role: "assistant" as const,
@@ -267,6 +291,25 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.strictEqual(result.length, 2);
     });
 
+    test("should ignore cache_control metadata on system text blocks", () => {
+      const system = [
+        {
+          type: "text" as const,
+          text: "Reusable system prompt",
+          cache_control: { type: "ephemeral" },
+        },
+      ];
+
+      const result = convertAnthropicSystemToVSCode(system as any);
+
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(
+        result[0].role,
+        vscode.LanguageModelChatMessageRole.User,
+      );
+      assert.strictEqual(result[0].content, "Reusable system prompt");
+    });
+
     test("should return empty array for undefined system", () => {
       const result = convertAnthropicSystemToVSCode(undefined);
       assert.strictEqual(result.length, 0);
@@ -300,6 +343,30 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.strictEqual(result.length, 1);
       assert.strictEqual(result[0].name, "get_weather");
       assert.strictEqual(result[0].description, "Get the weather for a city");
+    });
+
+    test("should ignore cache_control metadata on tools", () => {
+      const tools = [
+        {
+          name: "cached_lookup",
+          description: "Lookup using cached context",
+          input_schema: {
+            type: "object",
+            properties: {
+              query: { type: "string" },
+            },
+          },
+          cache_control: { type: "ephemeral" },
+        },
+      ];
+
+      const result = convertAnthropicToolToVSCode(tools as any);
+
+      assert.ok(result);
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(result[0].name, "cached_lookup");
+      assert.strictEqual(result[0].description, "Lookup using cached context");
+      assert.deepStrictEqual(result[0].inputSchema, tools[0].input_schema);
     });
 
     test("should drop unsupported server-side tools without input_schema", () => {

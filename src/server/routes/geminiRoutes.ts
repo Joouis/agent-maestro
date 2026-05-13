@@ -381,6 +381,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         ],
         usageMetadata: {
           promptTokenCount: inputTokenCount,
+          cachedContentTokenCount: 0,
           candidatesTokenCount: outputTokenCount,
           totalTokenCount: inputTokenCount + outputTokenCount,
         },
@@ -548,6 +549,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
               ],
               usageMetadata: {
                 promptTokenCount: inputTokenCount,
+                cachedContentTokenCount: 0,
                 candidatesTokenCount: outputTokenCount,
                 totalTokenCount: inputTokenCount + outputTokenCount,
               },
@@ -586,6 +588,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
               ],
               usageMetadata: {
                 promptTokenCount: inputTokenCount,
+                cachedContentTokenCount: 0,
                 candidatesTokenCount: 0,
                 totalTokenCount: inputTokenCount,
               },
@@ -670,6 +673,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       return c.json(
         {
           totalTokens: inputTokenCount,
+          ...(requestBody.cachedContent ? { cachedContentTokenCount: 0 } : {}),
         },
         200,
       );

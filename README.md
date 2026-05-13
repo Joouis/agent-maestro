@@ -236,6 +236,10 @@ To prevent this, Agent Maestro provides configurable scale factors that inflate 
 
 - **`codex.contextWindowScaleFactor`** (for Codex): Used only when generating Codex's `config.toml` to set the `model_context_window` value (calculated as `maxInputTokens × scaleFactor`). This tells Codex the effective context window size upfront so it manages its own conversation history accordingly.
 
+### Prompt Cache Compatibility
+
+Agent Maestro accepts common prompt cache hints such as Anthropic `cache_control`, OpenAI `prompt_cache_key`, and Gemini `cachedContent` without forwarding unsupported cache controls to VS Code's Language Model API. Because VS Code does not expose provider-side prompt cache reads or writes, cache usage fields are reported as `0` rather than synthetic savings.
+
 ## API Overview
 
 > 💡 **Always refer to [`/openapi.json`](http://localhost:23333/openapi.json) for the latest API documentation.**
