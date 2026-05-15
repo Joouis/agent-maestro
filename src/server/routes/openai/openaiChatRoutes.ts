@@ -107,6 +107,8 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
         tool_choice,
         ...otherParams
       } = requestBody;
+      const { prompt_cache_key: _promptCacheKey, ...modelOptions } =
+        otherParams as Record<string, unknown>;
       requestedModelId = modelId;
 
       // 1. Get chat model client
@@ -143,7 +145,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
         justification:
           "OpenAI-compatible /chat/completions endpoint using VS Code Language Model API",
-        modelOptions: otherParams,
+        modelOptions,
         tools: tools
           ? tools.map(convertOpenAIChatCompletionToolToVSCode)
           : undefined,
@@ -205,6 +207,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
           ],
           usage: {
             prompt_tokens: inputTokenCount,
+            prompt_tokens_details: { cached_tokens: 0 },
             completion_tokens: completionTokens,
             total_tokens: inputTokenCount + completionTokens,
           },
@@ -316,6 +319,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
 
             usage = {
               prompt_tokens: inputTokenCount,
+              prompt_tokens_details: { cached_tokens: 0 },
               completion_tokens: completionTokens,
               total_tokens: inputTokenCount + completionTokens,
             };
