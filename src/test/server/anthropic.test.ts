@@ -307,7 +307,12 @@ suite("Anthropic Conversion Utils Test Suite", () => {
         result[0].role,
         vscode.LanguageModelChatMessageRole.User,
       );
-      assert.strictEqual(result[0].content, "Reusable system prompt");
+      assert.strictEqual(result[0].content.length, 1);
+      assert.ok(result[0].content[0] instanceof vscode.LanguageModelTextPart);
+      assert.strictEqual(
+        (result[0].content[0] as vscode.LanguageModelTextPart).value,
+        "Reusable system prompt",
+      );
     });
 
     test("should return empty array for undefined system", () => {
