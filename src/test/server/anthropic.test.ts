@@ -65,6 +65,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
         true,
       );
       assert.strictEqual(result.data[0].type, "model");
+      assert.strictEqual(result.data[0].max_tokens, null);
       assert.strictEqual(result.first_id, "claude-opus-4.7");
       assert.strictEqual(result.last_id, "claude-opus-4.7");
       assert.strictEqual(result.has_more, false);

@@ -11,7 +11,7 @@ export interface AnthropicModelsResponse {
   last_id: string | null;
 }
 
-const UNKNOWN_MODEL_CREATED_AT = "2025-06-01T12:09:17Z";
+const UNKNOWN_MODEL_CREATED_AT = "1970-01-01T00:00:00Z";
 const supported = { supported: true };
 const unsupported = { supported: false };
 
@@ -80,7 +80,7 @@ export function convertVSCodeModelToAnthropicModel(
     created_at: UNKNOWN_MODEL_CREATED_AT,
     display_name: model.name,
     max_input_tokens: model.maxInputTokens,
-    max_tokens: 0,
+    max_tokens: null,
     type: "model",
   };
 }
