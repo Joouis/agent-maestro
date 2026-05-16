@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.9.0 - 2026.05.16
+
+- Add Anthropic-compatible model listing and retrieval endpoints to support Claude Desktop 3P gateway compatibility, including model context limits and known capability metadata from VS Code language models.
+- Use the IPv4 loopback address for generated Claude Code, Codex, and Gemini CLI proxy URLs to avoid localhost resolution issues.
+- Report numeric zero cache-token usage fields across Anthropic, OpenAI, and Gemini-compatible routes and strip unsupported OpenAI prompt cache hints before forwarding model options.
+
 ## v2.8.7 - 2026.05.12
 
 - Fix Anthropic `/v1/messages` length-truncated responses from VS Code/Copilot so partial content can be returned successfully with `stop_reason: "max_tokens"` instead of a 500 error.
