@@ -8,9 +8,116 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
 } from "../../server/utils/anthropic";
+import { createAnthropicModelsResponse } from "../../server/utils/anthropicModels";
 import { isResponseTooLongError } from "../../server/utils/languageModelErrors";
 
+function createMockModel(
+  overrides: Partial<vscode.LanguageModelChat> & {
+    capabilities?: {
+      supportsImageToText?: boolean;
+      supportsToolCalling?: boolean;
+    };
+  },
+): vscode.LanguageModelChat {
+  return {
+    id: "claude-sonnet-4.6",
+    name: "Claude Sonnet 4.6",
+    family: "claude",
+    version: "4.6",
+    vendor: "copilot",
+    maxInputTokens: 200000,
+    capabilities: {
+      supportsImageToText: false,
+      supportsToolCalling: true,
+    },
+    sendRequest: async () => {
+      throw new Error("not implemented");
+    },
+    countTokens: async () => 0,
+    ...overrides,
+  } as vscode.LanguageModelChat;
+}
+
 suite("Anthropic Conversion Utils Test Suite", () => {
+  suite("createAnthropicModelsResponse", () => {
+    test("should expose max_input_tokens from Claude models", () => {
+      const result = createAnthropicModelsResponse([
+        createMockModel({
+          id: "claude-opus-4.7",
+          name: "Claude Opus 4.7",
+          maxInputTokens: 1000000,
+        }),
+      ]);
+
+      assert.strictEqual(result.data.length, 1);
+      assert.strictEqual(result.data[0].id, "claude-opus-4.7");
+      assert.strictEqual(result.data[0].display_name, "Claude Opus 4.7");
+      assert.strictEqual(result.data[0].max_input_tokens, 1000000);
+      assert.strictEqual(
+        result.data[0].capabilities?.image_input.supported,
+        false,
+      );
+      assert.strictEqual(
+        result.data[0].capabilities?.structured_outputs.supported,
+        true,
+      );
+      assert.strictEqual(result.data[0].type, "model");
+      assert.strictEqual(result.first_id, "claude-opus-4.7");
+      assert.strictEqual(result.last_id, "claude-opus-4.7");
+      assert.strictEqual(result.has_more, false);
+    });
+
+    test("should preserve zero max_input_tokens", () => {
+      const result = createAnthropicModelsResponse([
+        createMockModel({ maxInputTokens: 0 }),
+      ]);
+
+      assert.strictEqual(result.data[0].max_input_tokens, 0);
+    });
+
+    test("should translate known VS Code capabilities", () => {
+      const result = createAnthropicModelsResponse([
+        createMockModel({
+          capabilities: {
+            supportsImageToText: true,
+            supportsToolCalling: false,
+          },
+        }),
+      ]);
+
+      assert.strictEqual(
+        result.data[0].capabilities?.image_input.supported,
+        true,
+      );
+      assert.strictEqual(
+        result.data[0].capabilities?.structured_outputs.supported,
+        false,
+      );
+      assert.strictEqual(
+        result.data[0].capabilities?.code_execution.supported,
+        false,
+      );
+      assert.strictEqual(
+        result.data[0].capabilities?.thinking.supported,
+        false,
+      );
+    });
+
+    test("should omit non-Claude models", () => {
+      const result = createAnthropicModelsResponse([
+        createMockModel({
+          id: "gpt-5.1",
+          name: "GPT-5.1",
+          family: "gpt",
+        }),
+      ]);
+
+      assert.deepStrictEqual(result.data, []);
+      assert.strictEqual(result.first_id, null);
+      assert.strictEqual(result.last_id, null);
+    });
+  });
+
   suite("convertAnthropicMessageToVSCode", () => {
     test("should convert user message with string content", () => {
       const message = {

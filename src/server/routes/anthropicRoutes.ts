@@ -4,7 +4,7 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
-import { getChatModelClient } from "../../utils/chatModels";
+import { chatModelsCache, getChatModelClient } from "../../utils/chatModels";
 import { resolveClaudeCodeModelId } from "../../utils/claude";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
@@ -15,6 +15,7 @@ import {
   convertAnthropicToolToVSCode,
   countAnthropicMessageTokens,
 } from "../utils/anthropic";
+import { createAnthropicModelsResponse } from "../utils/anthropicModels";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 import { isResponseTooLongError } from "../utils/languageModelErrors";
 
@@ -180,7 +181,62 @@ const countTokensRoute = createRoute({
   },
 });
 
+const modelsRoute = createRoute({
+  method: "get",
+  path: "/v1/models",
+  tags: ["Anthropic API"],
+  summary: "List Anthropic-compatible models",
+  description:
+    "List Claude models available through VS Code Language Models using an Anthropic-compatible response shape.",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .object()
+            .describe(
+              "Anthropic Models API response body. See https://docs.anthropic.com/en/api/models-list for schema details.",
+            ),
+        },
+      },
+      description: "Successfully listed models",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: AnthropicErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
 export function registerAnthropicRoutes(app: OpenAPIHono) {
+  // GET /v1/models - Anthropic-compatible models endpoint
+  app.openapi(modelsRoute, async (c) => {
+    try {
+      logger.info("Fetching Anthropic-compatible models from VS Code LM API");
+      const models = await chatModelsCache.getChatModels();
+      const response = createAnthropicModelsResponse(models);
+      logger.info(`Retrieved ${response.data.length} Anthropic models`);
+      return c.json(response, 200);
+    } catch (error) {
+      logger.error("Error fetching Anthropic-compatible models:", error);
+      return c.json(
+        {
+          error: {
+            message:
+              error instanceof Error ? error.message : "Failed to fetch models",
+            type: "api_error",
+          },
+        },
+        500,
+      );
+    }
+  });
+
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
     let effectiveModelId = "";
