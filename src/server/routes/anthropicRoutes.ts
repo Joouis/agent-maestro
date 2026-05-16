@@ -272,6 +272,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               content.push({
                 type: "tool_use",
                 id: chunk.callId,
+                caller: { type: "direct" },
                 name: chunk.name,
                 input: chunk.input,
               });
@@ -301,7 +302,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           type: "message",
           role: "assistant",
           model,
+          container: null,
           content,
+          stop_details: null,
           stop_reason:
             stopReason === "max_tokens"
               ? "max_tokens"
@@ -313,6 +316,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             cache_creation: null,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            inference_geo: null,
             input_tokens: inputTokenCount.calibrated,
             output_tokens: outputTokenCount.calibrated,
             server_tool_use: null,
@@ -350,7 +354,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               type: "message",
               role: "assistant",
               model,
+              container: null,
               content: [],
+              stop_details: null,
               stop_reason: null,
               stop_sequence: null,
               usage: {
@@ -359,6 +365,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                 output_tokens: 1,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
+                inference_geo: null,
                 server_tool_use: null,
                 service_tier: "standard",
               },
@@ -417,6 +424,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                 contentBlocks.push({
                   type: "tool_use",
                   id: chunk.callId,
+                  caller: { type: "direct" },
                   name: chunk.name,
                   input: chunk.input,
                 });
@@ -427,6 +435,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                   content_block: {
                     type: "tool_use",
                     id: chunk.callId,
+                    caller: { type: "direct" },
                     name: chunk.name,
                     input: {},
                   },
@@ -474,6 +483,8 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           await writeSSE({
             type: "message_delta",
             delta: {
+              container: null,
+              stop_details: null,
               stop_reason:
                 stopReason === "max_tokens"
                   ? "max_tokens"
@@ -558,7 +569,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                   type: "message",
                   role: "assistant",
                   model,
+                  container: null,
                   content: [],
+                  stop_details: null,
                   stop_reason: null,
                   stop_sequence: null,
                   usage: {
@@ -567,6 +580,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                     output_tokens: 0,
                     cache_creation_input_tokens: 0,
                     cache_read_input_tokens: 0,
+                    inference_geo: null,
                     server_tool_use: null,
                     service_tier: "standard",
                   },
@@ -576,6 +590,8 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               await writeSSE({
                 type: "message_delta",
                 delta: {
+                  container: null,
+                  stop_details: null,
                   stop_reason:
                     "model_context_window_exceeded" as Anthropic.Messages.StopReason,
                   stop_sequence: null,
@@ -605,7 +621,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           type: "message",
           role: "assistant",
           model,
+          container: null,
           content: [],
+          stop_details: null,
           stop_reason:
             "model_context_window_exceeded" as Anthropic.Messages.StopReason,
           stop_sequence: null,
@@ -613,6 +631,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             cache_creation: null,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            inference_geo: null,
             input_tokens: inputTokens * 2, // Inflate to ensure Claude Code triggers auto-compact before next message
             output_tokens: 0,
             server_tool_use: null,
