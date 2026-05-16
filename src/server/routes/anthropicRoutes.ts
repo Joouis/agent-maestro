@@ -4,7 +4,7 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
-import { getChatModelClient } from "../../utils/chatModels";
+import { chatModelsCache, getChatModelClient } from "../../utils/chatModels";
 import { resolveClaudeCodeModelId } from "../../utils/claude";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
@@ -15,6 +15,10 @@ import {
   convertAnthropicToolToVSCode,
   countAnthropicMessageTokens,
 } from "../utils/anthropic";
+import {
+  createAnthropicModelsResponse,
+  findAnthropicModelById,
+} from "../utils/anthropicModels";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 import { isResponseTooLongError } from "../utils/languageModelErrors";
 
@@ -180,7 +184,144 @@ const countTokensRoute = createRoute({
   },
 });
 
+const modelsRoute = createRoute({
+  method: "get",
+  path: "/v1/models",
+  tags: ["Anthropic API"],
+  summary: "List Anthropic-compatible models",
+  description:
+    "List Claude models available through VS Code Language Models using an Anthropic-compatible response shape.",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .object()
+            .describe(
+              "Anthropic Models API response body. See https://docs.anthropic.com/en/api/models-list for schema details.",
+            ),
+        },
+      },
+      description: "Successfully listed models",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: AnthropicErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
+const modelRoute = createRoute({
+  method: "get",
+  path: "/v1/models/{model_id}",
+  tags: ["Anthropic API"],
+  summary: "Retrieve an Anthropic-compatible model",
+  description:
+    "Retrieve one Claude model available through VS Code Language Models using an Anthropic-compatible response shape.",
+  request: {
+    params: z.object({
+      model_id: z.string().describe("Model identifier"),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .object()
+            .describe(
+              "Anthropic Models API response body. See https://docs.anthropic.com/en/api/models-retrieve for schema details.",
+            ),
+        },
+      },
+      description: "Successfully retrieved model",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: AnthropicErrorResponseSchema,
+        },
+      },
+      description: "Model not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: AnthropicErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
 export function registerAnthropicRoutes(app: OpenAPIHono) {
+  // GET /v1/models - Anthropic-compatible models endpoint
+  app.openapi(modelsRoute, async (c) => {
+    try {
+      logger.info("Fetching Anthropic-compatible models from VS Code LM API");
+      const models = await chatModelsCache.getChatModels();
+      const response = createAnthropicModelsResponse(models);
+      logger.info(`Retrieved ${response.data.length} Anthropic models`);
+      return c.json(response, 200);
+    } catch (error) {
+      logger.error("Error fetching Anthropic-compatible models:", error);
+      return c.json(
+        {
+          error: {
+            message:
+              error instanceof Error ? error.message : "Failed to fetch models",
+            type: "api_error",
+          },
+        },
+        500,
+      );
+    }
+  });
+
+  // GET /v1/models/{model_id} - Anthropic-compatible model retrieval endpoint
+  app.openapi(modelRoute, async (c) => {
+    const { model_id: modelId } = c.req.valid("param");
+
+    try {
+      logger.info(`Fetching Anthropic-compatible model: ${modelId}`);
+      const models = await chatModelsCache.getChatModels();
+      const model = findAnthropicModelById(models, modelId);
+
+      if (!model) {
+        return c.json(
+          {
+            error: {
+              message: `Model '${modelId}' not found`,
+              type: "not_found_error",
+            },
+          },
+          404,
+        );
+      }
+
+      return c.json(model, 200);
+    } catch (error) {
+      logger.error("Error fetching Anthropic-compatible model:", error);
+      return c.json(
+        {
+          error: {
+            message:
+              error instanceof Error ? error.message : "Failed to fetch model",
+            type: "api_error",
+          },
+        },
+        500,
+      );
+    }
+  });
+
   // POST /v1/messages - Anthropic-compatible messages endpoint
   app.openapi(messagesRoute, async (c: Context): Promise<Response> => {
     let effectiveModelId = "";
@@ -272,6 +413,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               content.push({
                 type: "tool_use",
                 id: chunk.callId,
+                caller: { type: "direct" },
                 name: chunk.name,
                 input: chunk.input,
               });
@@ -301,7 +443,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           type: "message",
           role: "assistant",
           model,
+          container: null,
           content,
+          stop_details: null,
           stop_reason:
             stopReason === "max_tokens"
               ? "max_tokens"
@@ -313,6 +457,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             cache_creation: null,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            inference_geo: null,
             input_tokens: inputTokenCount.calibrated,
             output_tokens: outputTokenCount.calibrated,
             server_tool_use: null,
@@ -350,7 +495,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               type: "message",
               role: "assistant",
               model,
+              container: null,
               content: [],
+              stop_details: null,
               stop_reason: null,
               stop_sequence: null,
               usage: {
@@ -359,6 +506,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                 output_tokens: 1,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
+                inference_geo: null,
                 server_tool_use: null,
                 service_tier: "standard",
               },
@@ -417,6 +565,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                 contentBlocks.push({
                   type: "tool_use",
                   id: chunk.callId,
+                  caller: { type: "direct" },
                   name: chunk.name,
                   input: chunk.input,
                 });
@@ -427,6 +576,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                   content_block: {
                     type: "tool_use",
                     id: chunk.callId,
+                    caller: { type: "direct" },
                     name: chunk.name,
                     input: {},
                   },
@@ -474,6 +624,8 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           await writeSSE({
             type: "message_delta",
             delta: {
+              container: null,
+              stop_details: null,
               stop_reason:
                 stopReason === "max_tokens"
                   ? "max_tokens"
@@ -558,7 +710,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                   type: "message",
                   role: "assistant",
                   model,
+                  container: null,
                   content: [],
+                  stop_details: null,
                   stop_reason: null,
                   stop_sequence: null,
                   usage: {
@@ -567,6 +721,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                     output_tokens: 0,
                     cache_creation_input_tokens: 0,
                     cache_read_input_tokens: 0,
+                    inference_geo: null,
                     server_tool_use: null,
                     service_tier: "standard",
                   },
@@ -576,6 +731,8 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               await writeSSE({
                 type: "message_delta",
                 delta: {
+                  container: null,
+                  stop_details: null,
                   stop_reason:
                     "model_context_window_exceeded" as Anthropic.Messages.StopReason,
                   stop_sequence: null,
@@ -605,7 +762,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           type: "message",
           role: "assistant",
           model,
+          container: null,
           content: [],
+          stop_details: null,
           stop_reason:
             "model_context_window_exceeded" as Anthropic.Messages.StopReason,
           stop_sequence: null,
@@ -613,6 +772,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             cache_creation: null,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
+            inference_geo: null,
             input_tokens: inputTokens * 2, // Inflate to ensure Claude Code triggers auto-compact before next message
             output_tokens: 0,
             server_tool_use: null,

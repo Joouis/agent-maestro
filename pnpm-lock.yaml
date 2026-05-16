@@ -10,8 +10,8 @@ importers:
   .:
     dependencies:
       "@anthropic-ai/sdk":
-        specifier: ^0.71.0
-        version: 0.71.0(zod@4.0.10)
+        specifier: ^0.96.0
+        version: 0.96.0(zod@4.0.10)
       "@google/genai":
         specifier: ^1.29.1
         version: 1.29.1
@@ -108,10 +108,10 @@ importers:
         version: 5.8.3
 
 packages:
-  "@anthropic-ai/sdk@0.71.0":
+  "@anthropic-ai/sdk@0.96.0":
     resolution:
       {
-        integrity: sha512-go1XeWXmpxuiTkosSXpb8tokLk2ZLkIRcXpbWVwJM6gH5OBtHOVsfPfGuqI1oW7RRt4qc59EmYbrXRZ0Ng06Jw==,
+        integrity: sha512-KlCsODtTyb17bLUVCSDC2HtSvAbJf60sEiPEax9dInF+aDF92vS4TZJ5XD7YCQXNb1/5icYaw8Y7wMjPlIV9Zg==,
       }
     hasBin: true
     peerDependencies:
@@ -918,6 +918,7 @@ packages:
     engines: { node: ">= 10" }
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   "@node-rs/crc32-linux-arm64-musl@1.10.6":
     resolution:
@@ -927,6 +928,7 @@ packages:
     engines: { node: ">= 10" }
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   "@node-rs/crc32-linux-x64-gnu@1.10.6":
     resolution:
@@ -936,6 +938,7 @@ packages:
     engines: { node: ">= 10" }
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   "@node-rs/crc32-linux-x64-musl@1.10.6":
     resolution:
@@ -945,6 +948,7 @@ packages:
     engines: { node: ">= 10" }
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   "@node-rs/crc32-wasm32-wasi@1.10.6":
     resolution:
@@ -1122,6 +1126,12 @@ packages:
         integrity: sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ==,
       }
     engines: { node: ">=18" }
+
+  "@stablelib/base64@1.0.1":
+    resolution:
+      {
+        integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==,
+      }
 
   "@standard-schema/spec@1.0.0":
     resolution:
@@ -2590,6 +2600,12 @@ packages:
     resolution:
       {
         integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==,
+      }
+
+  fast-sha256@1.3.0:
+    resolution:
+      {
+        integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==,
       }
 
   fast-uri@3.0.6:
@@ -5214,6 +5230,12 @@ packages:
         integrity: sha512-D9cPgkvLlV3t3IzL0D0YLvGA9Ahk4PcvVwUbN0dSGr1aP0Nrt4AEnTUbuGvquEC0mA64Gqt1fzirlRs5ibXx8g==,
       }
 
+  standardwebhooks@1.0.0:
+    resolution:
+      {
+        integrity: sha512-BbHGOQK9olHPMvQNHWul6MYlrRTAOKn03rOe4A8O3CLWhNf4YHBqq2HJKKC+sfqpxiBY52pNeesD6jIiLDz8jg==,
+      }
+
   statuses@2.0.1:
     resolution:
       {
@@ -6022,9 +6044,10 @@ packages:
       }
 
 snapshots:
-  "@anthropic-ai/sdk@0.71.0(zod@4.0.10)":
+  "@anthropic-ai/sdk@0.96.0(zod@4.0.10)":
     dependencies:
       json-schema-to-ts: 3.1.1
+      standardwebhooks: 1.0.0
     optionalDependencies:
       zod: 4.0.10
 
@@ -6717,6 +6740,8 @@ snapshots:
   "@sindresorhus/merge-streams@2.3.0": {}
 
   "@sindresorhus/merge-streams@4.0.0": {}
+
+  "@stablelib/base64@1.0.1": {}
 
   "@standard-schema/spec@1.0.0": {}
 
@@ -7783,6 +7808,8 @@ snapshots:
   fast-json-stable-stringify@2.1.0: {}
 
   fast-levenshtein@2.0.6: {}
+
+  fast-sha256@1.3.0: {}
 
   fast-uri@3.0.6: {}
 
@@ -9391,6 +9418,11 @@ snapshots:
   spdx-license-ids@3.0.21: {}
 
   sprintf-js@1.0.3: {}
+
+  standardwebhooks@1.0.0:
+    dependencies:
+      "@stablelib/base64": 1.0.1
+      fast-sha256: 1.3.0
 
   statuses@2.0.1: {}
 
