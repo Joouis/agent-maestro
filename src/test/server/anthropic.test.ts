@@ -8,7 +8,10 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
 } from "../../server/utils/anthropic";
-import { createAnthropicModelsResponse } from "../../server/utils/anthropicModels";
+import {
+  createAnthropicModelsResponse,
+  findAnthropicModelById,
+} from "../../server/utils/anthropicModels";
 import { isResponseTooLongError } from "../../server/utils/languageModelErrors";
 
 function createMockModel(
@@ -115,6 +118,39 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.deepStrictEqual(result.data, []);
       assert.strictEqual(result.first_id, null);
       assert.strictEqual(result.last_id, null);
+    });
+
+    test("should find one Claude model by exact id", () => {
+      const result = findAnthropicModelById(
+        [
+          createMockModel({ id: "claude-sonnet-4.6" }),
+          createMockModel({
+            id: "claude-opus-4.7",
+            name: "Claude Opus 4.7",
+            maxInputTokens: 1000000,
+          }),
+        ],
+        "claude-opus-4.7",
+      );
+
+      assert.ok(result);
+      assert.strictEqual(result.id, "claude-opus-4.7");
+      assert.strictEqual(result.max_input_tokens, 1000000);
+    });
+
+    test("should not find non-Claude or unknown model ids", () => {
+      const result = findAnthropicModelById(
+        [
+          createMockModel({
+            id: "gpt-5.1",
+            name: "GPT-5.1",
+            family: "gpt",
+          }),
+        ],
+        "gpt-5.1",
+      );
+
+      assert.strictEqual(result, null);
     });
   });
 

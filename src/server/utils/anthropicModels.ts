@@ -99,3 +99,11 @@ export function createAnthropicModelsResponse(
     last_id: data.at(-1)?.id ?? null,
   };
 }
+
+export function findAnthropicModelById(
+  models: vscode.LanguageModelChat[],
+  modelId: string,
+): ModelInfo | null {
+  const model = models.find((m) => isClaudeModel(m) && m.id === modelId);
+  return model ? convertVSCodeModelToAnthropicModel(model) : null;
+}

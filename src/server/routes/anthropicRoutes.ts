@@ -15,7 +15,10 @@ import {
   convertAnthropicToolToVSCode,
   countAnthropicMessageTokens,
 } from "../utils/anthropic";
-import { createAnthropicModelsResponse } from "../utils/anthropicModels";
+import {
+  createAnthropicModelsResponse,
+  findAnthropicModelById,
+} from "../utils/anthropicModels";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 import { isResponseTooLongError } from "../utils/languageModelErrors";
 
@@ -213,6 +216,51 @@ const modelsRoute = createRoute({
   },
 });
 
+const modelRoute = createRoute({
+  method: "get",
+  path: "/v1/models/{model_id}",
+  tags: ["Anthropic API"],
+  summary: "Retrieve an Anthropic-compatible model",
+  description:
+    "Retrieve one Claude model available through VS Code Language Models using an Anthropic-compatible response shape.",
+  request: {
+    params: z.object({
+      model_id: z.string().describe("Model identifier"),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          // Skip schema validation to support API schema changes without requiring immediate updates.
+          schema: z
+            .object()
+            .describe(
+              "Anthropic Models API response body. See https://docs.anthropic.com/en/api/models-retrieve for schema details.",
+            ),
+        },
+      },
+      description: "Successfully retrieved model",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: AnthropicErrorResponseSchema,
+        },
+      },
+      description: "Model not found",
+    },
+    500: {
+      content: {
+        "application/json": {
+          schema: AnthropicErrorResponseSchema,
+        },
+      },
+      description: "Internal server error",
+    },
+  },
+});
+
 export function registerAnthropicRoutes(app: OpenAPIHono) {
   // GET /v1/models - Anthropic-compatible models endpoint
   app.openapi(modelsRoute, async (c) => {
@@ -229,6 +277,43 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           error: {
             message:
               error instanceof Error ? error.message : "Failed to fetch models",
+            type: "api_error",
+          },
+        },
+        500,
+      );
+    }
+  });
+
+  // GET /v1/models/{model_id} - Anthropic-compatible model retrieval endpoint
+  app.openapi(modelRoute, async (c) => {
+    const { model_id: modelId } = c.req.valid("param");
+
+    try {
+      logger.info(`Fetching Anthropic-compatible model: ${modelId}`);
+      const models = await chatModelsCache.getChatModels();
+      const model = findAnthropicModelById(models, modelId);
+
+      if (!model) {
+        return c.json(
+          {
+            error: {
+              message: `Model '${modelId}' not found`,
+              type: "not_found_error",
+            },
+          },
+          404,
+        );
+      }
+
+      return c.json(model, 200);
+    } catch (error) {
+      logger.error("Error fetching Anthropic-compatible model:", error);
+      return c.json(
+        {
+          error: {
+            message:
+              error instanceof Error ? error.message : "Failed to fetch model",
             type: "api_error",
           },
         },
