@@ -15,6 +15,8 @@ import { logger } from "../utils/logger";
 import { updateEnvFile } from "../utils/updateEnvFile";
 import { createCommandHandler } from "./commandHandler";
 
+const LOOPBACK_HOST = "127.0.0.1";
+
 export function registerConfiguratorCommands(
   proxy: ProxyServer,
   context: vscode.ExtensionContext,
@@ -139,7 +141,7 @@ export function registerConfiguratorCommands(
           ...existingSettings,
           env: {
             ...existingEnv,
-            ANTHROPIC_BASE_URL: `http://localhost:${proxyPort}/api/anthropic`,
+            ANTHROPIC_BASE_URL: `http://${LOOPBACK_HOST}:${proxyPort}/api/anthropic`,
             ANTHROPIC_AUTH_TOKEN: authToken,
             ANTHROPIC_MODEL: withClaudeCode1mSuffix(
               selectedDefaultModel.modelId,
@@ -290,7 +292,7 @@ export function registerConfiguratorCommands(
             ...existingConfig.model_providers,
             "agent-maestro": {
               name: "Agent Maestro",
-              base_url: `http://localhost:${proxyPort}/api/openai/v1`,
+              base_url: `http://${LOOPBACK_HOST}:${proxyPort}/api/openai/v1`,
               wire_api: "responses",
             },
           },
@@ -438,7 +440,7 @@ export function registerConfiguratorCommands(
         await updateEnvFile(
           envFilePath,
           {
-            GOOGLE_GEMINI_BASE_URL: `http://localhost:${proxyPort}/api/gemini`,
+            GOOGLE_GEMINI_BASE_URL: `http://${LOOPBACK_HOST}:${proxyPort}/api/gemini`,
             GEMINI_API_KEY: '"Powered by Agent Maestro"',
             GEMINI_MODEL: selectedModel.modelId,
             GEMINI_TELEMETRY_ENABLED: "false",
