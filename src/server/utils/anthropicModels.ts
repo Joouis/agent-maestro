@@ -11,7 +11,7 @@ export interface AnthropicModelsResponse {
   last_id: string | null;
 }
 
-const UNKNOWN_MODEL_CREATED_AT = "1970-01-01T00:00:00Z";
+const UNKNOWN_MODEL_CREATED_AT = "2025-06-01T12:09:17Z";
 const supported = { supported: true };
 const unsupported = { supported: false };
 
