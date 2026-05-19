@@ -148,6 +148,8 @@ export function registerConfiguratorCommands(
             ),
             // Equivalent of setting `DISABLE_AUTOUPDATER`, `DISABLE_BUG_COMMAND`, `DISABLE_ERROR_REPORTING`, and `DISABLE_TELEMETRY` to true
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+            // Disable the x-anthropic-billing-header (CCH) which can break prompt caching on non-Anthropic LLM gateways
+            CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
           },
         };
 
