@@ -335,9 +335,16 @@ function isCopilotUsagePayload(value: unknown): value is CopilotUsagePayload {
   const usage = value as Partial<CopilotUsagePayload>;
   return (
     typeof usage.prompt_tokens === "number" &&
-    typeof usage.completion_tokens === "number"
+    Number.isFinite(usage.prompt_tokens) &&
+    usage.prompt_tokens >= 0 &&
+    typeof usage.completion_tokens === "number" &&
+    Number.isFinite(usage.completion_tokens) &&
+    usage.completion_tokens >= 0
   );
 }
+
+const clampNonNegative = (value: number | undefined): number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
 
 /**
  * Decodes Copilot usage metadata from a VS Code LM `LanguageModelDataPart`.
@@ -357,10 +364,12 @@ export function extractAnthropicTokenUsageFromVSCodeChunk(chunk: {
       return undefined;
     }
 
-    const cacheCreationInputTokens =
-      usage.prompt_tokens_details?.cache_creation_input_tokens ?? 0;
-    const cacheReadInputTokens =
-      usage.prompt_tokens_details?.cached_tokens ?? 0;
+    const cacheCreationInputTokens = clampNonNegative(
+      usage.prompt_tokens_details?.cache_creation_input_tokens,
+    );
+    const cacheReadInputTokens = clampNonNegative(
+      usage.prompt_tokens_details?.cached_tokens,
+    );
 
     return {
       cache_creation_input_tokens: cacheCreationInputTokens,
