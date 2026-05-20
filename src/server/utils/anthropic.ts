@@ -340,16 +340,14 @@ function isCopilotUsagePayload(value: unknown): value is CopilotUsagePayload {
 }
 
 /**
- * Extracts hidden Copilot usage metadata from VS Code LM response data parts.
+ * Decodes Copilot usage metadata from a VS Code LM `LanguageModelDataPart`.
+ * Caller is responsible for verifying the chunk is a data part.
  */
-export function extractAnthropicTokenUsageFromVSCodeChunk(
-  chunk: unknown,
-): AnthropicTokenUsage | undefined {
-  if (
-    !LanguageModelDataPart ||
-    !(chunk instanceof LanguageModelDataPart) ||
-    chunk.mimeType !== "usage"
-  ) {
+export function extractAnthropicTokenUsageFromVSCodeChunk(chunk: {
+  data: Uint8Array;
+  mimeType: string;
+}): AnthropicTokenUsage | undefined {
+  if (chunk.mimeType !== "usage") {
     return undefined;
   }
 
