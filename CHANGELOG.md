@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.9.1 - 2026.05.21
+
+- Use Copilot usage metadata from VS Code language model responses to report Anthropic-compatible input, output, and prompt cache token counts, with the previous token estimation path retained for count_tokens and fallback usage. Also raise the minimum VS Code engine to `^1.120.0`.
+- Set `CLAUDE_CODE_ATTRIBUTION_HEADER=0` in generated Claude Code `settings.json` to disable the `x-anthropic-billing-header` (CCH), which can break prompt caching on non-Anthropic LLM gateways.
+
 ## v2.9.0 - 2026.05.16
 
 - Add Anthropic-compatible model listing and retrieval endpoints to support Claude Desktop 3P gateway compatibility, including model context limits and known capability metadata from VS Code language models.
