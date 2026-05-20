@@ -16,7 +16,7 @@ Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Clin
 Turn VS Code into your compliant AI playground with powerful API compatibility and one-click setup:
 
 - **Universal API Compatibility**: Anthropic (`/messages`), OpenAI (`/chat/completions`, `/responses`), and Gemini compatible endpoints - use Claude Code, Codex, Gemini CLI or any LLM client seamlessly
-  - **Context Window Management**: Configurable scale factors to prevent context window exceeded errors caused by tokenizer differences between VS Code's API and model providers
+  - **Token Usage Reporting**: Reports Copilot-provided Anthropic token usage when available, including prompt cache reads and writes, with estimated token counts as a fallback
 - **One-Click Setup**: Automated configuration commands for instant Claude Code, Codex, and Gemini CLI integration
 - **Headless AI Agent Control**: Create and manage tasks through REST APIs for Roo Code and Cline extensions
   - **Comprehensive APIs**: Complete task lifecycle management with OpenAPI documentation at `/openapi.json`
@@ -221,7 +221,7 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 | `agent-maestro.defaultRooIdentifier`            | Default Roo extension to use                                       | `"rooveterinaryinc.roo-cline"` |
 | `agent-maestro.proxyServerPort`                 | Proxy server port                                                  | `23333`                        |
 | `agent-maestro.mcpServerPort`                   | MCP server port                                                    | `23334`                        |
-| `agent-maestro.anthropic.tokenCountScaleFactor` | Scale factor for Anthropic token count estimation (range: 1.0–2.0) | `1.25`                         |
+| `agent-maestro.anthropic.tokenCountScaleFactor` | Scale factor for Anthropic token count estimation (range: 0.1–2.0) | `1.25`                         |
 | `agent-maestro.codex.contextWindowScaleFactor`  | Scale factor for Codex context window calculation (range: 0.1–2.0) | `1`                            |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
@@ -230,15 +230,15 @@ This allows different projects to use different configurations without affecting
 
 Agent Maestro proxies requests through VS Code's Language Model API, which uses a different tokenizer (OpenAI's tiktoken / O200K) than the actual model providers. This mismatch means the token counts reported locally can be lower than the real usage, potentially causing requests to exceed the model's context window and fail unexpectedly.
 
-To prevent this, Agent Maestro provides configurable scale factors that inflate the local token counts to better approximate the actual usage. Different coding agent clients require different approaches:
+Agent Maestro reports real Copilot usage metadata for Anthropic responses when VS Code provides it. When that metadata is unavailable, Agent Maestro falls back to local token counting, and configurable scale factors can inflate those fallback counts to better approximate provider-side usage. Different coding agent clients require different approaches:
 
-- **`anthropic.tokenCountScaleFactor`** (for Claude Code and other Anthropic API clients): Applied to every token count reported in API responses. The proxy multiplies the raw VS Code token count by this factor (e.g., 10,000 tokens × 1.25 = 12,500 reported). This helps the client detect when it's approaching the context limit and trigger actions like auto-compaction before hitting the wall. Increase this value if you still encounter context window errors; decrease it if you want to use more of the available context.
+- **`anthropic.tokenCountScaleFactor`** (for Claude Code and other Anthropic API clients): Applied to fallback token estimates and `/messages/count_tokens` responses. The proxy multiplies the raw VS Code token count by this factor (e.g., 10,000 tokens × 1.25 = 12,500 reported). Real Copilot usage metadata, when available, is reported directly instead of being scaled.
 
 - **`codex.contextWindowScaleFactor`** (for Codex): Used only when generating Codex's `config.toml` to set the `model_context_window` value (calculated as `maxInputTokens × scaleFactor`). This tells Codex the effective context window size upfront so it manages its own conversation history accordingly.
 
 ### Prompt Cache Compatibility
 
-Agent Maestro accepts common prompt cache hints such as Anthropic `cache_control`, OpenAI `prompt_cache_key`, and Gemini `cachedContent` without forwarding unsupported cache controls to VS Code's Language Model API. Because VS Code does not expose provider-side prompt cache reads or writes, cache usage fields are reported as `0` rather than synthetic savings.
+Agent Maestro accepts common prompt cache hints such as Anthropic `cache_control`, OpenAI `prompt_cache_key`, and Gemini `cachedContent` without forwarding unsupported cache controls to VS Code's Language Model API. For Anthropic-compatible responses, Copilot-provided usage metadata is used when available to report `cache_read_input_tokens` and `cache_creation_input_tokens`; fallback estimates report cache usage as `0` rather than synthetic savings.
 
 ## API Overview
 
