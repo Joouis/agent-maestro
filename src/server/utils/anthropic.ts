@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import { LanguageModelDataPart } from "../../utils/vscode";
 
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
@@ -9,11 +10,6 @@ const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
 const imageBlockParamToVSCodePart = (
   param: Anthropic.Messages.ImageBlockParam,
 ) => {
-  /**
-   * A language model response part containing arbitrary data, not an official API yet.
-   */
-  const LanguageModelDataPart = (vscode as any).LanguageModelDataPart;
-
   if (param.source.type === "url" || !LanguageModelDataPart) {
     return new vscode.LanguageModelTextPart(JSON.stringify(param));
   }
@@ -255,9 +251,7 @@ export const convertAnthropicSystemToVSCode = (
  */
 const isUnsupportedServerSideTool = (tool: unknown): boolean => {
   const t = tool as { type?: string; input_schema?: unknown };
-  return (
-    typeof t.type === "string" && t.type !== "custom" && !t.input_schema
-  );
+  return typeof t.type === "string" && t.type !== "custom" && !t.input_schema;
 };
 
 export const convertAnthropicToolToVSCode = (
@@ -315,6 +309,80 @@ const DEFAULT_TOKEN_SCALE_FACTOR = 1.25;
 export interface TokenCounts {
   original: number; // Original VSCode API token count
   calibrated: number; // Scaled token count approximating actual API usage
+}
+
+interface CopilotUsagePayload {
+  completion_tokens: number;
+  prompt_tokens: number;
+  prompt_tokens_details?: {
+    cache_creation_input_tokens?: number;
+    cached_tokens?: number;
+  };
+}
+
+export interface AnthropicTokenUsage {
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+function isCopilotUsagePayload(value: unknown): value is CopilotUsagePayload {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const usage = value as Partial<CopilotUsagePayload>;
+  return (
+    typeof usage.prompt_tokens === "number" &&
+    Number.isFinite(usage.prompt_tokens) &&
+    usage.prompt_tokens >= 0 &&
+    typeof usage.completion_tokens === "number" &&
+    Number.isFinite(usage.completion_tokens) &&
+    usage.completion_tokens >= 0
+  );
+}
+
+const clampNonNegative = (value: number | undefined): number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+
+/**
+ * Decodes Copilot usage metadata from a VS Code LM `LanguageModelDataPart`.
+ * Caller is responsible for verifying the chunk is a data part.
+ */
+export function extractAnthropicTokenUsageFromVSCodeChunk(chunk: {
+  data: Uint8Array;
+  mimeType: string;
+}): AnthropicTokenUsage | undefined {
+  if (chunk.mimeType !== "usage") {
+    return undefined;
+  }
+
+  try {
+    const usage = JSON.parse(new TextDecoder().decode(chunk.data)) as unknown;
+    if (!isCopilotUsagePayload(usage)) {
+      return undefined;
+    }
+
+    const cacheCreationInputTokens = clampNonNegative(
+      usage.prompt_tokens_details?.cache_creation_input_tokens,
+    );
+    const cacheReadInputTokens = clampNonNegative(
+      usage.prompt_tokens_details?.cached_tokens,
+    );
+
+    return {
+      cache_creation_input_tokens: cacheCreationInputTokens,
+      cache_read_input_tokens: cacheReadInputTokens,
+      input_tokens: Math.max(
+        0,
+        usage.prompt_tokens - cacheCreationInputTokens - cacheReadInputTokens,
+      ),
+      output_tokens: usage.completion_tokens,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /**

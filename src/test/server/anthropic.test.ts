@@ -7,6 +7,7 @@ import {
   convertAnthropicSystemToVSCode,
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
+  extractAnthropicTokenUsageFromVSCodeChunk,
 } from "../../server/utils/anthropic";
 import {
   createAnthropicModelsResponse,
@@ -638,6 +639,128 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.strictEqual(isResponseTooLongError("Response too long"), false);
       assert.strictEqual(isResponseTooLongError(null), false);
       assert.strictEqual(isResponseTooLongError(undefined), false);
+    });
+  });
+
+  suite("extractAnthropicTokenUsageFromVSCodeChunk", () => {
+    const encode = (value: unknown): Uint8Array =>
+      new TextEncoder().encode(JSON.stringify(value));
+
+    test("should extract usage and subtract cache tokens from input_tokens", () => {
+      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({
+          prompt_tokens: 1000,
+          completion_tokens: 50,
+          prompt_tokens_details: {
+            cache_creation_input_tokens: 200,
+            cached_tokens: 300,
+          },
+        }),
+      });
+
+      assert.deepStrictEqual(result, {
+        cache_creation_input_tokens: 200,
+        cache_read_input_tokens: 300,
+        input_tokens: 500,
+        output_tokens: 50,
+      });
+    });
+
+    test("should default cache fields to 0 when prompt_tokens_details is missing", () => {
+      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({ prompt_tokens: 100, completion_tokens: 20 }),
+      });
+
+      assert.deepStrictEqual(result, {
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        input_tokens: 100,
+        output_tokens: 20,
+      });
+    });
+
+    test("should clamp input_tokens to 0 when cache totals exceed prompt_tokens", () => {
+      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({
+          prompt_tokens: 100,
+          completion_tokens: 10,
+          prompt_tokens_details: {
+            cache_creation_input_tokens: 80,
+            cached_tokens: 80,
+          },
+        }),
+      });
+
+      assert.strictEqual(result?.input_tokens, 0);
+    });
+
+    test("should return undefined for non-usage mimeType", () => {
+      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+        mimeType: "image/png",
+        data: encode({ prompt_tokens: 1, completion_tokens: 1 }),
+      });
+
+      assert.strictEqual(result, undefined);
+    });
+
+    test("should return undefined for invalid JSON", () => {
+      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: new TextEncoder().encode("not json {"),
+      });
+
+      assert.strictEqual(result, undefined);
+    });
+
+    test("should return undefined when required fields are missing", () => {
+      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({ prompt_tokens: 100 }),
+      });
+
+      assert.strictEqual(result, undefined);
+    });
+
+    test("should reject non-finite or negative token counts", () => {
+      assert.strictEqual(
+        extractAnthropicTokenUsageFromVSCodeChunk({
+          mimeType: "usage",
+          data: encode({ prompt_tokens: -1, completion_tokens: 10 }),
+        }),
+        undefined,
+      );
+
+      assert.strictEqual(
+        extractAnthropicTokenUsageFromVSCodeChunk({
+          mimeType: "usage",
+          data: encode({ prompt_tokens: 100, completion_tokens: "20" }),
+        }),
+        undefined,
+      );
+    });
+
+    test("should ignore negative or non-finite cache fields", () => {
+      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({
+          prompt_tokens: 100,
+          completion_tokens: 10,
+          prompt_tokens_details: {
+            cache_creation_input_tokens: -5,
+            cached_tokens: Number.POSITIVE_INFINITY,
+          },
+        }),
+      });
+
+      assert.deepStrictEqual(result, {
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        input_tokens: 100,
+        output_tokens: 10,
+      });
     });
   });
 });
