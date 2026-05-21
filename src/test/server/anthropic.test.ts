@@ -2,6 +2,8 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 
 import {
+  WEB_SEARCH_FALLBACK_SYSTEM_NOTE,
+  appendSystemNote,
   convertAnthropicMessageToVSCode,
   convertAnthropicMessagesToVSCode,
   convertAnthropicSystemToVSCode,
@@ -488,10 +490,14 @@ suite("Anthropic Conversion Utils Test Suite", () => {
 
       const result = convertAnthropicToolToVSCode(tools as any);
 
-      assert.ok(result);
-      assert.strictEqual(result.length, 1);
-      assert.strictEqual(result[0].name, "get_weather");
-      assert.strictEqual(result[0].description, "Get the weather for a city");
+      assert.ok(result.tools);
+      assert.strictEqual(result.tools.length, 1);
+      assert.strictEqual(result.tools[0].name, "get_weather");
+      assert.strictEqual(
+        result.tools[0].description,
+        "Get the weather for a city",
+      );
+      assert.strictEqual(result.webSearchDropped, false);
     });
 
     test("should ignore cache_control metadata on tools", () => {
@@ -511,11 +517,18 @@ suite("Anthropic Conversion Utils Test Suite", () => {
 
       const result = convertAnthropicToolToVSCode(tools as any);
 
-      assert.ok(result);
-      assert.strictEqual(result.length, 1);
-      assert.strictEqual(result[0].name, "cached_lookup");
-      assert.strictEqual(result[0].description, "Lookup using cached context");
-      assert.deepStrictEqual(result[0].inputSchema, tools[0].input_schema);
+      assert.ok(result.tools);
+      assert.strictEqual(result.tools.length, 1);
+      assert.strictEqual(result.tools[0].name, "cached_lookup");
+      assert.strictEqual(
+        result.tools[0].description,
+        "Lookup using cached context",
+      );
+      assert.deepStrictEqual(
+        result.tools[0].inputSchema,
+        tools[0].input_schema,
+      );
+      assert.strictEqual(result.webSearchDropped, false);
     });
 
     test("should drop unsupported server-side tools without input_schema", () => {
@@ -534,14 +547,22 @@ suite("Anthropic Conversion Utils Test Suite", () => {
 
       const result = convertAnthropicToolToVSCode(tools as any);
 
-      assert.ok(result);
+      assert.ok(result.tools);
       assert.strictEqual(
-        result.length,
+        result.tools.length,
         1,
         "server-side tools without input_schema should be dropped",
       );
-      assert.strictEqual(result[0].name, "get_weather");
-      assert.deepStrictEqual(result[0].inputSchema, tools[3].input_schema);
+      assert.strictEqual(result.tools[0].name, "get_weather");
+      assert.deepStrictEqual(
+        result.tools[0].inputSchema,
+        tools[3].input_schema,
+      );
+      assert.strictEqual(
+        result.webSearchDropped,
+        true,
+        "webSearchDropped flag should be set when web_search tool is dropped",
+      );
     });
 
     test("should keep custom tools with type: 'custom'", () => {
@@ -560,16 +581,21 @@ suite("Anthropic Conversion Utils Test Suite", () => {
 
       const result = convertAnthropicToolToVSCode(tools as any);
 
-      assert.ok(result);
-      assert.strictEqual(result.length, 1);
-      assert.strictEqual(result[0].name, "lookup");
-      assert.strictEqual(result[0].description, "Look something up");
-      assert.deepStrictEqual(result[0].inputSchema, tools[0].input_schema);
+      assert.ok(result.tools);
+      assert.strictEqual(result.tools.length, 1);
+      assert.strictEqual(result.tools[0].name, "lookup");
+      assert.strictEqual(result.tools[0].description, "Look something up");
+      assert.deepStrictEqual(
+        result.tools[0].inputSchema,
+        tools[0].input_schema,
+      );
+      assert.strictEqual(result.webSearchDropped, false);
     });
 
-    test("should return undefined for undefined tools", () => {
+    test("should return undefined tools list when input is undefined", () => {
       const result = convertAnthropicToolToVSCode(undefined);
-      assert.strictEqual(result, undefined);
+      assert.strictEqual(result.tools, undefined);
+      assert.strictEqual(result.webSearchDropped, false);
     });
 
     test("should handle tool without description", () => {
@@ -582,9 +608,118 @@ suite("Anthropic Conversion Utils Test Suite", () => {
 
       const result = convertAnthropicToolToVSCode(tools as any);
 
-      assert.ok(result);
-      assert.strictEqual(result[0].name, "simple_tool");
-      assert.strictEqual(result[0].description, "");
+      assert.ok(result.tools);
+      assert.strictEqual(result.tools[0].name, "simple_tool");
+      assert.strictEqual(result.tools[0].description, "");
+    });
+
+    test("should set webSearchDropped only when a web_search tool is dropped, not for other server-side tools", () => {
+      const tools = [
+        { name: "bash", type: "bash_20250124" },
+        { name: "computer", type: "computer_20250124" },
+      ];
+
+      const result = convertAnthropicToolToVSCode(tools as any);
+
+      assert.deepStrictEqual(result.tools, []);
+      assert.strictEqual(
+        result.webSearchDropped,
+        false,
+        "non-web_search server-side tools should not flip webSearchDropped",
+      );
+    });
+  });
+
+  suite("appendSystemNote", () => {
+    test("returns a single-block array when system is undefined", () => {
+      const result = appendSystemNote(undefined, "the note");
+      assert.deepStrictEqual(result, [{ type: "text", text: "the note" }]);
+    });
+
+    test("wraps a string system into an array with the note appended", () => {
+      const result = appendSystemNote("Be helpful", "the note");
+      assert.deepStrictEqual(result, [
+        { type: "text", text: "Be helpful" },
+        { type: "text", text: "the note" },
+      ]);
+    });
+
+    test("appends the note to an existing TextBlockParam array", () => {
+      const result = appendSystemNote(
+        [
+          { type: "text", text: "A" },
+          { type: "text", text: "B" },
+        ],
+        "the note",
+      );
+      assert.deepStrictEqual(result, [
+        { type: "text", text: "A" },
+        { type: "text", text: "B" },
+        { type: "text", text: "the note" },
+      ]);
+    });
+
+    test("does not mutate the input array", () => {
+      const original = [{ type: "text" as const, text: "A" }];
+      const result = appendSystemNote(original, "the note");
+      assert.strictEqual(original.length, 1);
+      assert.strictEqual(result.length, 2);
+    });
+  });
+
+  // Mirrors the wiring inside the Anthropic /v1/messages route handler:
+  // when web_search is dropped, the route appends the fallback note to
+  // `system` (not as a trailing user turn) before token counting + LM
+  // dispatch. This test locks that contract so a future refactor can't
+  // silently regress it (which is exactly the bug Copilot caught earlier
+  // when the note was appended after token counting).
+  suite("web_search fallback wiring (system-block injection)", () => {
+    test("system block sent to LM contains the fallback note when web_search is dropped", () => {
+      const tools = [{ name: "web_search", type: "web_search_20250305" }];
+      const originalSystem = "Be helpful.";
+
+      const { webSearchDropped } = convertAnthropicToolToVSCode(tools as any);
+      assert.strictEqual(webSearchDropped, true);
+
+      const augmentedSystem = webSearchDropped
+        ? appendSystemNote(originalSystem, WEB_SEARCH_FALLBACK_SYSTEM_NOTE)
+        : originalSystem;
+
+      const lmSystemMessages = convertAnthropicSystemToVSCode(augmentedSystem);
+
+      assert.strictEqual(lmSystemMessages.length, 2);
+      const noteMessage = lmSystemMessages[lmSystemMessages.length - 1];
+      const contentText =
+        typeof noteMessage.content === "string"
+          ? noteMessage.content
+          : JSON.stringify(noteMessage.content);
+      assert.ok(
+        contentText.includes("WebFetch") &&
+          contentText.includes("html.duckduckgo.com/html"),
+        `note content should mention WebFetch + html.duckduckgo.com/html, got: ${contentText}`,
+      );
+      assert.strictEqual(
+        noteMessage.role,
+        vscode.LanguageModelChatMessageRole.User,
+        "system blocks are converted to User-role LM messages by VS Code's API",
+      );
+    });
+
+    test("system block is unchanged when only non-web_search server-side tools are dropped", () => {
+      const tools = [{ name: "bash", type: "bash_20250124" }];
+      const originalSystem = "Be helpful.";
+
+      const { webSearchDropped } = convertAnthropicToolToVSCode(tools as any);
+      assert.strictEqual(webSearchDropped, false);
+
+      const augmentedSystem = webSearchDropped
+        ? appendSystemNote(originalSystem, WEB_SEARCH_FALLBACK_SYSTEM_NOTE)
+        : originalSystem;
+
+      assert.strictEqual(augmentedSystem, originalSystem);
+
+      const lmSystemMessages = convertAnthropicSystemToVSCode(augmentedSystem);
+      assert.strictEqual(lmSystemMessages.length, 1);
     });
   });
 

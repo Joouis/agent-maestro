@@ -10,6 +10,8 @@ import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
   type AnthropicTokenUsage,
+  WEB_SEARCH_FALLBACK_SYSTEM_NOTE,
+  appendSystemNote,
   convertAnthropicMessagesToVSCode,
   convertAnthropicSystemToVSCode,
   convertAnthropicToolChoiceToVSCode,
@@ -353,9 +355,27 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       let client = initialClient!;
 
+      // Convert tools up front. If a `web_search` server-side tool was
+      // dropped, append a fallback note to the request's `system` block
+      // *before* prepareAnthropicMessages and getFallbackUsage see the
+      // payload — otherwise the LM call would include the note while
+      // token counting wouldn't, and usage figures would diverge from
+      // what's actually sent. The note is added to `system` (not as a
+      // trailing `user` turn) so it doesn't pollute the conversation
+      // transcript that gets replayed on subsequent client turns.
+      const { tools: convertedTools, webSearchDropped } =
+        convertAnthropicToolToVSCode(tools);
+      const augmentedRequestBody: Anthropic.Messages.MessageCreateParams =
+        webSearchDropped
+          ? {
+              ...requestBody,
+              system: appendSystemNote(system, WEB_SEARCH_FALLBACK_SYSTEM_NOTE),
+            }
+          : requestBody;
+
       // 3. Map Anthropic messages to VS Code LM API messages
       const { vsCodeLmMessages } = await prepareAnthropicMessages({
-        requestBody: { ...requestBody, model: resolvedModel },
+        requestBody: { ...augmentedRequestBody, model: resolvedModel },
       });
       lmChatMessages = vsCodeLmMessages;
       cancellationTokenSource = new vscode.CancellationTokenSource();
@@ -366,12 +386,14 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         }`,
       );
 
-      // 4. Build VS Code Language Model request options
+      // 4. Build VS Code Language Model request options. If a `web_search`
+      //    fallback note was injected above, it's already part of
+      //    `vsCodeLmMessages` via `augmentedRequestBody.system`.
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
         justification:
           "Anthropic-compatible /v1/messages endpoint with streaming support using VS Code Language Model API",
         modelOptions: msgCreateParams,
-        tools: convertAnthropicToolToVSCode(tools),
+        tools: convertedTools,
         toolMode: convertAnthropicToolChoiceToVSCode(tool_choice),
       };
 
@@ -386,7 +408,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         accumulatedText: string,
       ): Promise<AnthropicTokenUsage> => {
         const inputTokenCount = await countAnthropicMessageTokens(
-          JSON.stringify(requestBody),
+          JSON.stringify(augmentedRequestBody),
           client,
         );
         const outputTokenCount = accumulatedText

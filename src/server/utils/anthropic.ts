@@ -240,6 +240,29 @@ export const convertAnthropicSystemToVSCode = (
 };
 
 /**
+ * Append an extra system note to an Anthropic `system` field, normalizing
+ * whichever shape the caller used (undefined / string / TextBlockParam[]).
+ * Used to inject the `web_search` → WebFetch fallback nudge without
+ * polluting the conversation transcript with a synthetic user turn.
+ */
+export const appendSystemNote = (
+  system: string | Array<Anthropic.Messages.TextBlockParam> | undefined,
+  note: string,
+): Array<Anthropic.Messages.TextBlockParam> => {
+  const noteBlock: Anthropic.Messages.TextBlockParam = {
+    type: "text",
+    text: note,
+  };
+  if (!system) {
+    return [noteBlock];
+  }
+  if (typeof system === "string") {
+    return [{ type: "text", text: system }, noteBlock];
+  }
+  return [...system, noteBlock];
+};
+
+/**
  * Anthropic server-side tools (web_search, code_execution, computer_use,
  * bash, text_editor, memory, web_fetch, etc.) are executed by Anthropic's
  * backend, not the client. They are identified by the presence of a `type`
@@ -255,16 +278,49 @@ const isUnsupportedServerSideTool = (tool: unknown): boolean => {
   return typeof t.type === "string" && t.type !== "custom" && !t.input_schema;
 };
 
+/**
+ * Detect Anthropic web_search server-side tool variants
+ * (e.g. `web_search_20250305`).
+ */
+const isWebSearchServerSideTool = (tool: unknown): boolean => {
+  const t = tool as { type?: string };
+  return typeof t.type === "string" && t.type.startsWith("web_search");
+};
+
+/**
+ * System-prompt nudge appended when a client requested `web_search` but the
+ * backend can't execute it. Tells the model to fall back to `WebFetch` (a
+ * standard Claude Code client-side tool) against a public search-engine URL,
+ * so the user still gets web-search-like behavior with zero proxy-side
+ * dependencies.
+ */
+export const WEB_SEARCH_FALLBACK_SYSTEM_NOTE =
+  "The Anthropic `web_search` server-side tool is unavailable on this proxy. " +
+  "To search the web, use the `WebFetch` tool with a URL like " +
+  "`https://html.duckduckgo.com/html/?q=<URL-encoded query>` and a prompt " +
+  "asking it to extract the most relevant result titles, URLs, and snippets. " +
+  "If WebFetch is unavailable or cannot access the search page, tell the " +
+  "user the search URL so they can open it manually.";
+
+export interface ConvertAnthropicToolResult {
+  tools: vscode.LanguageModelChatTool[] | undefined;
+  webSearchDropped: boolean;
+}
+
 export const convertAnthropicToolToVSCode = (
   tools?: Anthropic.Messages.ToolUnion[],
-): vscode.LanguageModelChatTool[] | undefined => {
+): ConvertAnthropicToolResult => {
   if (!tools) {
-    return undefined;
+    return { tools: undefined, webSearchDropped: false };
   }
 
   const filtered: vscode.LanguageModelChatTool[] = [];
+  let webSearchDropped = false;
   for (const tool of tools) {
     if (isUnsupportedServerSideTool(tool)) {
+      if (isWebSearchServerSideTool(tool)) {
+        webSearchDropped = true;
+      }
       logger.warn(
         `Dropping unsupported Anthropic server-side tool: ${
           (tool as { type?: string }).type
@@ -279,7 +335,7 @@ export const convertAnthropicToolToVSCode = (
       inputSchema: t.input_schema,
     });
   }
-  return filtered;
+  return { tools: filtered, webSearchDropped };
 };
 
 export const convertAnthropicToolChoiceToVSCode = (
