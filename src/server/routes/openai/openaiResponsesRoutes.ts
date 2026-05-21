@@ -2,13 +2,14 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import OpenAI from "openai";
-import { Responses } from "openai/resources/responses/responses";
+import { ResponseUsage, Responses } from "openai/resources/responses/responses";
 import * as vscode from "vscode";
 
 import { getChatModelClient } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
+import { extractOpenAIResponsesTokenUsageFromVSCodeChunk } from "../../utils/openai";
 import {
   OutputItem,
   ToolChoice,
@@ -222,20 +223,15 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         return c.json(clientError, 404);
       }
 
-      // 5. Count input tokens
       logger.debug("/v1/responses payload:");
       logger.debug(JSON.stringify(requestBody, null, 2));
       const cancellationTokenSource = new vscode.CancellationTokenSource();
       const cancellationToken = cancellationTokenSource.token;
-      inputTokens = await client.countTokens(
-        JSON.stringify(requestBody),
-        cancellationToken,
-      );
 
       logger.info(
         `→ /v1/responses | model: ${
           model === client.id ? model : `${model} → ${client.id}`
-        } | input: ${inputTokens}`,
+        }`,
       );
 
       // 6. Convert input to VSCode messages
@@ -270,6 +266,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         let accumulatedText = "";
         const toolCalls: { callId: string; name: string; input: unknown }[] =
           [];
+        let responseUsage: ResponseUsage | undefined;
 
         for await (const chunk of response.stream) {
           if (chunk instanceof vscode.LanguageModelTextPart) {
@@ -280,17 +277,34 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               name: chunk.name,
               input: chunk.input,
             });
+          } else if (chunk instanceof vscode.LanguageModelDataPart) {
+            responseUsage =
+              extractOpenAIResponsesTokenUsageFromVSCodeChunk(chunk) ??
+              responseUsage;
           }
         }
 
         // Build output
         const output = buildResponseOutput(accumulatedText, toolCalls);
 
-        // Count output tokens
-        const outputTokens = await client.countTokens(
-          accumulatedText + JSON.stringify(toolCalls),
-          cancellationToken,
-        );
+        let usage = responseUsage;
+        if (!usage) {
+          const [fallbackInputTokens, outputTokens] = await Promise.all([
+            client.countTokens(JSON.stringify(requestBody), cancellationToken),
+            client.countTokens(
+              accumulatedText + JSON.stringify(toolCalls),
+              cancellationToken,
+            ),
+          ]);
+          inputTokens = fallbackInputTokens;
+          usage = {
+            input_tokens: fallbackInputTokens,
+            input_tokens_details: { cached_tokens: 0 },
+            output_tokens: outputTokens,
+            output_tokens_details: { reasoning_tokens: 0 },
+            total_tokens: fallbackInputTokens + outputTokens,
+          };
+        }
 
         // Build response
         const responseObj: NonStreamingResponse = {
@@ -302,20 +316,14 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           output,
           error: null,
           incomplete_details: null,
-          usage: {
-            input_tokens: inputTokens,
-            input_tokens_details: { cached_tokens: 0 },
-            output_tokens: outputTokens,
-            output_tokens_details: { reasoning_tokens: 0 },
-            total_tokens: inputTokens + outputTokens,
-          },
+          usage,
           metadata,
         };
 
         logger.debug("/v1/responses response:");
         logger.debug(JSON.stringify(responseObj, null, 2));
         logger.info(
-          `← /v1/responses | input: ${inputTokens} | output: ${outputTokens}`,
+          `← /v1/responses | input: ${usage.input_tokens} | cache_read: ${usage.input_tokens_details.cached_tokens} | output: ${usage.output_tokens}`,
         );
 
         cancellationTokenSource.dispose();
@@ -345,7 +353,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           const buildResponseEnvelope = (
             status: string,
             output: OutputItem[],
-            usage?: Record<string, unknown> | null,
+            usage?: ResponseUsage | null,
             completedAt?: number | null,
           ) => ({
             ...baseResponse,
@@ -387,6 +395,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           let currentMessageId: string | null = null;
           let accumulatedText = "";
           let totalOutputText = ""; // Track all output for token counting
+          let responseUsage: ResponseUsage | undefined;
 
           for await (const chunk of response.stream) {
             if (chunk instanceof vscode.LanguageModelTextPart) {
@@ -520,6 +529,10 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               });
 
               outputIndex++;
+            } else if (chunk instanceof vscode.LanguageModelDataPart) {
+              responseUsage =
+                extractOpenAIResponsesTokenUsageFromVSCodeChunk(chunk) ??
+                responseUsage;
             }
           }
 
@@ -537,21 +550,26 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
             outputIndex++;
           }
 
-          // Count output tokens
-          const outputTokens = await client.countTokens(
-            totalOutputText,
-            cancellationToken,
-          );
-
           cancellationTokenSource.dispose();
 
-          const usage = {
-            input_tokens: inputTokens,
-            input_tokens_details: { cached_tokens: 0 },
-            output_tokens: outputTokens,
-            output_tokens_details: { reasoning_tokens: 0 },
-            total_tokens: inputTokens + outputTokens,
-          };
+          let usage = responseUsage;
+          if (!usage) {
+            const [fallbackInputTokens, outputTokens] = await Promise.all([
+              client.countTokens(
+                JSON.stringify(requestBody),
+                cancellationToken,
+              ),
+              client.countTokens(totalOutputText, cancellationToken),
+            ]);
+            inputTokens = fallbackInputTokens;
+            usage = {
+              input_tokens: fallbackInputTokens,
+              input_tokens_details: { cached_tokens: 0 },
+              output_tokens: outputTokens,
+              output_tokens_details: { reasoning_tokens: 0 },
+              total_tokens: fallbackInputTokens + outputTokens,
+            };
+          }
 
           // Emit response.completed
           await sseStream.writeSSE({
@@ -569,7 +587,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           });
 
           logger.info(
-            `← /v1/responses (stream) | input: ${inputTokens} | output: ${outputTokens}`,
+            `← /v1/responses (stream) | input: ${usage.input_tokens} | cache_read: ${usage.input_tokens_details.cached_tokens} | output: ${usage.output_tokens}`,
           );
         },
         async (error, sseStream) => {
