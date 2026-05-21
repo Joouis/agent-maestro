@@ -101,10 +101,23 @@
           "maximum": 2,
           "description": "Scale factor applied to token counts from VS Code's API to approximate Anthropic's actual token usage. Higher values provide more buffer against context window limits but reduce usable context. Default 1.25 means VS Code token counts are multiplied by 1.25.",
           "scope": "application"
+        },
+        "agent-maestro.dashboard.maxRecords": {
+          "type": "number",
+          "default": 500,
+          "minimum": 50,
+          "maximum": 5000,
+          "description": "Maximum number of recent request records the dashboard retains in memory. Older records are dropped. Resets on extension reload.",
+          "scope": "application"
         }
       }
     },
     "commands": [
+      {
+        "command": "agent-maestro.openDashboard",
+        "title": "Open Dashboard",
+        "category": "Agent Maestro"
+      },
       {
         "command": "agent-maestro.getStatus",
         "title": "Get Extensions Status",

@@ -18,6 +18,7 @@ import {
   createGeminiAuthMiddleware,
   createOpenAIAuthMiddleware,
 } from "./middleware/authMiddleware";
+import { metricsMiddleware } from "./middleware/metricsMiddleware";
 import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
 import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
@@ -55,6 +56,11 @@ export class ProxyServer {
       logger.debug(`Incoming request: ${c.req.method} ${c.req.url}`);
       await next();
     });
+
+    // Metrics collection for proxy API endpoints
+    this.app.use("/api/anthropic/*", metricsMiddleware);
+    this.app.use("/api/openai/*", metricsMiddleware);
+    this.app.use("/api/gemini/*", metricsMiddleware);
 
     // Register authentication middleware for API routes
     this.app.use(

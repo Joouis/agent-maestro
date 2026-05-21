@@ -5,6 +5,7 @@ import { McpServer } from "../server/McpServer";
 import { ProxyServer } from "../server/ProxyServer";
 import { registerConfiguratorCommands } from "./configuratorCommands";
 import { registerCopilotFixCommands } from "./copilotFixCommands";
+import { registerDashboardCommands } from "./dashboardCommands";
 import { registerLlmApiKeyCommands } from "./llmApiKeyCommands";
 import { registerMcpCommands } from "./mcpCommands";
 import { registerProxyCommands } from "./proxyCommands";
@@ -22,4 +23,5 @@ export function registerAllCommands(
   registerCopilotFixCommands(context);
   registerStatusCommands(controller, context);
   registerLlmApiKeyCommands(proxy, context);
+  registerDashboardCommands(context, proxy);
 }

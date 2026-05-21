@@ -4,6 +4,7 @@ import { registerAllCommands } from "./commands";
 import { ExtensionController } from "./core/controller";
 import { McpServer } from "./server/McpServer";
 import { ProxyServer } from "./server/ProxyServer";
+import { metricsCollector } from "./server/metrics/MetricsCollector";
 import { chatModelsCache } from "./utils/chatModels";
 import { performClaudeCodeSelfCheck } from "./utils/claude";
 import { readConfiguration } from "./utils/config";
@@ -45,6 +46,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Get configuration
   const config = readConfiguration();
+
+  const dashboardMaxRecords = vscode.workspace
+    .getConfiguration()
+    .get<number>("agent-maestro.dashboard.maxRecords", 500);
+  metricsCollector.setMaxRecords(dashboardMaxRecords);
 
   mcpServer = new McpServer({
     controller,

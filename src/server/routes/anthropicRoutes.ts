@@ -6,6 +6,12 @@ import * as vscode from "vscode";
 
 import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
+import {
+  finishMetricsRequest,
+  getMetricsStartedAt,
+  keepMetricsActiveUntilStreamEnd,
+  recordMetricsTokens,
+} from "../middleware/metricsMiddleware";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
   convertAnthropicMessagesToVSCode,
@@ -358,10 +364,17 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           `← /v1/messages | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated} | output: ${outputTokenCount.original} → ${outputTokenCount.calibrated}`,
         );
 
+        recordMetricsTokens(c, {
+          inputTokens: inputTokenCount.calibrated,
+          outputTokens: outputTokenCount.calibrated,
+          model: effectiveModelId ?? model,
+        });
+
         return c.json(resp);
       }
 
       // 7. If streaming, pipe chunks as SSE
+      keepMetricsActiveUntilStreamEnd(c);
       return streamSSE(
         c,
         async (stream) => {
@@ -398,8 +411,13 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
           const contentBlocks: Anthropic.Messages.ContentBlock[] = [];
           let accumulatedText = "";
+          let firstChunkAt: number | undefined;
+          const requestStartedAt = getMetricsStartedAt(c);
 
           for await (const chunk of response.stream) {
+            if (firstChunkAt === undefined) {
+              firstChunkAt = Date.now();
+            }
             const lastBlock = contentBlocks.at(-1);
             if (chunk instanceof vscode.LanguageModelTextPart) {
               // Stop last non-text block if it exists
@@ -513,9 +531,28 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           logger.info(
             `← /v1/messages (stream) | input: ${inputTokenCount.original} → ${inputTokenCount.calibrated} | output: ${outputTokenCount.original} → ${outputTokenCount.calibrated}`,
           );
+
+          const ttftMs =
+            firstChunkAt !== undefined && requestStartedAt !== undefined
+              ? firstChunkAt - requestStartedAt
+              : undefined;
+          finishMetricsRequest(c, {
+            status: 200,
+            streaming: true,
+            inputTokens: inputTokenCount.calibrated,
+            outputTokens: outputTokenCount.calibrated,
+            ttftMs,
+            model: effectiveModelId ?? model,
+          });
         },
         async (error, _stream) => {
           logger.error("✕ /v1/messages |", error);
+          finishMetricsRequest(c, {
+            status: 500,
+            streaming: true,
+            error: error instanceof Error ? error.message : String(error),
+            model: effectiveModelId ?? model,
+          });
         },
       );
     } catch (error) {
