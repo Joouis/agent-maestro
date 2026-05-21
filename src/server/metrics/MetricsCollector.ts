@@ -2,6 +2,13 @@ import { EventEmitter } from "events";
 
 export type ApiEndpoint = "anthropic" | "openai" | "gemini" | "other";
 
+export interface RequestDetails {
+  requestHeaders?: Record<string, string>;
+  responseHeaders?: Record<string, string>;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+}
+
 export interface RequestRecord {
   id: string;
   endpoint: ApiEndpoint;
@@ -17,6 +24,7 @@ export interface RequestRecord {
   tokensPerSecond?: number;
   streaming: boolean;
   error?: string;
+  details?: RequestDetails;
 }
 
 export interface MetricsSnapshot {
@@ -26,6 +34,8 @@ export interface MetricsSnapshot {
     errors: number;
     inputTokens: number;
     outputTokens: number;
+    cacheCreationInputTokens: number;
+    cacheReadInputTokens: number;
   };
   rolling: {
     windowMs: number;
@@ -62,6 +72,15 @@ export interface MetricsSnapshot {
 const DEFAULT_MAX_RECORDS = 500;
 const ROLLING_WINDOW_MS = 5 * 60_000;
 
+type TokenInfo = {
+  inputTokens?: number;
+  outputTokens?: number;
+  ttftMs?: number;
+  model?: string;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+};
+
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) {
     return 0;
@@ -86,6 +105,8 @@ export class MetricsCollector extends EventEmitter {
     errors: 0,
     inputTokens: 0,
     outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
   };
   private byEndpoint: Record<ApiEndpoint, ReturnType<typeof emptyEndpointAgg>> =
     {
@@ -99,15 +120,7 @@ export class MetricsCollector extends EventEmitter {
     { requests: number; inputTokens: number; outputTokens: number }
   >();
   private statusCounts = new Map<string, number>();
-  private pendingTokenInfo = new Map<
-    string,
-    {
-      inputTokens?: number;
-      outputTokens?: number;
-      ttftMs?: number;
-      model?: string;
-    }
-  >();
+  private pendingTokenInfo = new Map<string, TokenInfo>();
 
   constructor(maxRecords: number = DEFAULT_MAX_RECORDS) {
     super();
@@ -140,6 +153,15 @@ export class MetricsCollector extends EventEmitter {
       record.outputTokens = pendingInfo.outputTokens ?? record.outputTokens;
       record.ttftMs = pendingInfo.ttftMs ?? record.ttftMs;
       record.model = pendingInfo.model ?? record.model;
+      record.details = {
+        ...record.details,
+        cacheCreationInputTokens:
+          pendingInfo.cacheCreationInputTokens ??
+          record.details?.cacheCreationInputTokens,
+        cacheReadInputTokens:
+          pendingInfo.cacheReadInputTokens ??
+          record.details?.cacheReadInputTokens,
+      };
       this.pendingTokenInfo.delete(record.id);
     }
 
@@ -168,6 +190,13 @@ export class MetricsCollector extends EventEmitter {
     }
     if (record.outputTokens) {
       this.totals.outputTokens += record.outputTokens;
+    }
+    if (record.details?.cacheCreationInputTokens) {
+      this.totals.cacheCreationInputTokens +=
+        record.details.cacheCreationInputTokens;
+    }
+    if (record.details?.cacheReadInputTokens) {
+      this.totals.cacheReadInputTokens += record.details.cacheReadInputTokens;
     }
 
     const ep = this.byEndpoint[record.endpoint];
@@ -208,15 +237,7 @@ export class MetricsCollector extends EventEmitter {
    * Attach token usage info to the most recent record matching the given id.
    * Routes call this once they know final token counts (e.g. after stream end).
    */
-  attachTokens(
-    id: string,
-    info: {
-      inputTokens?: number;
-      outputTokens?: number;
-      ttftMs?: number;
-      model?: string;
-    },
-  ) {
+  attachTokens(id: string, info: TokenInfo) {
     const rec = this.buffer.find((r) => r.id === id);
     if (!rec) {
       this.pendingTokenInfo.set(id, info);
@@ -248,6 +269,25 @@ export class MetricsCollector extends EventEmitter {
     }
     if (info.ttftMs !== undefined) {
       rec.ttftMs = info.ttftMs;
+    }
+    if (info.cacheCreationInputTokens !== undefined) {
+      const delta =
+        info.cacheCreationInputTokens -
+        (rec.details?.cacheCreationInputTokens ?? 0);
+      rec.details = {
+        ...rec.details,
+        cacheCreationInputTokens: info.cacheCreationInputTokens,
+      };
+      this.totals.cacheCreationInputTokens += delta;
+    }
+    if (info.cacheReadInputTokens !== undefined) {
+      const delta =
+        info.cacheReadInputTokens - (rec.details?.cacheReadInputTokens ?? 0);
+      rec.details = {
+        ...rec.details,
+        cacheReadInputTokens: info.cacheReadInputTokens,
+      };
+      this.totals.cacheReadInputTokens += delta;
     }
     if (info.model && !rec.model) {
       rec.model = info.model;
@@ -327,6 +367,8 @@ export class MetricsCollector extends EventEmitter {
       errors: 0,
       inputTokens: 0,
       outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
     };
     this.byEndpoint = {
       anthropic: emptyEndpointAgg(),

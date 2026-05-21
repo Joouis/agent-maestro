@@ -10,8 +10,34 @@ declare module "hono" {
     metricsPath?: string;
     metricsMethod?: string;
     metricsDeferEnd?: boolean;
+    metricsRequestHeaders?: Record<string, string>;
   }
 }
+
+const SAFE_REQUEST_HEADERS = new Set([
+  "anthropic-beta",
+  "anthropic-version",
+  "content-type",
+  "user-agent",
+  "x-app",
+  "x-stainless-arch",
+  "x-stainless-lang",
+  "x-stainless-os",
+  "x-stainless-package-version",
+  "x-stainless-runtime",
+  "x-stainless-runtime-version",
+]);
+
+const SAFE_RESPONSE_HEADERS = new Set(["content-type", "content-length"]);
+
+type MetricsTokenInfo = {
+  inputTokens?: number;
+  outputTokens?: number;
+  ttftMs?: number;
+  model?: string;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+};
 
 function detectEndpoint(path: string): ApiEndpoint {
   if (path.startsWith("/api/anthropic")) {
@@ -26,6 +52,17 @@ function detectEndpoint(path: string): ApiEndpoint {
   return "other";
 }
 
+function pickHeaders(headers: Headers, allowlist: Set<string>) {
+  const picked: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    const normalized = key.toLowerCase();
+    if (allowlist.has(normalized)) {
+      picked[normalized] = value;
+    }
+  });
+  return picked;
+}
+
 export const metricsMiddleware: MiddlewareHandler = async (c, next) => {
   const path = new URL(c.req.url).pathname;
   const endpoint = detectEndpoint(path);
@@ -35,6 +72,10 @@ export const metricsMiddleware: MiddlewareHandler = async (c, next) => {
   c.set("metricsEndpoint", endpoint);
   c.set("metricsPath", path);
   c.set("metricsMethod", c.req.method);
+  c.set(
+    "metricsRequestHeaders",
+    pickHeaders(c.req.raw.headers, SAFE_REQUEST_HEADERS),
+  );
 
   let status = 0;
   let err: unknown;
@@ -80,17 +121,14 @@ export function finishMetricsRequest(
     status?: number;
     streaming?: boolean;
     error?: string;
-    inputTokens?: number;
-    outputTokens?: number;
-    ttftMs?: number;
-    model?: string;
-  } = {},
+  } & MetricsTokenInfo = {},
 ) {
   const id = c.get("metricsRequestId");
   const startedAt = c.get("metricsStartedAt");
   const endpoint = c.get("metricsEndpoint");
   const path = c.get("metricsPath");
   const method = c.get("metricsMethod");
+  const requestHeaders = c.get("metricsRequestHeaders");
 
   if (!id || !startedAt || !endpoint || !path || !method) {
     return;
@@ -110,18 +148,18 @@ export function finishMetricsRequest(
     ttftMs: info.ttftMs,
     model: info.model,
     error: info.error,
+    details: {
+      requestHeaders,
+      responseHeaders: c.res
+        ? pickHeaders(c.res.headers, SAFE_RESPONSE_HEADERS)
+        : undefined,
+      cacheCreationInputTokens: info.cacheCreationInputTokens,
+      cacheReadInputTokens: info.cacheReadInputTokens,
+    },
   });
 }
 
-export function recordMetricsTokens(
-  c: Context,
-  info: {
-    inputTokens?: number;
-    outputTokens?: number;
-    ttftMs?: number;
-    model?: string;
-  },
-) {
+export function recordMetricsTokens(c: Context, info: MetricsTokenInfo) {
   const id = c.get("metricsRequestId");
   if (!id) {
     return;
