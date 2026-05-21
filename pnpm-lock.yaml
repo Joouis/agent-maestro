@@ -62,8 +62,8 @@ importers:
         specifier: 20.x
         version: 20.17.57
       "@types/vscode":
-        specifier: ^1.100.0
-        version: 1.100.0
+        specifier: ^1.120.0
+        version: 1.120.0
       "@typescript-eslint/eslint-plugin":
         specifier: ^8.31.1
         version: 8.33.0(@typescript-eslint/parser@8.33.0(eslint@9.28.0)(typescript@5.8.3))(eslint@9.28.0)(typescript@5.8.3)
@@ -1255,10 +1255,10 @@ packages:
         integrity: sha512-kRz0VEkJqWLf1LLVN4pT1cg1Z9wAuvI6L97V3m2f5B76Tg8d413ddvLBPTEHAZJlnn4XSvu0FkZtViCQGVyrXQ==,
       }
 
-  "@types/vscode@1.100.0":
+  "@types/vscode@1.120.0":
     resolution:
       {
-        integrity: sha512-4uNyvzHoraXEeCamR3+fzcBlh7Afs4Ifjs4epINyUX/jvdk0uzLnwiDY35UKDKnkCHP5Nu3dljl2H8lR6s+rQw==,
+        integrity: sha512-feaT4Rst+FkTch5zz/ZbNCxoIvo55YU80Be2kiL7OJcod4+CUYf2lUBPdIJzozNnSEMq1VRTGrWEcCGFB3fBmA==,
       }
 
   "@typescript-eslint/eslint-plugin@8.33.0":
@@ -6819,7 +6819,7 @@ snapshots:
 
   "@types/sarif@2.1.7": {}
 
-  "@types/vscode@1.100.0": {}
+  "@types/vscode@1.120.0": {}
 
   "@typescript-eslint/eslint-plugin@8.33.0(@typescript-eslint/parser@8.33.0(eslint@9.28.0)(typescript@5.8.3))(eslint@9.28.0)(typescript@5.8.3)":
     dependencies:
