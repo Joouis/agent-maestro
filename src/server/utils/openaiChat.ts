@@ -5,22 +5,24 @@ import { logger } from "../../utils/logger";
 
 const convertOpenAIChatCompletionContentPartToUserContent = (
   part: OpenAI.ChatCompletionContentPart,
-): vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart => {
+):
+  | vscode.LanguageModelTextPart
+  | vscode.LanguageModelToolResultPart
+  | vscode.LanguageModelDataPart => {
   if (part.type === "text") {
     return new vscode.LanguageModelTextPart(part.text);
   }
 
   // Handle image_url content parts (vision requests)
   if (part.type === "image_url") {
-    const LanguageModelDataPart = (vscode as any).LanguageModelDataPart;
-    if (part.image_url?.url && LanguageModelDataPart) {
+    if (part.image_url?.url) {
       const match = part.image_url.url.match(
         /^data:(image\/[\w+.-]+);base64,(.+)$/,
       );
       if (match) {
         const mimeType = match[1];
         const base64Data = match[2];
-        return new LanguageModelDataPart(
+        return new vscode.LanguageModelDataPart(
           Buffer.from(base64Data, "base64"),
           mimeType,
         );
@@ -52,15 +54,18 @@ export const convertOpenAIMessagesToVSCode = (
     switch (msg.role) {
       case "developer": // ChatCompletionDeveloperMessageParam
       case "system": // ChatCompletionSystemMessageParam
-        content =
-          typeof msg.content === "string"
-            ? msg.content
-            : msg.content.map((m) => ({
-                value: m.text,
-              }));
+        // Copilot Chat's _convertMessages rejects bare {value} objects with
+        // "Unexpected chat message content type llm 2". Always wrap text in
+        // LanguageModelTextPart, mirroring the user-role branch below.
+        if (typeof msg.content === "string") {
+          return new vscode.LanguageModelChatMessage(
+            vscode.LanguageModelChatMessageRole.User,
+            msg.content,
+          );
+        }
         return new vscode.LanguageModelChatMessage(
           vscode.LanguageModelChatMessageRole.User,
-          content,
+          msg.content.map((m) => new vscode.LanguageModelTextPart(m.text)),
         );
 
       case "user": // ChatCompletionUserMessageParam

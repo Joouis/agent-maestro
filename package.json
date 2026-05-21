@@ -2,12 +2,12 @@
   "name": "agent-maestro",
   "displayName": "Agent Maestro",
   "description": "Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code or Codex straight in through an OpenAI/Anthropic-compatible API.",
-  "version": "2.8.5",
+  "version": "2.9.1",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
   "repository": "https://github.com/Joouis/agent-maestro",
   "engines": {
-    "vscode": "^1.100.0",
+    "vscode": "^1.120.0",
     "node": ">=22"
   },
   "packageManager": "pnpm@10.28.2",
@@ -89,7 +89,7 @@
         "agent-maestro.codex.contextWindowScaleFactor": {
           "type": "number",
           "default": 1,
-          "minimum": 1,
+          "minimum": 0.1,
           "maximum": 2,
           "description": "Scale factor for calculating `model_context_window` in Codex config. This compensates for the difference between local and API token counting. A value of 1 means the local context window is set to 100% of the model's reported max input tokens.",
           "scope": "application"
@@ -99,7 +99,7 @@
           "default": 1.25,
           "minimum": 0.1,
           "maximum": 2,
-          "description": "Scale factor applied to token counts from VS Code's API to approximate Anthropic's actual token usage. Higher values provide more buffer against context window limits but reduce usable context. Default 1.25 means VS Code token counts are multiplied by 1.25.",
+          "description": "Scale factor applied to fallback Anthropic token estimates and count_tokens responses when real Copilot usage metadata is unavailable. Default 1.25 means VS Code token counts are multiplied by 1.25.",
           "scope": "application"
         },
         "agent-maestro.dashboard.maxRecords": {
@@ -195,7 +195,7 @@
     "onStartupFinished"
   ],
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.0",
+    "@anthropic-ai/sdk": "^0.96.0",
     "@google/genai": "^1.29.1",
     "@hono/node-server": "^1.17.1",
     "@hono/zod-openapi": "^1.0.2",
@@ -214,7 +214,7 @@
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
-    "@types/vscode": "^1.100.0",
+    "@types/vscode": "^1.120.0",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
     "@vscode/test-cli": "^0.0.10",

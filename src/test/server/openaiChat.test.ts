@@ -36,6 +36,62 @@ suite("OpenAI Conversion Utils Test Suite", () => {
       );
     });
 
+    test("should wrap array-shaped system content blocks in LanguageModelTextPart", () => {
+      // deepagents / langchain-openai split long system prompts into multiple
+      // text blocks. Without LanguageModelTextPart wrapping, Copilot Chat's
+      // _convertMessages throws "Unexpected chat message content type llm 2".
+      const messages = [
+        {
+          role: "system" as const,
+          content: [
+            { type: "text" as const, text: "Block one" },
+            { type: "text" as const, text: "Block two" },
+            { type: "text" as const, text: "Block three" },
+          ],
+        },
+      ];
+
+      const result = convertOpenAIMessagesToVSCode(messages);
+
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(
+        result[0].role,
+        vscode.LanguageModelChatMessageRole.User,
+      );
+      const parts = result[0].content as vscode.LanguageModelTextPart[];
+      assert.strictEqual(parts.length, 3);
+      for (const part of parts) {
+        assert.ok(
+          part instanceof vscode.LanguageModelTextPart,
+          "every system content block must be a LanguageModelTextPart",
+        );
+      }
+      assert.strictEqual(parts[0].value, "Block one");
+      assert.strictEqual(parts[1].value, "Block two");
+      assert.strictEqual(parts[2].value, "Block three");
+    });
+
+    test("should wrap array-shaped developer content blocks in LanguageModelTextPart", () => {
+      const messages = [
+        {
+          role: "developer" as const,
+          content: [
+            { type: "text" as const, text: "Dev instruction A" },
+            { type: "text" as const, text: "Dev instruction B" },
+          ],
+        },
+      ];
+
+      const result = convertOpenAIMessagesToVSCode(messages);
+
+      const parts = result[0].content as vscode.LanguageModelTextPart[];
+      assert.strictEqual(parts.length, 2);
+      assert.ok(parts[0] instanceof vscode.LanguageModelTextPart);
+      assert.ok(parts[1] instanceof vscode.LanguageModelTextPart);
+      assert.strictEqual(parts[0].value, "Dev instruction A");
+      assert.strictEqual(parts[1].value, "Dev instruction B");
+    });
+
     test("should convert user message with string content", () => {
       const messages = [{ role: "user" as const, content: "Hello!" }];
 
@@ -194,9 +250,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
         (result[0].content[0] as vscode.LanguageModelTextPart).value,
         "What is in this image?",
       );
-      // LanguageModelDataPart may not be available in test environment,
-      // so the image part could be either a DataPart or a TextPart fallback
-      assert.ok(result[0].content[1]);
+      assert.ok(result[0].content[1] instanceof vscode.LanguageModelDataPart);
     });
 
     test("should handle image_url with non-data-URI by falling back to JSON", () => {

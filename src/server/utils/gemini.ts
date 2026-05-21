@@ -112,10 +112,12 @@ export const normalizeSchemaTypes = (
  */
 const convertGeminiPartToVSCodePart = (
   part: Part,
+  resolvedCallId?: string,
 ):
   | vscode.LanguageModelTextPart
   | vscode.LanguageModelToolCallPart
-  | vscode.LanguageModelToolResultPart => {
+  | vscode.LanguageModelToolResultPart
+  | vscode.LanguageModelDataPart => {
   // Text part
   if (part.text !== undefined) {
     return new vscode.LanguageModelTextPart(part.text);
@@ -131,32 +133,39 @@ const convertGeminiPartToVSCodePart = (
     );
   }
 
-  // Function response (tool result)
-  if (part.functionResponse?.id) {
-    const responseText = part.functionResponse.response
-      ? JSON.stringify(part.functionResponse.response)
-      : "";
-    return new vscode.LanguageModelToolResultPart(part.functionResponse.id, [
-      new vscode.LanguageModelTextPart(responseText),
-    ]);
+  // Function response (tool result).
+  // Some Gemini clients (e.g. langchain-google-genai) only send `name` on
+  // functionResponse parts and rely on Gemini's positional pairing rules,
+  // omitting `id`. The original strict `if (part.functionResponse?.id)` check
+  // dropped those parts entirely, leading the upstream LM API to reject the
+  // turn with "function response parts != function call parts". Fall back to
+  // a callId resolved by the caller (positional FIFO match against the
+  // preceding functionCall) and finally to a synthetic name-based id.
+  if (part.functionResponse) {
+    const callId =
+      part.functionResponse.id ||
+      resolvedCallId ||
+      (part.functionResponse.name
+        ? `function_call_${part.functionResponse.name}`
+        : undefined);
+    if (callId) {
+      const responseText = part.functionResponse.response
+        ? JSON.stringify(part.functionResponse.response)
+        : "";
+      return new vscode.LanguageModelToolResultPart(callId, [
+        new vscode.LanguageModelTextPart(responseText),
+      ]);
+    }
   }
 
-  // Inline data (images, etc.) - try to use LanguageModelDataPart if available
+  // Inline data (images, etc.)
   if (part.inlineData) {
-    const LanguageModelDataPart = (vscode as any).LanguageModelDataPart;
-    if (LanguageModelDataPart && part.inlineData.data) {
-      try {
-        const buffer = Buffer.from(part.inlineData.data, "base64");
-        return new LanguageModelDataPart(
-          buffer,
-          part.inlineData.mimeType || "application/octet-stream",
-        );
-      } catch {
-        // Fallback to text representation
-        return new vscode.LanguageModelTextPart(
-          JSON.stringify(part.inlineData),
-        );
-      }
+    if (part.inlineData.data) {
+      const buffer = Buffer.from(part.inlineData.data, "base64");
+      return new vscode.LanguageModelDataPart(
+        buffer,
+        part.inlineData.mimeType || "application/octet-stream",
+      );
     }
     // Fallback to text representation
     return new vscode.LanguageModelTextPart(JSON.stringify(part.inlineData));
@@ -172,7 +181,9 @@ const convertGeminiPartToVSCodePart = (
 export const convertGeminiContentToVSCode = (
   content: Content,
 ): vscode.LanguageModelChatMessage => {
-  const parts = (content.parts || []).map(convertGeminiPartToVSCodePart);
+  const parts = (content.parts || []).map((part) =>
+    convertGeminiPartToVSCodePart(part),
+  );
 
   // Default to empty text if no valid parts
   if (parts.length === 0) {
@@ -186,7 +197,9 @@ export const convertGeminiContentToVSCode = (
       parts.filter(
         (p) => !(p instanceof vscode.LanguageModelToolResultPart),
       ) as Array<
-        vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
+        | vscode.LanguageModelTextPart
+        | vscode.LanguageModelToolCallPart
+        | vscode.LanguageModelDataPart
       >,
     );
   }
@@ -195,18 +208,118 @@ export const convertGeminiContentToVSCode = (
     parts.filter(
       (p) => !(p instanceof vscode.LanguageModelToolCallPart),
     ) as Array<
-      vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart
+      | vscode.LanguageModelTextPart
+      | vscode.LanguageModelToolResultPart
+      | vscode.LanguageModelDataPart
     >,
   );
 };
 
 /**
- * Convert Gemini Contents array to VSCode LanguageModelChatMessages
+ * Convert Gemini Contents array to VSCode LanguageModelChatMessages.
+ *
+ * Why this isn't just `contents.map(convertGeminiContentToVSCode)`: Gemini's
+ * API allows clients to send `functionCall`/`functionResponse` parts WITHOUT
+ * an explicit `id`, relying on positional pairing within the `contents` array
+ * (langchain-google-genai 4.x does this). VSCode's LanguageModel API on the
+ * other hand REQUIRES a callId on every tool result and matches it against
+ * the preceding tool-call. Without pairing here, every tool-using Gemini
+ * conversation through this proxy fails with
+ *   "Please ensure that the number of function response parts is equal to
+ *    the number of function call parts of the function call turn."
+ *
+ * Strategy: walk all parts in document order, assigning a stable callId to
+ * each functionCall (using its `id` when present, else a synthetic id), and
+ * push that callId onto a per-name FIFO queue. When we then encounter a
+ * functionResponse without an `id`, we drain the queue for that name to
+ * recover the matching callId.
  */
 export const convertGeminiContentsToVSCode = (
   contents: Content[],
 ): vscode.LanguageModelChatMessage[] => {
-  return contents.map(convertGeminiContentToVSCode);
+  // Pre-walk: assign a callId to every functionCall and remember it on the
+  // part itself (via WeakMap), and build a per-name FIFO queue we'll drain
+  // during the conversion pass.
+  const callIdByPart = new WeakMap<object, string>();
+  const pendingByName = new Map<string, string[]>();
+  let synthCounter = 0;
+  for (const content of contents) {
+    for (const part of content.parts || []) {
+      if (part.functionCall?.name) {
+        const callId =
+          part.functionCall.id ||
+          `function_call_synth_${synthCounter++}_${part.functionCall.name}`;
+        callIdByPart.set(part as unknown as object, callId);
+        const queue = pendingByName.get(part.functionCall.name) || [];
+        queue.push(callId);
+        pendingByName.set(part.functionCall.name, queue);
+      }
+    }
+  }
+
+  return contents.map((content) => {
+    const parts = (content.parts || []).map((part) => {
+      // For functionCall: use the pre-assigned callId so the tool-result side
+      // has something to match against.
+      if (part.functionCall?.name) {
+        const callId = callIdByPart.get(part as unknown as object);
+        if (callId) {
+          return new vscode.LanguageModelToolCallPart(
+            callId,
+            part.functionCall.name,
+            (part.functionCall.args || {}) as object,
+          );
+        }
+      }
+      // For functionResponse: keep the per-name pending queue in sync.
+      // If an explicit id is present, remove that matched callId so it cannot
+      // later be reused by an id-less response for the same function name.
+      // Otherwise, drain the FIFO queue for the matching name and pass that
+      // callId into the part converter so it produces a properly-paired
+      // LanguageModelToolResultPart.
+      let resolvedCallId: string | undefined;
+      if (part.functionResponse?.name) {
+        const queue = pendingByName.get(part.functionResponse.name);
+        if (queue && queue.length > 0) {
+          if (part.functionResponse.id) {
+            const matchedIndex = queue.indexOf(part.functionResponse.id);
+            if (matchedIndex !== -1) {
+              queue.splice(matchedIndex, 1);
+            }
+          } else {
+            resolvedCallId = queue.shift();
+          }
+        }
+      }
+      return convertGeminiPartToVSCodePart(part, resolvedCallId);
+    });
+
+    if (parts.length === 0) {
+      parts.push(new vscode.LanguageModelTextPart(""));
+    }
+
+    const role = content.role || "user";
+    if (role === "model") {
+      return vscode.LanguageModelChatMessage.Assistant(
+        parts.filter(
+          (p) => !(p instanceof vscode.LanguageModelToolResultPart),
+        ) as Array<
+          | vscode.LanguageModelTextPart
+          | vscode.LanguageModelToolCallPart
+          | vscode.LanguageModelDataPart
+        >,
+      );
+    }
+    return vscode.LanguageModelChatMessage.User(
+      parts.filter(
+        (p) => !(p instanceof vscode.LanguageModelToolCallPart),
+      ) as Array<
+        | vscode.LanguageModelTextPart
+        | vscode.LanguageModelToolResultPart
+        | vscode.LanguageModelDataPart
+      >,
+    );
+  });
 };
 
 /**
@@ -217,9 +330,11 @@ export const convertGeminiSystemInstructionToVSCode = (
   instruction?: Content,
 ): vscode.LanguageModelChatMessage[] => {
   const parts = (instruction?.parts || [])
-    .map(convertGeminiPartToVSCodePart)
+    .map((part) => convertGeminiPartToVSCodePart(part))
     .filter((p) => !(p instanceof vscode.LanguageModelToolCallPart)) as Array<
-    vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart
+    | vscode.LanguageModelTextPart
+    | vscode.LanguageModelToolResultPart
+    | vscode.LanguageModelDataPart
   >;
 
   return parts.length > 0 ? [vscode.LanguageModelChatMessage.User(parts)] : [];

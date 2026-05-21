@@ -223,11 +223,14 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
       }
 
       // 5. Count input tokens
-      const requestBodyStr = JSON.stringify(requestBody);
-      logger.debug("/v1/responses payload:", requestBodyStr);
+      logger.debug("/v1/responses payload:");
+      logger.debug(JSON.stringify(requestBody, null, 2));
       const cancellationTokenSource = new vscode.CancellationTokenSource();
       const cancellationToken = cancellationTokenSource.token;
-      inputTokens = await client.countTokens(requestBodyStr, cancellationToken);
+      inputTokens = await client.countTokens(
+        JSON.stringify(requestBody),
+        cancellationToken,
+      );
 
       logger.info(
         `→ /v1/responses | model: ${
@@ -309,10 +312,8 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           metadata,
         };
 
-        logger.debug(
-          "/v1/responses response:",
-          JSON.stringify(responseObj, null, 2),
-        );
+        logger.debug("/v1/responses response:");
+        logger.debug(JSON.stringify(responseObj, null, 2));
         logger.info(
           `← /v1/responses | input: ${inputTokens} | output: ${outputTokens}`,
         );

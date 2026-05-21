@@ -61,8 +61,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         detail: "auto" as const,
       };
       const result = convertInputContentToVSCodePart(content);
-      // LanguageModelDataPart may not be available in test environment
-      assert.ok(result);
+      assert.ok(result instanceof vscode.LanguageModelDataPart);
     });
 
     test("should handle input_image with URL by falling back to JSON", () => {
