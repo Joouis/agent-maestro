@@ -150,11 +150,8 @@ export const closeMessageOutputItem = async (
  */
 const convertInputImageToVSCodePart = (
   content: ResponseInputImage,
-): vscode.LanguageModelTextPart => {
-  // Access LanguageModelDataPart which is not officially exposed in types
-  const LanguageModelDataPart = (vscode as any).LanguageModelDataPart;
-
-  if (content.image_url && LanguageModelDataPart) {
+): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
+  if (content.image_url) {
     // Parse data URI: data:image/png;base64,<data>
     const match = content.image_url.match(
       /^data:(image\/[\w+.-]+);base64,(.+)$/,
@@ -162,13 +159,13 @@ const convertInputImageToVSCodePart = (
     if (match) {
       const mimeType = match[1];
       const base64Data = match[2];
-      return new LanguageModelDataPart(
+      return new vscode.LanguageModelDataPart(
         Buffer.from(base64Data, "base64"),
         mimeType,
       );
     }
   }
-  // URL-based images, file_id, or LanguageModelDataPart not available - fallback to JSON
+  // URL-based images or file_id are not directly supported by VS Code LM.
   logger.warn("input_image not fully supported, serializing as JSON");
   return new vscode.LanguageModelTextPart(JSON.stringify(content));
 };
@@ -178,7 +175,7 @@ const convertInputImageToVSCodePart = (
  */
 export const convertInputContentToVSCodePart = (
   content: ResponseInputContent | ResponseOutputText,
-): vscode.LanguageModelTextPart => {
+): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
   switch (content.type) {
     case "input_text":
       return new vscode.LanguageModelTextPart(content.text ?? "");

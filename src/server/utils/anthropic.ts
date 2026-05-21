@@ -2,7 +2,6 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
-import { LanguageModelDataPart } from "../../utils/vscode";
 
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
@@ -10,11 +9,11 @@ const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
 const imageBlockParamToVSCodePart = (
   param: Anthropic.Messages.ImageBlockParam,
 ) => {
-  if (param.source.type === "url" || !LanguageModelDataPart) {
+  if (param.source.type === "url") {
     return new vscode.LanguageModelTextPart(JSON.stringify(param));
   }
 
-  return new LanguageModelDataPart(
+  return new vscode.LanguageModelDataPart(
     Buffer.from(param.source.data, "base64"),
     param.source.media_type,
   );
@@ -97,6 +96,7 @@ const convertContentToVSCodeParts = (
   | vscode.LanguageModelTextPart
   | vscode.LanguageModelToolResultPart
   | vscode.LanguageModelToolCallPart
+  | vscode.LanguageModelDataPart
 > => {
   if (typeof content === "string") {
     return [new vscode.LanguageModelTextPart(content)];
@@ -106,6 +106,7 @@ const convertContentToVSCodeParts = (
     | vscode.LanguageModelTextPart
     | vscode.LanguageModelToolResultPart
     | vscode.LanguageModelToolCallPart
+    | vscode.LanguageModelDataPart
   > = [];
 
   for (const block of content) {
@@ -114,12 +115,7 @@ const convertContentToVSCodeParts = (
         parts.push(textBlockParamToVSCodePart(block));
         break;
       case "image":
-        // Images are represented as text in VSCode LM API
-        parts.push(
-          imageBlockParamToVSCodePart(
-            block,
-          ) as unknown as vscode.LanguageModelTextPart,
-        );
+        parts.push(imageBlockParamToVSCodePart(block));
         break;
       case "document":
         // Skip document blocks as specified in original implementation
@@ -178,12 +174,16 @@ export const convertAnthropicMessageToVSCode = (
     message.role === "user"
       ? vscode.LanguageModelChatMessage.User(
           contentParts as Array<
-            vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart
+            | vscode.LanguageModelTextPart
+            | vscode.LanguageModelToolResultPart
+            | vscode.LanguageModelDataPart
           >,
         )
       : vscode.LanguageModelChatMessage.Assistant(
           contentParts as Array<
-            vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
+            | vscode.LanguageModelTextPart
+            | vscode.LanguageModelToolCallPart
+            | vscode.LanguageModelDataPart
           >,
         );
 
