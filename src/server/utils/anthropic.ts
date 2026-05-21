@@ -191,6 +191,216 @@ export const convertAnthropicMessageToVSCode = (
 };
 
 /**
+ * Result of validating tool_use ↔ tool_result pairing across a message list.
+ * `orphanIds` is the de-duplicated set of `tool_use_id`s referenced by a
+ * `tool_result` that has no matching `tool_use` in an earlier message.
+ */
+export type ToolPairingValidation =
+  | { ok: true }
+  | { ok: false; orphanIds: string[] };
+
+/**
+ * The Anthropic API requires every `tool_result` block to point at a
+ * `tool_use` that appeared in an earlier assistant message. When the request
+ * we're about to forward violates this, the upstream returns:
+ *   "unexpected `tool_use_id` found in `tool_result` blocks: <id>"
+ *
+ * We validate the same invariant locally before conversion so that:
+ *   1. Genuinely malformed client requests are rejected up-front with a 400,
+ *      rather than slipping through to vscode.lm and surfacing as a 500.
+ *   2. When vscode.lm later reports the same error class, we can be confident
+ *      the orphan was introduced downstream (typically Copilot's internal
+ *      message truncation) and treat it as a context-window event.
+ *
+ * Design choices when the rules are ambiguous:
+ *   - Only `assistant`-role `tool_use` blocks register ids. A `tool_use` in a
+ *     user message is itself protocol-illegal, but we don't treat it as a
+ *     "matching" use for a later `tool_result` — that would mask the bug.
+ *   - We accept a `tool_use` without a matching `tool_result` (in-flight or
+ *     intentionally dropped).
+ *   - We tolerate a `tool_use` and its `tool_result` co-located in the same
+ *     assistant message (registration happens in a first pass before the
+ *     result pass, making the verdict order-independent within one message).
+ *     A `tool_result` in a *user* message must still reference a `tool_use`
+ *     from an *earlier* assistant message — that is the only protocol-valid
+ *     placement, and is the case the wire bug actually breaks.
+ *   - All Anthropic SDK *success* result block types that carry a
+ *     `tool_use_id` are pooled into one id set against all `tool_use` /
+ *     `server_tool_use` blocks. The `*_tool_result_error` SDK variants
+ *     (e.g. `web_search_tool_result_error`) are *inner content* of those
+ *     success blocks, not top-level message blocks, and do not carry a
+ *     `tool_use_id` of their own — so they correctly aren't in this set.
+ *     Anthropic technically pairs result types to specific use types, but
+ *     we don't distinguish here because doing so adds little protection
+ *     and risks false positives. Recognized result types are kept in sync
+ *     with `@anthropic-ai/sdk` — extend `RESULT_BLOCK_TYPES` below when
+ *     new ones ship.
+ *
+ * Non-array / null / malformed inputs are treated as ok — schema validation
+ * is the route layer's responsibility; this function should never throw.
+ */
+export const validateAnthropicToolPairing = (
+  messages: Array<Anthropic.Messages.MessageParam>,
+): ToolPairingValidation => {
+  if (!Array.isArray(messages)) {
+    return { ok: true };
+  }
+
+  // Block types from `@anthropic-ai/sdk` that carry a `tool_use_id` referencing
+  // an earlier tool_use. Kept explicit (rather than suffix-matching) so adding
+  // a new SDK type is a deliberate, reviewable change.
+  const RESULT_BLOCK_TYPES = new Set<string>([
+    "tool_result",
+    "web_search_tool_result",
+    "web_fetch_tool_result",
+    "code_execution_tool_result",
+    "bash_code_execution_tool_result",
+    "text_editor_code_execution_tool_result",
+    "tool_search_tool_result",
+  ]);
+  const USE_BLOCK_TYPES = new Set<string>(["tool_use", "server_tool_use"]);
+
+  const knownToolUseIds = new Set<string>();
+  const orphanIds = new Set<string>();
+
+  for (const message of messages) {
+    if (!message || typeof message !== "object") {
+      continue;
+    }
+    const { role, content } = message;
+    if (content === null || content === undefined) {
+      continue;
+    }
+    if (typeof content === "string" || !Array.isArray(content)) {
+      continue;
+    }
+
+    // Two passes per message. The first registers every assistant-role
+    // tool_use id from this message so that a tool_result in the SAME
+    // message — including one whose block sits before its tool_use in the
+    // content array — can find its pair. A single forward pass would make
+    // the verdict order-sensitive within one message, which is wrong: the
+    // Anthropic protocol orders by message, not by block index inside a
+    // message's content. The cost is one extra cheap iteration per message.
+    for (const block of content) {
+      if (!block || typeof block !== "object" || !("type" in block)) {
+        continue;
+      }
+      if (!USE_BLOCK_TYPES.has(block.type)) {
+        continue;
+      }
+      // Only assistant-role tool_use blocks may register ids. A tool_use
+      // in a user message is itself out-of-spec; treating it as "known"
+      // would let a follow-up tool_result silently satisfy validation
+      // even though the upstream will still reject the conversation.
+      if (role !== "assistant") {
+        continue;
+      }
+      const { id } = block as { id?: unknown };
+      if (typeof id === "string" && id.length > 0) {
+        knownToolUseIds.add(id);
+      }
+    }
+
+    for (const block of content) {
+      if (!block || typeof block !== "object" || !("type" in block)) {
+        continue;
+      }
+      if (!RESULT_BLOCK_TYPES.has(block.type)) {
+        continue;
+      }
+      const { tool_use_id } = block as { tool_use_id?: unknown };
+      if (typeof tool_use_id !== "string" || tool_use_id.length === 0) {
+        continue;
+      }
+      if (!knownToolUseIds.has(tool_use_id)) {
+        orphanIds.add(tool_use_id);
+      }
+    }
+  }
+
+  if (orphanIds.size === 0) {
+    return { ok: true };
+  }
+  return { ok: false, orphanIds: Array.from(orphanIds) };
+};
+
+/**
+ * Thrown by `prepareAnthropicMessages` when the incoming request itself
+ * contains orphan `tool_result` blocks. Routes should map this to a 400
+ * `invalid_request_error` rather than letting it reach vscode.lm.
+ */
+export class OrphanToolResultError extends Error {
+  readonly orphanIds: string[];
+
+  constructor(orphanIds: string[]) {
+    super(
+      `Request contains tool_result block(s) with no matching tool_use in any earlier assistant message: ${orphanIds.join(", ")}`,
+    );
+    this.name = "OrphanToolResultError";
+    this.orphanIds = orphanIds;
+    // Preserve the prototype chain across transpilation boundaries so that
+    // `err instanceof OrphanToolResultError` works in all consumers.
+    Object.setPrototypeOf(this, OrphanToolResultError.prototype);
+  }
+}
+
+/**
+ * vscode.lm surfaces this exact substring when the message array forwarded
+ * to the upstream contains a `tool_result` whose `tool_use_id` doesn't match
+ * any prior `tool_use`. Because routes run `validateAnthropicToolPairing`
+ * before forwarding, any request that reaches vscode.lm is known to be
+ * well-formed at our boundary — so this error string only fires when
+ * something between us and the upstream dropped a tool_use but kept its
+ * tool_result. There are two known causes (see `isInputAtOrOverCapacity`):
+ *
+ *   1. Copilot's internal message truncation as it approaches its context
+ *      window — a *capacity* problem, recoverable via auto-compact.
+ *   2. Some other Copilot-side bug (also reported by litellm users) that
+ *      can produce this error even when capacity is well below the limit.
+ *
+ * This helper only confirms the error *shape*. Routes pair it with
+ * `isInputAtOrOverCapacity` to decide whether to translate (case 1) or
+ * rethrow (case 2 — let the underlying bug surface so it can be reported
+ * upstream).
+ */
+export const isDownstreamTruncationOrphan = (errorMessage: string): boolean =>
+  errorMessage.includes(
+    "unexpected `tool_use_id` found in `tool_result` blocks",
+  );
+
+/**
+ * True when the calibrated input token count is at or over the model's
+ * advertised max input capacity. Used together with
+ * `isDownstreamTruncationOrphan` to disambiguate which of the two known
+ * causes produced an orphan error: a *capacity-driven* orphan (this returns
+ * true) is recoverable via Claude Code auto-compact, so we translate it to
+ * `model_context_window_exceeded`; a *capacity-clear* orphan (this returns
+ * false) is almost certainly a Copilot-side bug, and the right move is to
+ * let it propagate so the upstream bug stays visible.
+ *
+ * Calibrated tokens are produced by `countAnthropicMessageTokens`, which
+ * applies `agent-maestro.anthropic.tokenCountScaleFactor` (default 1.25) on
+ * top of vscode.lm's count. That scale factor is *also* the safety margin
+ * here: a calibrated value at the cap means the raw vscode.lm count is at
+ * 1 / 1.25 ≈ 80% of the cap — already in the band where Copilot's internal
+ * truncation kicks in. Users can tune the scale factor to widen or narrow
+ * this band; we deliberately don't introduce a separate threshold knob.
+ *
+ * Returns false for non-positive `maxInputTokens` (the model didn't
+ * advertise a cap, so we can't reason about capacity at all).
+ */
+export const isInputAtOrOverCapacity = (
+  inputTokensCalibrated: number,
+  maxInputTokens: number,
+): boolean => {
+  if (!Number.isFinite(maxInputTokens) || maxInputTokens <= 0) {
+    return false;
+  }
+  return inputTokensCalibrated >= maxInputTokens;
+};
+
+/**
  * Convert an array of Anthropic MessageParams to VS Code LanguageModelChatMessages
  * Flattens any array results from individual message conversions
  *
