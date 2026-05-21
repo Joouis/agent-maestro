@@ -2,4 +2,4 @@
 "agent-maestro": patch
 ---
 
-Remove unsupported cache token KPI/detail capture UI from dashboard metrics and keep request details focused on available data.
+Remove the unsupported cache-token KPIs and the Detail capture card from the dashboard, keeping metrics aligned with data the server actually collects.
