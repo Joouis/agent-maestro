@@ -35,8 +35,6 @@ type MetricsTokenInfo = {
   outputTokens?: number;
   ttftMs?: number;
   model?: string;
-  cacheCreationInputTokens?: number;
-  cacheReadInputTokens?: number;
 };
 
 function detectEndpoint(path: string): ApiEndpoint {
@@ -153,8 +151,6 @@ export function finishMetricsRequest(
       responseHeaders: c.res
         ? pickHeaders(c.res.headers, SAFE_RESPONSE_HEADERS)
         : undefined,
-      cacheCreationInputTokens: info.cacheCreationInputTokens,
-      cacheReadInputTokens: info.cacheReadInputTokens,
     },
   });
 }

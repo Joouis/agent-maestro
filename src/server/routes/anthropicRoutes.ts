@@ -367,8 +367,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         recordMetricsTokens(c, {
           inputTokens: inputTokenCount.calibrated,
           outputTokens: outputTokenCount.calibrated,
-          cacheCreationInputTokens: 0,
-          cacheReadInputTokens: 0,
           model: effectiveModelId ?? model,
         });
 
@@ -543,8 +541,6 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
             streaming: true,
             inputTokens: inputTokenCount.calibrated,
             outputTokens: outputTokenCount.calibrated,
-            cacheCreationInputTokens: 0,
-            cacheReadInputTokens: 0,
             ttftMs,
             model: effectiveModelId ?? model,
           });

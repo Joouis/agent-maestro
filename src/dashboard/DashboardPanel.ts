@@ -219,13 +219,6 @@ export class DashboardPanel {
   <div class="card"><div class="label">Output tokens (total)</div><div class="value" id="kpiOutput">0</div></div>
 </div>
 
-<div class="grid">
-  <div class="card"><div class="label">Cache read tokens</div><div class="value" id="kpiCacheRead">0</div></div>
-  <div class="card"><div class="label">Cache creation tokens</div><div class="value" id="kpiCacheCreate">0</div></div>
-  <div class="card"><div class="label">Cache hit rate</div><div class="value" id="kpiCacheHit">—</div><div class="sub">read / input</div></div>
-  <div class="card"><div class="label">Detail capture</div><div class="value">Safe</div><div class="sub">headers only, no bodies</div></div>
-</div>
-
 <div class="section">
   <h2>Latency percentiles (5m)</h2>
   <div class="row">
@@ -292,6 +285,8 @@ export class DashboardPanel {
     return '';
   }
 
+  const expandedRequestIds = new Set();
+
   function render(snap) {
     document.getElementById('kpiActive').textContent = snap.activeRequests;
     document.getElementById('kpiTps').textContent = snap.rolling.avgTokensPerSecond ? snap.rolling.avgTokensPerSecond.toFixed(1) : '—';
@@ -303,9 +298,6 @@ export class DashboardPanel {
     document.getElementById('kpiErrors').textContent = fmt(snap.totals.errors);
     document.getElementById('kpiInput').textContent = fmtCompact(snap.totals.inputTokens);
     document.getElementById('kpiOutput').textContent = fmtCompact(snap.totals.outputTokens);
-    document.getElementById('kpiCacheRead').textContent = fmtCompact(snap.totals.cacheReadInputTokens);
-    document.getElementById('kpiCacheCreate').textContent = fmtCompact(snap.totals.cacheCreationInputTokens);
-    document.getElementById('kpiCacheHit').textContent = snap.totals.inputTokens ? fmtPct(snap.totals.cacheReadInputTokens / snap.totals.inputTokens) : '—';
 
     document.getElementById('p50').textContent = fmtDuration(snap.rolling.p50DurationMs);
     document.getElementById('p95').textContent = fmtDuration(snap.rolling.p95DurationMs);
@@ -333,16 +325,21 @@ export class DashboardPanel {
 
     const recentBody = document.querySelector('#recentTable tbody');
     const rows = snap.recent.slice().reverse().slice(0, 50);
+    const visibleRequestIds = new Set(rows.map(r => r.id));
+    expandedRequestIds.forEach((id) => {
+      if (!visibleRequestIds.has(id)) {
+        expandedRequestIds.delete(id);
+      }
+    });
     recentBody.innerHTML = rows.length
       ? rows.map(r => renderRequestRow(r)).join('')
       : '<tr><td colspan="10" class="empty">No requests yet — send a request to your proxy</td></tr>';
   }
 
   function renderRequestRow(r) {
+    const expanded = expandedRequestIds.has(r.id);
     const startedAtTime = new Date(r.startedAt).toLocaleTimeString();
     const badge = badgeForStatus(r.status);
-    const cacheRead = r.details?.cacheReadInputTokens ?? 0;
-    const cacheCreate = r.details?.cacheCreationInputTokens ?? 0;
     const detail = {
       id: r.id,
       method: r.method,
@@ -355,9 +352,6 @@ export class DashboardPanel {
       streaming: r.streaming,
       inputTokens: r.inputTokens ?? null,
       outputTokens: r.outputTokens ?? null,
-      cacheReadInputTokens: cacheRead,
-      cacheCreationInputTokens: cacheCreate,
-      cacheHitRate: r.inputTokens ? fmtPct(cacheRead / r.inputTokens) : null,
       error: r.error ?? null,
       requestHeaders: r.details?.requestHeaders ?? {},
       responseHeaders: r.details?.responseHeaders ?? {},
@@ -373,7 +367,7 @@ export class DashboardPanel {
       '<td class="num">' + (r.outputTokens ? fmtCompact(r.outputTokens) : '—') + '</td>' +
       '<td class="num">' + (r.tokensPerSecond ? r.tokensPerSecond.toFixed(1) : '—') + '</td>' +
       '<td>' + (r.model ? escapeHtml(r.model) : '—') + '</td>' +
-    '</tr><tr class="detail-row" data-detail-for="' + escapeHtml(r.id) + '" hidden><td colspan="10"><div class="detail-grid">' +
+    '</tr><tr class="detail-row" data-detail-for="' + escapeHtml(r.id) + '"' + (expanded ? '' : ' hidden') + '><td colspan="10"><div class="detail-grid">' +
       '<div><div class="detail-title">Summary</div><pre>' + escapeHtml(JSON.stringify(detail, null, 2)) + '</pre></div>' +
       '<div><div class="detail-title">Safe headers</div><pre>' + escapeHtml(JSON.stringify({ request: detail.requestHeaders, response: detail.responseHeaders }, null, 2)) + '</pre></div>' +
     '</div></td></tr>';
@@ -391,8 +385,17 @@ export class DashboardPanel {
   document.getElementById('recentTable').addEventListener('click', (event) => {
     const row = event.target.closest('.request-row');
     if (!row) return;
-    const detail = document.querySelector('[data-detail-for="' + row.dataset.requestId + '"]');
-    if (detail) detail.hidden = !detail.hidden;
+    const requestId = row.dataset.requestId;
+    if (!requestId) return;
+    if (expandedRequestIds.has(requestId)) {
+      expandedRequestIds.delete(requestId);
+    } else {
+      expandedRequestIds.add(requestId);
+    }
+    const detail = document.querySelector('[data-detail-for="' + requestId + '"]');
+    if (detail) {
+      detail.hidden = !expandedRequestIds.has(requestId);
+    }
   });
 
   document.getElementById('resetBtn').addEventListener('click', () => {
