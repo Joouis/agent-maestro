@@ -250,9 +250,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
         (result[0].content[0] as vscode.LanguageModelTextPart).value,
         "What is in this image?",
       );
-      // LanguageModelDataPart may not be available in test environment,
-      // so the image part could be either a DataPart or a TextPart fallback
-      assert.ok(result[0].content[1]);
+      assert.ok(result[0].content[1] instanceof vscode.LanguageModelDataPart);
     });
 
     test("should handle image_url with non-data-URI by falling back to JSON", () => {

@@ -296,8 +296,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.ok(toolResultPart instanceof vscode.LanguageModelToolResultPart);
       assert.strictEqual(toolResultPart.callId, "tool-456");
       assert.strictEqual(toolResultPart.content.length, 1);
-      // LanguageModelDataPart may not be available in the test environment,
-      // so the image part could be either a DataPart or a TextPart fallback.
+      // URL images fall back to text, while base64 image blocks use DataPart.
       // The key regression check is that it is NOT a JSON-stringified blob:
       // before this fix, the image block was serialized via JSON.stringify(c)
       // and the resulting TextPart's value started with `{"type":"image"`.

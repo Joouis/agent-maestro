@@ -116,7 +116,8 @@ const convertGeminiPartToVSCodePart = (
 ):
   | vscode.LanguageModelTextPart
   | vscode.LanguageModelToolCallPart
-  | vscode.LanguageModelToolResultPart => {
+  | vscode.LanguageModelToolResultPart
+  | vscode.LanguageModelDataPart => {
   // Text part
   if (part.text !== undefined) {
     return new vscode.LanguageModelTextPart(part.text);
@@ -157,22 +158,14 @@ const convertGeminiPartToVSCodePart = (
     }
   }
 
-  // Inline data (images, etc.) - try to use LanguageModelDataPart if available
+  // Inline data (images, etc.)
   if (part.inlineData) {
-    const LanguageModelDataPart = (vscode as any).LanguageModelDataPart;
-    if (LanguageModelDataPart && part.inlineData.data) {
-      try {
-        const buffer = Buffer.from(part.inlineData.data, "base64");
-        return new LanguageModelDataPart(
-          buffer,
-          part.inlineData.mimeType || "application/octet-stream",
-        );
-      } catch {
-        // Fallback to text representation
-        return new vscode.LanguageModelTextPart(
-          JSON.stringify(part.inlineData),
-        );
-      }
+    if (part.inlineData.data) {
+      const buffer = Buffer.from(part.inlineData.data, "base64");
+      return new vscode.LanguageModelDataPart(
+        buffer,
+        part.inlineData.mimeType || "application/octet-stream",
+      );
     }
     // Fallback to text representation
     return new vscode.LanguageModelTextPart(JSON.stringify(part.inlineData));
@@ -204,7 +197,9 @@ export const convertGeminiContentToVSCode = (
       parts.filter(
         (p) => !(p instanceof vscode.LanguageModelToolResultPart),
       ) as Array<
-        vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
+        | vscode.LanguageModelTextPart
+        | vscode.LanguageModelToolCallPart
+        | vscode.LanguageModelDataPart
       >,
     );
   }
@@ -213,7 +208,9 @@ export const convertGeminiContentToVSCode = (
     parts.filter(
       (p) => !(p instanceof vscode.LanguageModelToolCallPart),
     ) as Array<
-      vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart
+      | vscode.LanguageModelTextPart
+      | vscode.LanguageModelToolResultPart
+      | vscode.LanguageModelDataPart
     >,
   );
 };
@@ -307,7 +304,9 @@ export const convertGeminiContentsToVSCode = (
         parts.filter(
           (p) => !(p instanceof vscode.LanguageModelToolResultPart),
         ) as Array<
-          vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
+          | vscode.LanguageModelTextPart
+          | vscode.LanguageModelToolCallPart
+          | vscode.LanguageModelDataPart
         >,
       );
     }
@@ -315,7 +314,9 @@ export const convertGeminiContentsToVSCode = (
       parts.filter(
         (p) => !(p instanceof vscode.LanguageModelToolCallPart),
       ) as Array<
-        vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart
+        | vscode.LanguageModelTextPart
+        | vscode.LanguageModelToolResultPart
+        | vscode.LanguageModelDataPart
       >,
     );
   });
@@ -331,7 +332,9 @@ export const convertGeminiSystemInstructionToVSCode = (
   const parts = (instruction?.parts || [])
     .map((part) => convertGeminiPartToVSCodePart(part))
     .filter((p) => !(p instanceof vscode.LanguageModelToolCallPart)) as Array<
-    vscode.LanguageModelTextPart | vscode.LanguageModelToolResultPart
+    | vscode.LanguageModelTextPart
+    | vscode.LanguageModelToolResultPart
+    | vscode.LanguageModelDataPart
   >;
 
   return parts.length > 0 ? [vscode.LanguageModelChatMessage.User(parts)] : [];

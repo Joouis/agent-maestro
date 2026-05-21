@@ -7,7 +7,6 @@ import * as vscode from "vscode";
 import { chatModelsCache, getChatModelClient } from "../../utils/chatModels";
 import { resolveClaudeCodeModelId } from "../../utils/claude";
 import { logger } from "../../utils/logger";
-import { LanguageModelDataPart } from "../../utils/vscode";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
   type AnthropicTokenUsage,
@@ -430,10 +429,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
               });
 
               accumulatedText += JSON.stringify(chunk);
-            } else if (
-              LanguageModelDataPart &&
-              chunk instanceof LanguageModelDataPart
-            ) {
+            } else if (chunk instanceof vscode.LanguageModelDataPart) {
               responseUsage =
                 extractAnthropicTokenUsageFromVSCodeChunk(chunk) ??
                 responseUsage;
@@ -609,10 +605,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
                 });
 
                 accumulatedText += JSON.stringify(chunk);
-              } else if (
-                LanguageModelDataPart &&
-                chunk instanceof LanguageModelDataPart
-              ) {
+              } else if (chunk instanceof vscode.LanguageModelDataPart) {
                 responseUsage =
                   extractAnthropicTokenUsageFromVSCodeChunk(chunk) ??
                   responseUsage;
