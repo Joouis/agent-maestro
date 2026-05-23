@@ -372,11 +372,18 @@ export const countAnthropicMessageTokens = async (
     .getConfiguration("agent-maestro.anthropic")
     .get<number>("tokenCountScaleFactor", DEFAULT_TOKEN_SCALE_FACTOR);
 
-  const cancellationToken = new vscode.CancellationTokenSource().token;
-  const tokenCount = await client.countTokens(message, cancellationToken);
+  const cancellationTokenSource = new vscode.CancellationTokenSource();
+  try {
+    const tokenCount = await client.countTokens(
+      message,
+      cancellationTokenSource.token,
+    );
 
-  return {
-    original: tokenCount,
-    calibrated: Math.round(tokenCount * scaleFactor),
-  };
+    return {
+      original: tokenCount,
+      calibrated: Math.round(tokenCount * scaleFactor),
+    };
+  } finally {
+    cancellationTokenSource.dispose();
+  }
 };

@@ -93,6 +93,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let requestedModelId = "";
     let inputTokens = 0;
+    let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
 
     try {
       // Parse and validate request body
@@ -121,7 +122,8 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
 
       logger.debug("/v1/chat/completions payload:");
       logger.debug(JSON.stringify(requestBody, null, 2));
-      const cancellationToken = new vscode.CancellationTokenSource().token;
+      cancellationTokenSource = new vscode.CancellationTokenSource();
+      const cancellationToken = cancellationTokenSource.token;
 
       logger.info(
         `→ /v1/chat/completions | model: ${
@@ -220,6 +222,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
           `← /v1/chat/completions | input: ${completionUsage.prompt_tokens} | cache_read: ${completionUsage.prompt_tokens_details?.cached_tokens ?? 0} | output: ${completionUsage.completion_tokens}`,
         );
 
+        cancellationTokenSource.dispose();
         return c.json(openaiResponse);
       }
 
@@ -365,9 +368,11 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
           logger.info(
             `← /v1/chat/completions (stream) | input: ${completionUsage.prompt_tokens} | cache_read: ${completionUsage.prompt_tokens_details?.cached_tokens ?? 0} | output: ${completionUsage.completion_tokens}`,
           );
+          cancellationTokenSource?.dispose();
         },
         async (error, stream) => {
           logger.error("✕ /v1/chat/completions (stream) |", error);
+          cancellationTokenSource?.dispose();
 
           // Send error chunk to client before closing
           const errorMessage =
@@ -394,6 +399,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
         },
       );
     } catch (error) {
+      cancellationTokenSource?.dispose();
       logger.error("✕ /v1/chat/completions |", error);
 
       const logFilePath = await handleErrorWithLogging({

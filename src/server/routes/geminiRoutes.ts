@@ -30,9 +30,11 @@ import {
 const prepareGeminiRequest = async ({
   requestBody,
   client,
+  cancellationToken,
 }: {
   requestBody: GenerateContentRequest;
   client: vscode.LanguageModelChat;
+  cancellationToken: vscode.CancellationToken;
 }) => {
   logger.debug("Gemini request payload:");
   logger.debug(JSON.stringify(requestBody, null, 2));
@@ -50,7 +52,6 @@ const prepareGeminiRequest = async ({
   // We pass the stringified request body to VSCode's countTokens() API, which is technically
   // a misuse since it's designed for LanguageModelChatMessage objects. However, we intentionally
   // do this to leverage the official tokenizer instead of building our own wheel.
-  const cancellationToken = new vscode.CancellationTokenSource().token;
   const inputTokenCount = await client.countTokens(
     JSON.stringify(requestBody),
     cancellationToken,
@@ -70,7 +71,6 @@ const prepareGeminiRequest = async ({
   return {
     vsCodeLmMessages,
     inputTokenCount,
-    cancellationToken,
     lmRequestOptions,
   };
 };
@@ -294,6 +294,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let modelId = "";
     let inputTokens = 0;
+    let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
 
     try {
       // Parse request
@@ -319,12 +320,13 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       }
 
       // 2. Prepare request
-      const {
-        vsCodeLmMessages,
-        inputTokenCount,
-        cancellationToken,
-        lmRequestOptions,
-      } = await prepareGeminiRequest({ requestBody, client });
+      cancellationTokenSource = new vscode.CancellationTokenSource();
+      const { vsCodeLmMessages, inputTokenCount, lmRequestOptions } =
+        await prepareGeminiRequest({
+          requestBody,
+          client,
+          cancellationToken: cancellationTokenSource.token,
+        });
       lmChatMessages = vsCodeLmMessages;
       inputTokens = inputTokenCount;
 
@@ -338,7 +340,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       const response = await client.sendRequest(
         vsCodeLmMessages,
         lmRequestOptions,
-        cancellationToken,
+        cancellationTokenSource.token,
       );
 
       // 4. Process response (always non-streaming for generateContent)
@@ -394,8 +396,10 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         `← /v1beta/models/${modelWithMethod} | input: ${inputTokenCount} | output: ${outputTokenCount}`,
       );
 
+      cancellationTokenSource.dispose();
       return c.json(geminiResponse, 200);
     } catch (error) {
+      cancellationTokenSource?.dispose();
       logger.error(`✕ /v1beta/models/${modelId}:generateContent |`, error);
 
       const logFilePath = await handleErrorWithLogging({
@@ -430,6 +434,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
       let modelId = "";
       let inputTokens = 0;
+      let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
 
       try {
         // Parse request
@@ -456,12 +461,13 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         }
 
         // 2. Prepare request
-        const {
-          vsCodeLmMessages,
-          inputTokenCount,
-          cancellationToken,
-          lmRequestOptions,
-        } = await prepareGeminiRequest({ requestBody, client });
+        cancellationTokenSource = new vscode.CancellationTokenSource();
+        const { vsCodeLmMessages, inputTokenCount, lmRequestOptions } =
+          await prepareGeminiRequest({
+            requestBody,
+            client,
+            cancellationToken: cancellationTokenSource.token,
+          });
         lmChatMessages = vsCodeLmMessages;
         inputTokens = inputTokenCount;
 
@@ -475,7 +481,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         const response = await client.sendRequest(
           vsCodeLmMessages,
           lmRequestOptions,
-          cancellationToken,
+          cancellationTokenSource.token,
         );
 
         // 4. Always stream the response
@@ -563,12 +569,14 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             logger.info(
               `← /v1beta/models/${modelWithMethod} (stream) | input: ${inputTokenCount} | output: ${outputTokenCount}`,
             );
+            cancellationTokenSource?.dispose();
           },
           async (error, stream) => {
             logger.error(
               `✕ /v1beta/models/${modelWithMethod} (stream) |`,
               error,
             );
+            cancellationTokenSource?.dispose();
 
             // Send final chunk with error finish reason
             const errorChunk: GenerateContentResponse = {
@@ -601,6 +609,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           },
         );
       } catch (error) {
+        cancellationTokenSource?.dispose();
         logger.error(
           `✕ /v1beta/models/${modelId}:streamGenerateContent |`,
           error,
@@ -636,6 +645,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
   // POST /v1beta/models/{model}:countTokens
   app.openapi(countTokensRoute, async (c: Context) => {
     let modelId = "";
+    let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
     try {
       // Parse request
       const { modelWithMethod } = c.req.param();
@@ -659,10 +669,13 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       }
 
       // 2. Prepare request and get token count
+      cancellationTokenSource = new vscode.CancellationTokenSource();
       const { inputTokenCount } = await prepareGeminiRequest({
         requestBody,
         client,
+        cancellationToken: cancellationTokenSource.token,
       });
+      cancellationTokenSource.dispose();
 
       logger.info(
         `→ /v1beta/models/${modelWithMethod} | model: ${
@@ -678,6 +691,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         200,
       );
     } catch (error) {
+      cancellationTokenSource?.dispose();
       logger.error(`✕ /v1beta/models/${modelId}:countTokens |`, error);
       return c.json(
         {

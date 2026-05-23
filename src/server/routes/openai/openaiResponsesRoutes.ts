@@ -116,6 +116,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let requestedModelId = "";
     let inputTokens = 0;
+    let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
 
     try {
       // 1. Parse request and extract fields
@@ -225,7 +226,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
 
       logger.debug("/v1/responses payload:");
       logger.debug(JSON.stringify(requestBody, null, 2));
-      const cancellationTokenSource = new vscode.CancellationTokenSource();
+      cancellationTokenSource = new vscode.CancellationTokenSource();
       const cancellationToken = cancellationTokenSource.token;
 
       logger.info(
@@ -546,8 +547,6 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
             outputIndex++;
           }
 
-          cancellationTokenSource.dispose();
-
           if (!responseUsage) {
             const [fallbackInputTokens, outputTokens] = await Promise.all([
               client.countTokens(
@@ -584,10 +583,11 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           logger.info(
             `← /v1/responses (stream) | input: ${responseUsage.input_tokens} | cache_read: ${responseUsage.input_tokens_details.cached_tokens} | output: ${responseUsage.output_tokens}`,
           );
+          cancellationTokenSource?.dispose();
         },
         async (error, sseStream) => {
           logger.error("✕ /v1/responses (stream) |", error);
-          cancellationTokenSource.dispose();
+          cancellationTokenSource?.dispose();
 
           const responseId = generateResponseId();
           const createdAt = getCurrentTimestamp();
@@ -617,6 +617,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         },
       );
     } catch (error) {
+      cancellationTokenSource?.dispose();
       logger.error("✕ /v1/responses |", error);
 
       const logFilePath = await handleErrorWithLogging({
