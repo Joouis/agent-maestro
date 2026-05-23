@@ -15,7 +15,7 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
   countAnthropicMessageTokens,
-  extractAnthropicTokenUsageFromVSCodeChunk,
+  extractAnthropicUsage,
 } from "../utils/anthropic";
 import {
   createAnthropicModelsResponse,
@@ -39,11 +39,8 @@ const prepareAnthropicMessages = async ({
     ...convertAnthropicMessagesToVSCode(messages),
   ];
 
-  const cancellationToken = new vscode.CancellationTokenSource().token;
-
   return {
     vsCodeLmMessages,
-    cancellationToken,
   };
 };
 
@@ -322,6 +319,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
     let effectiveModelId = "";
     let rawRequestBody;
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
+    let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
 
     try {
       // Parse request body
@@ -356,11 +354,12 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       let client = initialClient!;
 
       // 3. Map Anthropic messages to VS Code LM API messages
-      const { vsCodeLmMessages, cancellationToken } =
-        await prepareAnthropicMessages({
-          requestBody: { ...requestBody, model: resolvedModel },
-        });
+      const { vsCodeLmMessages } = await prepareAnthropicMessages({
+        requestBody: { ...requestBody, model: resolvedModel },
+      });
       lmChatMessages = vsCodeLmMessages;
+      cancellationTokenSource = new vscode.CancellationTokenSource();
+      const cancellationToken = cancellationTokenSource.token;
       logger.info(
         `→ /v1/messages | model: ${
           model === effectiveModelId ? model : `${model} → ${effectiveModelId}`
@@ -430,9 +429,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
               accumulatedText += JSON.stringify(chunk);
             } else if (chunk instanceof vscode.LanguageModelDataPart) {
-              responseUsage =
-                extractAnthropicTokenUsageFromVSCodeChunk(chunk) ??
-                responseUsage;
+              responseUsage = extractAnthropicUsage(chunk) ?? responseUsage;
             }
           }
         } catch (streamError) {
@@ -484,6 +481,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           `← /v1/messages | input: ${usage.input_tokens} | cache_read: ${usage.cache_read_input_tokens} | cache_creation: ${usage.cache_creation_input_tokens} | output: ${usage.output_tokens}`,
         );
 
+        cancellationTokenSource.dispose();
         return c.json(resp);
       }
 
@@ -606,9 +604,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
                 accumulatedText += JSON.stringify(chunk);
               } else if (chunk instanceof vscode.LanguageModelDataPart) {
-                responseUsage =
-                  extractAnthropicTokenUsageFromVSCodeChunk(chunk) ??
-                  responseUsage;
+                responseUsage = extractAnthropicUsage(chunk) ?? responseUsage;
               }
             }
           } catch (streamError) {
@@ -663,12 +659,15 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
           logger.info(
             `← /v1/messages (stream) | input: ${usage.input_tokens} | cache_read: ${usage.cache_read_input_tokens} | cache_creation: ${usage.cache_creation_input_tokens} | output: ${usage.output_tokens}`,
           );
+          cancellationTokenSource?.dispose();
         },
         async (error, _stream) => {
           logger.error("✕ /v1/messages |", error);
+          cancellationTokenSource?.dispose();
         },
       );
     } catch (error) {
+      cancellationTokenSource?.dispose();
       logger.error("✕ /v1/messages |", error);
 
       const logFilePath = await handleErrorWithLogging({

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9.2 - 2026.05.23
+
+- Use Copilot usage metadata for OpenAI-compatible chat completions and responses when available, including cached input and reasoning token details.
+
 ## v2.9.1 - 2026.05.21
 
 - Use Copilot usage metadata from VS Code language model responses to report Anthropic-compatible input, output, and prompt cache token counts, with the previous token estimation path retained for count_tokens and fallback usage. Also raise the minimum VS Code engine to `^1.120.0`.

@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 
-import { extractOpenAIChatTokenUsageFromVSCodeChunk } from "../../server/utils/openai";
+import { extractOpenAIChatUsage } from "../../server/utils/openai";
 import {
   convertOpenAIChatCompletionToolToVSCode,
   convertOpenAIMessagesToVSCode,
@@ -381,9 +381,9 @@ suite("OpenAI Conversion Utils Test Suite", () => {
     });
   });
 
-  suite("extractOpenAIChatTokenUsageFromVSCodeChunk", () => {
+  suite("extractOpenAIChatUsage", () => {
     test("should map Copilot usage metadata to OpenAI chat usage", () => {
-      const result = extractOpenAIChatTokenUsageFromVSCodeChunk({
+      const result = extractOpenAIChatUsage({
         mimeType: "usage",
         data: encode({
           prompt_tokens: 10445,
@@ -412,7 +412,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
     });
 
     test("should return undefined for non-usage data parts", () => {
-      const result = extractOpenAIChatTokenUsageFromVSCodeChunk({
+      const result = extractOpenAIChatUsage({
         mimeType: "stateful_marker",
         data: encode({ prompt_tokens: 1, completion_tokens: 1 }),
       });
@@ -421,7 +421,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
     });
 
     test("should return undefined for malformed JSON", () => {
-      const result = extractOpenAIChatTokenUsageFromVSCodeChunk({
+      const result = extractOpenAIChatUsage({
         mimeType: "usage",
         data: new TextEncoder().encode("not json {"),
       });
@@ -430,7 +430,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
     });
 
     test("should return undefined when prompt_tokens is missing", () => {
-      const result = extractOpenAIChatTokenUsageFromVSCodeChunk({
+      const result = extractOpenAIChatUsage({
         mimeType: "usage",
         data: encode({ completion_tokens: 1 }),
       });
@@ -439,7 +439,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
     });
 
     test("should return undefined when completion_tokens is negative", () => {
-      const result = extractOpenAIChatTokenUsageFromVSCodeChunk({
+      const result = extractOpenAIChatUsage({
         mimeType: "usage",
         data: encode({ prompt_tokens: 1, completion_tokens: -1 }),
       });
@@ -448,7 +448,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
     });
 
     test("should fall back to prompt plus completion when total is invalid", () => {
-      const result = extractOpenAIChatTokenUsageFromVSCodeChunk({
+      const result = extractOpenAIChatUsage({
         mimeType: "usage",
         data: encode({
           prompt_tokens: 100,
@@ -461,7 +461,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
     });
 
     test("should keep zero total tokens when provided", () => {
-      const result = extractOpenAIChatTokenUsageFromVSCodeChunk({
+      const result = extractOpenAIChatUsage({
         mimeType: "usage",
         data: encode({
           prompt_tokens: 100,
