@@ -15,7 +15,7 @@ import {
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
   countAnthropicMessageTokens,
-  extractAnthropicTokenUsageFromVSCodeChunk,
+  extractAnthropicUsage,
 } from "../utils/anthropic";
 import {
   createAnthropicModelsResponse,
@@ -430,9 +430,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
               accumulatedText += JSON.stringify(chunk);
             } else if (chunk instanceof vscode.LanguageModelDataPart) {
-              responseUsage =
-                extractAnthropicTokenUsageFromVSCodeChunk(chunk) ??
-                responseUsage;
+              responseUsage = extractAnthropicUsage(chunk) ?? responseUsage;
             }
           }
         } catch (streamError) {
@@ -606,9 +604,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
                 accumulatedText += JSON.stringify(chunk);
               } else if (chunk instanceof vscode.LanguageModelDataPart) {
-                responseUsage =
-                  extractAnthropicTokenUsageFromVSCodeChunk(chunk) ??
-                  responseUsage;
+                responseUsage = extractAnthropicUsage(chunk) ?? responseUsage;
               }
             }
           } catch (streamError) {

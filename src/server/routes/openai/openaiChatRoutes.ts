@@ -8,7 +8,7 @@ import { getChatModelClient } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
-import { extractOpenAIChatTokenUsageFromVSCodeChunk } from "../../utils/openai";
+import { extractOpenAIChatUsage } from "../../utils/openai";
 import {
   convertOpenAIChatCompletionToolToVSCode,
   convertOpenAIMessagesToVSCode,
@@ -173,9 +173,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
               },
             });
           } else if (chunk instanceof vscode.LanguageModelDataPart) {
-            completionUsage =
-              extractOpenAIChatTokenUsageFromVSCodeChunk(chunk) ??
-              completionUsage;
+            completionUsage = extractOpenAIChatUsage(chunk) ?? completionUsage;
           }
           accumulatedText += JSON.stringify(chunk);
         }
@@ -314,8 +312,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
               });
             } else if (chunk instanceof vscode.LanguageModelDataPart) {
               completionUsage =
-                extractOpenAIChatTokenUsageFromVSCodeChunk(chunk) ??
-                completionUsage;
+                extractOpenAIChatUsage(chunk) ?? completionUsage;
             }
             accumulatedText += JSON.stringify(chunk);
           }

@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import { extractCopilotUsagePayload } from "./copilotUsage";
 
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
@@ -311,36 +312,11 @@ export interface TokenCounts {
   calibrated: number; // Scaled token count approximating actual API usage
 }
 
-interface CopilotUsagePayload {
-  completion_tokens: number;
-  prompt_tokens: number;
-  prompt_tokens_details?: {
-    cache_creation_input_tokens?: number;
-    cached_tokens?: number;
-  };
-}
-
 export interface AnthropicTokenUsage {
   cache_creation_input_tokens: number;
   cache_read_input_tokens: number;
   input_tokens: number;
   output_tokens: number;
-}
-
-function isCopilotUsagePayload(value: unknown): value is CopilotUsagePayload {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const usage = value as Partial<CopilotUsagePayload>;
-  return (
-    typeof usage.prompt_tokens === "number" &&
-    Number.isFinite(usage.prompt_tokens) &&
-    usage.prompt_tokens >= 0 &&
-    typeof usage.completion_tokens === "number" &&
-    Number.isFinite(usage.completion_tokens) &&
-    usage.completion_tokens >= 0
-  );
 }
 
 const clampNonNegative = (value: number | undefined): number =>
@@ -350,39 +326,31 @@ const clampNonNegative = (value: number | undefined): number =>
  * Decodes Copilot usage metadata from a VS Code LM `LanguageModelDataPart`.
  * Caller is responsible for verifying the chunk is a data part.
  */
-export function extractAnthropicTokenUsageFromVSCodeChunk(chunk: {
+export function extractAnthropicUsage(chunk: {
   data: Uint8Array;
   mimeType: string;
 }): AnthropicTokenUsage | undefined {
-  if (chunk.mimeType !== "usage") {
+  const usage = extractCopilotUsagePayload(chunk);
+  if (!usage) {
     return undefined;
   }
 
-  try {
-    const usage = JSON.parse(new TextDecoder().decode(chunk.data)) as unknown;
-    if (!isCopilotUsagePayload(usage)) {
-      return undefined;
-    }
+  const cacheCreationInputTokens = clampNonNegative(
+    usage.prompt_tokens_details?.cache_creation_input_tokens,
+  );
+  const cacheReadInputTokens = clampNonNegative(
+    usage.prompt_tokens_details?.cached_tokens,
+  );
 
-    const cacheCreationInputTokens = clampNonNegative(
-      usage.prompt_tokens_details?.cache_creation_input_tokens,
-    );
-    const cacheReadInputTokens = clampNonNegative(
-      usage.prompt_tokens_details?.cached_tokens,
-    );
-
-    return {
-      cache_creation_input_tokens: cacheCreationInputTokens,
-      cache_read_input_tokens: cacheReadInputTokens,
-      input_tokens: Math.max(
-        0,
-        usage.prompt_tokens - cacheCreationInputTokens - cacheReadInputTokens,
-      ),
-      output_tokens: usage.completion_tokens,
-    };
-  } catch {
-    return undefined;
-  }
+  return {
+    cache_creation_input_tokens: cacheCreationInputTokens,
+    cache_read_input_tokens: cacheReadInputTokens,
+    input_tokens: Math.max(
+      0,
+      usage.prompt_tokens - cacheCreationInputTokens - cacheReadInputTokens,
+    ),
+    output_tokens: usage.completion_tokens,
+  };
 }
 
 /**

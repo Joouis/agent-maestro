@@ -1,35 +1,10 @@
 import OpenAI from "openai";
 import { ResponseUsage } from "openai/resources/responses/responses";
 
-interface CopilotUsagePayload {
-  completion_tokens: number;
-  completion_tokens_details?: {
-    accepted_prediction_tokens?: number;
-    reasoning_tokens?: number;
-    rejected_prediction_tokens?: number;
-  };
-  prompt_tokens: number;
-  prompt_tokens_details?: {
-    cached_tokens?: number;
-  };
-  total_tokens?: number;
-}
-
-function isCopilotUsagePayload(value: unknown): value is CopilotUsagePayload {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const usage = value as Partial<CopilotUsagePayload>;
-  return (
-    typeof usage.prompt_tokens === "number" &&
-    Number.isFinite(usage.prompt_tokens) &&
-    usage.prompt_tokens >= 0 &&
-    typeof usage.completion_tokens === "number" &&
-    Number.isFinite(usage.completion_tokens) &&
-    usage.completion_tokens >= 0
-  );
-}
+import {
+  type CopilotUsagePayload,
+  extractCopilotUsagePayload,
+} from "./copilotUsage";
 
 const nonNegativeNumberOrZero = (value: number | undefined): number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
@@ -45,7 +20,7 @@ const totalTokensOrFallback = (usage: CopilotUsagePayload): number =>
   nonNegativeNumberOrUndefined(usage.total_tokens) ??
   usage.prompt_tokens + usage.completion_tokens;
 
-export function extractOpenAIChatTokenUsageFromVSCodeChunk(chunk: {
+export function extractOpenAIChatUsage(chunk: {
   data: Uint8Array;
   mimeType: string;
 }): OpenAI.CompletionUsage | undefined {
@@ -77,7 +52,7 @@ export function extractOpenAIChatTokenUsageFromVSCodeChunk(chunk: {
   };
 }
 
-export function extractOpenAIResponsesTokenUsageFromVSCodeChunk(chunk: {
+export function extractOpenAIResponsesUsage(chunk: {
   data: Uint8Array;
   mimeType: string;
 }): ResponseUsage | undefined {
@@ -101,20 +76,4 @@ export function extractOpenAIResponsesTokenUsageFromVSCodeChunk(chunk: {
     },
     total_tokens: totalTokensOrFallback(usage),
   };
-}
-
-function extractCopilotUsagePayload(chunk: {
-  data: Uint8Array;
-  mimeType: string;
-}): CopilotUsagePayload | undefined {
-  if (chunk.mimeType !== "usage") {
-    return undefined;
-  }
-
-  try {
-    const usage = JSON.parse(new TextDecoder().decode(chunk.data)) as unknown;
-    return isCopilotUsagePayload(usage) ? usage : undefined;
-  } catch {
-    return undefined;
-  }
 }

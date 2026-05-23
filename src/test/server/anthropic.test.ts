@@ -7,7 +7,7 @@ import {
   convertAnthropicSystemToVSCode,
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
-  extractAnthropicTokenUsageFromVSCodeChunk,
+  extractAnthropicUsage,
 } from "../../server/utils/anthropic";
 import {
   createAnthropicModelsResponse,
@@ -641,12 +641,12 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     });
   });
 
-  suite("extractAnthropicTokenUsageFromVSCodeChunk", () => {
+  suite("extractAnthropicUsage", () => {
     const encode = (value: unknown): Uint8Array =>
       new TextEncoder().encode(JSON.stringify(value));
 
     test("should extract usage and subtract cache tokens from input_tokens", () => {
-      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+      const result = extractAnthropicUsage({
         mimeType: "usage",
         data: encode({
           prompt_tokens: 1000,
@@ -667,7 +667,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     });
 
     test("should default cache fields to 0 when prompt_tokens_details is missing", () => {
-      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+      const result = extractAnthropicUsage({
         mimeType: "usage",
         data: encode({ prompt_tokens: 100, completion_tokens: 20 }),
       });
@@ -681,7 +681,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     });
 
     test("should clamp input_tokens to 0 when cache totals exceed prompt_tokens", () => {
-      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+      const result = extractAnthropicUsage({
         mimeType: "usage",
         data: encode({
           prompt_tokens: 100,
@@ -697,7 +697,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     });
 
     test("should return undefined for non-usage mimeType", () => {
-      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+      const result = extractAnthropicUsage({
         mimeType: "image/png",
         data: encode({ prompt_tokens: 1, completion_tokens: 1 }),
       });
@@ -706,7 +706,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     });
 
     test("should return undefined for invalid JSON", () => {
-      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+      const result = extractAnthropicUsage({
         mimeType: "usage",
         data: new TextEncoder().encode("not json {"),
       });
@@ -715,7 +715,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     });
 
     test("should return undefined when required fields are missing", () => {
-      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+      const result = extractAnthropicUsage({
         mimeType: "usage",
         data: encode({ prompt_tokens: 100 }),
       });
@@ -725,7 +725,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
 
     test("should reject non-finite or negative token counts", () => {
       assert.strictEqual(
-        extractAnthropicTokenUsageFromVSCodeChunk({
+        extractAnthropicUsage({
           mimeType: "usage",
           data: encode({ prompt_tokens: -1, completion_tokens: 10 }),
         }),
@@ -733,7 +733,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       );
 
       assert.strictEqual(
-        extractAnthropicTokenUsageFromVSCodeChunk({
+        extractAnthropicUsage({
           mimeType: "usage",
           data: encode({ prompt_tokens: 100, completion_tokens: "20" }),
         }),
@@ -742,7 +742,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     });
 
     test("should ignore negative or non-finite cache fields", () => {
-      const result = extractAnthropicTokenUsageFromVSCodeChunk({
+      const result = extractAnthropicUsage({
         mimeType: "usage",
         data: encode({
           prompt_tokens: 100,

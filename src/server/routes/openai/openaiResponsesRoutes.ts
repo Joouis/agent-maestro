@@ -9,7 +9,7 @@ import { getChatModelClient } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
-import { extractOpenAIResponsesTokenUsageFromVSCodeChunk } from "../../utils/openai";
+import { extractOpenAIResponsesUsage } from "../../utils/openai";
 import {
   OutputItem,
   ToolChoice,
@@ -278,9 +278,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               input: chunk.input,
             });
           } else if (chunk instanceof vscode.LanguageModelDataPart) {
-            responseUsage =
-              extractOpenAIResponsesTokenUsageFromVSCodeChunk(chunk) ??
-              responseUsage;
+            responseUsage = extractOpenAIResponsesUsage(chunk) ?? responseUsage;
           }
         }
 
@@ -530,8 +528,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               outputIndex++;
             } else if (chunk instanceof vscode.LanguageModelDataPart) {
               responseUsage =
-                extractOpenAIResponsesTokenUsageFromVSCodeChunk(chunk) ??
-                responseUsage;
+                extractOpenAIResponsesUsage(chunk) ?? responseUsage;
             }
           }
 
