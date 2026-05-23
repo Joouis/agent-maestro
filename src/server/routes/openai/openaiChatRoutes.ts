@@ -8,6 +8,7 @@ import { getChatModelClient } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
+import { extractOpenAIChatTokenUsageFromVSCodeChunk } from "../../utils/openai";
 import {
   convertOpenAIChatCompletionToolToVSCode,
   convertOpenAIMessagesToVSCode,
@@ -118,23 +119,14 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
         return c.json(clientError, 404);
       }
 
-      // NOTE: Rough estimation of input tokens for OpenAI API
-      // We pass the stringified request body to VSCode's countTokens() API, which is technically
-      // a misuse since it's designed for LanguageModelChatMessage objects. However, we intentionally
-      // do this to leverage the official tokenizer instead of building our own wheel.
       logger.debug("/v1/chat/completions payload:");
       logger.debug(JSON.stringify(requestBody, null, 2));
       const cancellationToken = new vscode.CancellationTokenSource().token;
-      const inputTokenCount = await client.countTokens(
-        JSON.stringify(requestBody),
-        cancellationToken,
-      );
-      inputTokens = inputTokenCount;
 
       logger.info(
         `→ /v1/chat/completions | model: ${
           modelId === client.id ? modelId : `${modelId} → ${client.id}`
-        } | input: ${inputTokenCount}`,
+        }`,
       );
 
       // 2. Convert OpenAI messages to VSCode LM format
@@ -167,6 +159,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
         let content = "";
         let toolCalls: OpenAI.ChatCompletionMessageToolCall[] = [];
         let accumulatedText = "";
+        let completionUsage: OpenAI.CompletionUsage | undefined;
         for await (const chunk of response.stream) {
           if (chunk instanceof vscode.LanguageModelTextPart) {
             content += chunk.value;
@@ -179,12 +172,27 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
                 arguments: JSON.stringify(chunk.input),
               },
             });
+          } else if (chunk instanceof vscode.LanguageModelDataPart) {
+            completionUsage =
+              extractOpenAIChatTokenUsageFromVSCodeChunk(chunk) ??
+              completionUsage;
           }
           accumulatedText += JSON.stringify(chunk);
         }
 
-        // Count output tokens
-        const completionTokens = await client.countTokens(accumulatedText);
+        if (!completionUsage) {
+          const [promptTokens, completionTokens] = await Promise.all([
+            client.countTokens(JSON.stringify(requestBody), cancellationToken),
+            client.countTokens(accumulatedText, cancellationToken),
+          ]);
+          inputTokens = promptTokens;
+          completionUsage = {
+            prompt_tokens: promptTokens,
+            prompt_tokens_details: { cached_tokens: 0 },
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
+          };
+        }
 
         // Build OpenAI-compatible response
         const openaiResponse: OpenAI.ChatCompletion = {
@@ -205,18 +213,13 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
               logprobs: null,
             },
           ],
-          usage: {
-            prompt_tokens: inputTokenCount,
-            prompt_tokens_details: { cached_tokens: 0 },
-            completion_tokens: completionTokens,
-            total_tokens: inputTokenCount + completionTokens,
-          },
+          usage: completionUsage,
         };
 
         logger.debug("/v1/chat/completions response:");
         logger.debug(JSON.stringify(openaiResponse, null, 2));
         logger.info(
-          `← /v1/chat/completions | input: ${inputTokenCount} | output: ${completionTokens}`,
+          `← /v1/chat/completions | input: ${completionUsage.prompt_tokens} | cache_read: ${completionUsage.prompt_tokens_details?.cached_tokens ?? 0} | output: ${completionUsage.completion_tokens}`,
         );
 
         return c.json(openaiResponse);
@@ -254,6 +257,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
           // Process streaming response
           let accumulatedText = "";
           let toolCalls: vscode.LanguageModelToolCallPart[] = [];
+          let completionUsage: OpenAI.CompletionUsage | undefined;
           for await (const chunk of response.stream) {
             if (chunk instanceof vscode.LanguageModelTextPart) {
               const contentChunk: OpenAI.ChatCompletionChunk = {
@@ -308,20 +312,29 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
               await stream.writeSSE({
                 data: JSON.stringify(toolCallChunk),
               });
+            } else if (chunk instanceof vscode.LanguageModelDataPart) {
+              completionUsage =
+                extractOpenAIChatTokenUsageFromVSCodeChunk(chunk) ??
+                completionUsage;
             }
             accumulatedText += JSON.stringify(chunk);
           }
 
-          // Count output tokens for final chunk if usage is requested
-          let usage: OpenAI.CompletionUsage | undefined;
-          if (requestBody.stream_options?.include_usage) {
-            const completionTokens = await client.countTokens(accumulatedText);
+          if (!completionUsage) {
+            const [promptTokens, completionTokens] = await Promise.all([
+              client.countTokens(
+                JSON.stringify(requestBody),
+                cancellationToken,
+              ),
+              client.countTokens(accumulatedText, cancellationToken),
+            ]);
+            inputTokens = promptTokens;
 
-            usage = {
-              prompt_tokens: inputTokenCount,
+            completionUsage = {
+              prompt_tokens: promptTokens,
               prompt_tokens_details: { cached_tokens: 0 },
               completion_tokens: completionTokens,
-              total_tokens: inputTokenCount + completionTokens,
+              total_tokens: promptTokens + completionTokens,
             };
           }
 
@@ -339,7 +352,9 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
                 logprobs: null,
               },
             ],
-            usage,
+            usage: requestBody.stream_options?.include_usage
+              ? completionUsage
+              : undefined,
           };
           await stream.writeSSE({
             data: JSON.stringify(finalChunk),
@@ -351,7 +366,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
           });
 
           logger.info(
-            `← /v1/chat/completions (stream) | input: ${inputTokenCount} | output: ${usage?.completion_tokens ?? 0}`,
+            `← /v1/chat/completions (stream) | input: ${completionUsage.prompt_tokens} | cache_read: ${completionUsage.prompt_tokens_details?.cached_tokens ?? 0} | output: ${completionUsage.completion_tokens}`,
           );
         },
         async (error, stream) => {

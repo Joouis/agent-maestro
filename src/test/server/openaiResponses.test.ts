@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 
+import { extractOpenAIResponsesTokenUsageFromVSCodeChunk } from "../../server/utils/openai";
 import {
   buildResponseOutput,
   convertInputContentToVSCodePart,
@@ -12,6 +13,9 @@ import {
   generateMessageId,
   generateResponseId,
 } from "../../server/utils/openaiResponses";
+
+const encode = (value: unknown): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify(value));
 
 suite("OpenAI Responses Conversion Utils Test Suite", () => {
   suite("ID Generation Functions", () => {
@@ -424,6 +428,94 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(output.length, 1);
       const fc = output[0] as any;
       assert.strictEqual(fc.arguments, "{}");
+    });
+  });
+
+  suite("extractOpenAIResponsesTokenUsageFromVSCodeChunk", () => {
+    test("should map Copilot usage metadata to OpenAI responses usage", () => {
+      const result = extractOpenAIResponsesTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({
+          prompt_tokens: 10445,
+          completion_tokens: 88,
+          total_tokens: 10533,
+          prompt_tokens_details: { cached_tokens: 25 },
+          completion_tokens_details: { reasoning_tokens: 80 },
+        }),
+      });
+
+      assert.deepStrictEqual(result, {
+        input_tokens: 10445,
+        input_tokens_details: { cached_tokens: 25 },
+        output_tokens: 88,
+        output_tokens_details: { reasoning_tokens: 80 },
+        total_tokens: 10533,
+      });
+    });
+
+    test("should fall back to prompt plus completion when total is missing", () => {
+      const result = extractOpenAIResponsesTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({
+          prompt_tokens: 100,
+          completion_tokens: 20,
+        }),
+      });
+
+      assert.strictEqual(result?.total_tokens, 120);
+    });
+
+    test("should fall back to prompt plus completion when total is invalid", () => {
+      const result = extractOpenAIResponsesTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({
+          prompt_tokens: 100,
+          completion_tokens: 20,
+          total_tokens: -1,
+        }),
+      });
+
+      assert.strictEqual(result?.total_tokens, 120);
+    });
+
+    test("should keep zero total tokens when provided", () => {
+      const result = extractOpenAIResponsesTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({
+          prompt_tokens: 100,
+          completion_tokens: 20,
+          total_tokens: 0,
+        }),
+      });
+
+      assert.strictEqual(result?.total_tokens, 0);
+    });
+
+    test("should return undefined for malformed JSON", () => {
+      const result = extractOpenAIResponsesTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: new TextEncoder().encode("not json {"),
+      });
+
+      assert.strictEqual(result, undefined);
+    });
+
+    test("should return undefined when prompt_tokens is missing", () => {
+      const result = extractOpenAIResponsesTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({ completion_tokens: 1 }),
+      });
+
+      assert.strictEqual(result, undefined);
+    });
+
+    test("should return undefined when completion_tokens is negative", () => {
+      const result = extractOpenAIResponsesTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({ prompt_tokens: 1, completion_tokens: -1 }),
+      });
+
+      assert.strictEqual(result, undefined);
     });
   });
 });
