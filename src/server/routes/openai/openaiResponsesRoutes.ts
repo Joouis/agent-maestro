@@ -287,8 +287,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         // Build output
         const output = buildResponseOutput(accumulatedText, toolCalls);
 
-        let usage = responseUsage;
-        if (!usage) {
+        if (!responseUsage) {
           const [fallbackInputTokens, outputTokens] = await Promise.all([
             client.countTokens(JSON.stringify(requestBody), cancellationToken),
             client.countTokens(
@@ -297,7 +296,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
             ),
           ]);
           inputTokens = fallbackInputTokens;
-          usage = {
+          responseUsage = {
             input_tokens: fallbackInputTokens,
             input_tokens_details: { cached_tokens: 0 },
             output_tokens: outputTokens,
@@ -316,14 +315,14 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           output,
           error: null,
           incomplete_details: null,
-          usage,
+          usage: responseUsage,
           metadata,
         };
 
         logger.debug("/v1/responses response:");
         logger.debug(JSON.stringify(responseObj, null, 2));
         logger.info(
-          `← /v1/responses | input: ${usage.input_tokens} | cache_read: ${usage.input_tokens_details.cached_tokens} | output: ${usage.output_tokens}`,
+          `← /v1/responses | input: ${responseUsage.input_tokens} | cache_read: ${responseUsage.input_tokens_details.cached_tokens} | output: ${responseUsage.output_tokens}`,
         );
 
         cancellationTokenSource.dispose();
@@ -552,8 +551,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
 
           cancellationTokenSource.dispose();
 
-          let usage = responseUsage;
-          if (!usage) {
+          if (!responseUsage) {
             const [fallbackInputTokens, outputTokens] = await Promise.all([
               client.countTokens(
                 JSON.stringify(requestBody),
@@ -562,7 +560,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               client.countTokens(totalOutputText, cancellationToken),
             ]);
             inputTokens = fallbackInputTokens;
-            usage = {
+            responseUsage = {
               input_tokens: fallbackInputTokens,
               input_tokens_details: { cached_tokens: 0 },
               output_tokens: outputTokens,
@@ -579,7 +577,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               response: buildResponseEnvelope(
                 "completed",
                 output,
-                usage,
+                responseUsage,
                 getCurrentTimestamp(),
               ),
               sequence_number: sequenceNumberRef.value++,
@@ -587,7 +585,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           });
 
           logger.info(
-            `← /v1/responses (stream) | input: ${usage.input_tokens} | cache_read: ${usage.input_tokens_details.cached_tokens} | output: ${usage.output_tokens}`,
+            `← /v1/responses (stream) | input: ${responseUsage.input_tokens} | cache_read: ${responseUsage.input_tokens_details.cached_tokens} | output: ${responseUsage.output_tokens}`,
           );
         },
         async (error, sseStream) => {
