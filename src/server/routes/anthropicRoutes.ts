@@ -743,8 +743,23 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       if (clientError) {
         return c.json(clientError, 404);
       }
+
+      const { webSearchDropped } = convertAnthropicToolToVSCode(
+        requestBody.tools,
+      );
+      const augmentedRequestBody: Anthropic.Messages.MessageCreateParams =
+        webSearchDropped
+          ? {
+              ...requestBody,
+              system: appendSystemNote(
+                requestBody.system,
+                WEB_SEARCH_FALLBACK_SYSTEM_NOTE,
+              ),
+            }
+          : requestBody;
+
       const inputTokenCount = await countAnthropicMessageTokens(
-        JSON.stringify(requestBody),
+        JSON.stringify(augmentedRequestBody),
         client,
       );
 
