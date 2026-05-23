@@ -34,6 +34,17 @@ function isCopilotUsagePayload(value: unknown): value is CopilotUsagePayload {
 const nonNegativeNumberOrZero = (value: number | undefined): number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
 
+const nonNegativeNumberOrUndefined = (
+  value: number | undefined,
+): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+
+const totalTokensOrFallback = (usage: CopilotUsagePayload): number =>
+  nonNegativeNumberOrUndefined(usage.total_tokens) ??
+  usage.prompt_tokens + usage.completion_tokens;
+
 export function extractOpenAIChatTokenUsageFromVSCodeChunk(chunk: {
   data: Uint8Array;
   mimeType: string;
@@ -62,8 +73,7 @@ export function extractOpenAIChatTokenUsageFromVSCodeChunk(chunk: {
         usage.prompt_tokens_details?.cached_tokens,
       ),
     },
-    total_tokens:
-      usage.total_tokens ?? usage.prompt_tokens + usage.completion_tokens,
+    total_tokens: totalTokensOrFallback(usage),
   };
 }
 
@@ -89,8 +99,7 @@ export function extractOpenAIResponsesTokenUsageFromVSCodeChunk(chunk: {
         usage.completion_tokens_details?.reasoning_tokens,
       ),
     },
-    total_tokens:
-      usage.total_tokens ?? usage.prompt_tokens + usage.completion_tokens,
+    total_tokens: totalTokensOrFallback(usage),
   };
 }
 

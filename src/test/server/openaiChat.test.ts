@@ -446,5 +446,31 @@ suite("OpenAI Conversion Utils Test Suite", () => {
 
       assert.strictEqual(result, undefined);
     });
+
+    test("should fall back to prompt plus completion when total is invalid", () => {
+      const result = extractOpenAIChatTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({
+          prompt_tokens: 100,
+          completion_tokens: 20,
+          total_tokens: -1,
+        }),
+      });
+
+      assert.strictEqual(result?.total_tokens, 120);
+    });
+
+    test("should keep zero total tokens when provided", () => {
+      const result = extractOpenAIChatTokenUsageFromVSCodeChunk({
+        mimeType: "usage",
+        data: encode({
+          prompt_tokens: 100,
+          completion_tokens: 20,
+          total_tokens: 0,
+        }),
+      });
+
+      assert.strictEqual(result?.total_tokens, 0);
+    });
   });
 });
