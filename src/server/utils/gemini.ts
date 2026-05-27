@@ -9,6 +9,7 @@ import {
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import { extractCopilotUsagePayload } from "./copilotUsage";
 
 /**
  * Map of uppercase/mixed-case type values to lowercase JSON Schema types.
@@ -451,4 +452,38 @@ export const convertGeminiToolConfigToVSCode = (
     default:
       return undefined;
   }
+};
+
+export interface GeminiTokenUsage {
+  cachedContentTokenCount: number;
+  candidatesTokenCount: number;
+  promptTokenCount: number;
+  thoughtsTokenCount: number;
+  totalTokenCount: number;
+}
+
+export const extractGeminiUsage = (
+  chunk: vscode.LanguageModelDataPart,
+): GeminiTokenUsage | undefined => {
+  const usage = extractCopilotUsagePayload(chunk);
+  if (!usage) {
+    return undefined;
+  }
+
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
+  const reasoningTokens =
+    usage.completion_tokens_details?.reasoning_tokens ??
+    (usage as { reasoning_tokens?: number }).reasoning_tokens ??
+    0;
+  const promptTokenCount = Math.max(0, usage.prompt_tokens - cachedTokens);
+
+  return {
+    cachedContentTokenCount: cachedTokens,
+    candidatesTokenCount: usage.completion_tokens,
+    promptTokenCount,
+    thoughtsTokenCount: reasoningTokens,
+    totalTokenCount:
+      usage.total_tokens ??
+      usage.prompt_tokens + usage.completion_tokens + reasoningTokens,
+  };
 };

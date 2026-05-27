@@ -13,10 +13,12 @@ import {
 } from "../schemas/gemini";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 import {
+  type GeminiTokenUsage,
   convertGeminiContentsToVSCode,
   convertGeminiSystemInstructionToVSCode,
   convertGeminiToolConfigToVSCode,
   convertGeminiToolsToVSCode,
+  extractGeminiUsage,
 } from "../utils/gemini";
 
 // ============================================================================
@@ -24,17 +26,12 @@ import {
 // ============================================================================
 
 /**
- * Prepare Gemini request by converting to VSCode format and counting tokens
- * Used by both generateContent and countTokens endpoints
+ * Prepare Gemini request by converting to VSCode format.
  */
-const prepareGeminiRequest = async ({
+const prepareGeminiRequest = ({
   requestBody,
-  client,
-  cancellationToken,
 }: {
   requestBody: GenerateContentRequest;
-  client: vscode.LanguageModelChat;
-  cancellationToken: vscode.CancellationToken;
 }) => {
   logger.debug("Gemini request payload:");
   logger.debug(JSON.stringify(requestBody, null, 2));
@@ -47,15 +44,6 @@ const prepareGeminiRequest = async ({
     ...convertGeminiSystemInstructionToVSCode(systemInstruction),
     ...convertGeminiContentsToVSCode(contents || []),
   ];
-
-  // NOTE: Rough estimation of input tokens for Gemini API
-  // We pass the stringified request body to VSCode's countTokens() API, which is technically
-  // a misuse since it's designed for LanguageModelChatMessage objects. However, we intentionally
-  // do this to leverage the official tokenizer instead of building our own wheel.
-  const inputTokenCount = await client.countTokens(
-    JSON.stringify(requestBody),
-    cancellationToken,
-  );
 
   // Build request options
   const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
@@ -70,8 +58,34 @@ const prepareGeminiRequest = async ({
 
   return {
     vsCodeLmMessages,
-    inputTokenCount,
     lmRequestOptions,
+  };
+};
+
+const getFallbackGeminiUsage = async ({
+  accumulatedText,
+  cancellationToken,
+  client,
+  requestBody,
+}: {
+  accumulatedText: string;
+  cancellationToken: vscode.CancellationToken;
+  client: vscode.LanguageModelChat;
+  requestBody: GenerateContentRequest;
+}): Promise<GeminiTokenUsage> => {
+  const [promptTokenCount, candidatesTokenCount] = await Promise.all([
+    client.countTokens(JSON.stringify(requestBody), cancellationToken),
+    accumulatedText
+      ? client.countTokens(accumulatedText, cancellationToken)
+      : 0,
+  ]);
+
+  return {
+    cachedContentTokenCount: 0,
+    candidatesTokenCount,
+    promptTokenCount,
+    thoughtsTokenCount: 0,
+    totalTokenCount: promptTokenCount + candidatesTokenCount,
   };
 };
 
@@ -321,19 +335,15 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
 
       // 2. Prepare request
       cancellationTokenSource = new vscode.CancellationTokenSource();
-      const { vsCodeLmMessages, inputTokenCount, lmRequestOptions } =
-        await prepareGeminiRequest({
-          requestBody,
-          client,
-          cancellationToken: cancellationTokenSource.token,
-        });
+      const { vsCodeLmMessages, lmRequestOptions } = prepareGeminiRequest({
+        requestBody,
+      });
       lmChatMessages = vsCodeLmMessages;
-      inputTokens = inputTokenCount;
 
       logger.info(
         `→ /v1beta/models/${modelWithMethod} | model: ${
           modelId === client.id ? modelId : `${modelId} → ${client.id}`
-        } | input: ${inputTokenCount}`,
+        }`,
       );
 
       // 3. Send request to VSCode LM API
@@ -346,6 +356,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       // 4. Process response (always non-streaming for generateContent)
       const parts: Part[] = [];
       let accumulatedText = "";
+      let responseUsage: GeminiTokenUsage | undefined;
 
       for await (const chunk of response.stream) {
         if (chunk instanceof vscode.LanguageModelTextPart) {
@@ -361,14 +372,20 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             },
           });
           accumulatedText += JSON.stringify(chunk);
+        } else if (chunk instanceof vscode.LanguageModelDataPart) {
+          responseUsage = extractGeminiUsage(chunk) ?? responseUsage;
         }
-        // Now chunk could be reasoning part (vscode_reasoning_done), so we skip it
       }
 
-      // Count output tokens
-      const outputTokenCount = accumulatedText
-        ? await client.countTokens(accumulatedText)
-        : 0;
+      const usageMetadata =
+        responseUsage ??
+        (await getFallbackGeminiUsage({
+          accumulatedText,
+          cancellationToken: cancellationTokenSource.token,
+          client,
+          requestBody,
+        }));
+      inputTokens = usageMetadata.promptTokenCount;
 
       const geminiResponse: GenerateContentResponse = {
         candidates: [
@@ -381,19 +398,14 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             index: 0,
           },
         ],
-        usageMetadata: {
-          promptTokenCount: inputTokenCount,
-          cachedContentTokenCount: 0,
-          candidatesTokenCount: outputTokenCount,
-          totalTokenCount: inputTokenCount + outputTokenCount,
-        },
+        usageMetadata,
         modelVersion: modelId,
       };
 
       logger.debug("generateContent response:");
       logger.debug(JSON.stringify(geminiResponse, null, 2));
       logger.info(
-        `← /v1beta/models/${modelWithMethod} | input: ${inputTokenCount} | output: ${outputTokenCount}`,
+        `← /v1beta/models/${modelWithMethod} | input: ${usageMetadata.promptTokenCount} | cache_read: ${usageMetadata.cachedContentTokenCount} | output: ${usageMetadata.candidatesTokenCount} | thoughts: ${usageMetadata.thoughtsTokenCount}`,
       );
 
       cancellationTokenSource.dispose();
@@ -462,26 +474,23 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
 
         // 2. Prepare request
         cancellationTokenSource = new vscode.CancellationTokenSource();
-        const { vsCodeLmMessages, inputTokenCount, lmRequestOptions } =
-          await prepareGeminiRequest({
-            requestBody,
-            client,
-            cancellationToken: cancellationTokenSource.token,
-          });
+        const { vsCodeLmMessages, lmRequestOptions } = prepareGeminiRequest({
+          requestBody,
+        });
         lmChatMessages = vsCodeLmMessages;
-        inputTokens = inputTokenCount;
 
         logger.info(
           `→ /v1beta/models/${modelWithMethod} | model: ${
             modelId === client.id ? modelId : `${modelId} → ${client.id}`
-          } | input: ${inputTokenCount}`,
+          }`,
         );
 
         // 3. Send request to VSCode LM API
+        const cancellationToken = cancellationTokenSource.token;
         const response = await client.sendRequest(
           vsCodeLmMessages,
           lmRequestOptions,
-          cancellationTokenSource.token,
+          cancellationToken,
         );
 
         // 4. Always stream the response
@@ -489,6 +498,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
           c,
           async (stream) => {
             let accumulatedText = "";
+            let responseUsage: GeminiTokenUsage | undefined;
 
             for await (const chunk of response.stream) {
               if (chunk instanceof vscode.LanguageModelTextPart) {
@@ -537,14 +547,21 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                 await stream.writeSSE({
                   data: JSON.stringify(streamChunk),
                 });
+              } else if (chunk instanceof vscode.LanguageModelDataPart) {
+                responseUsage = extractGeminiUsage(chunk) ?? responseUsage;
               }
-              // Now chunk could be reasoning part (vscode_reasoning_done), so we skip it
             }
 
             // Send final chunk with usage metadata
-            const outputTokenCount = accumulatedText
-              ? await client.countTokens(accumulatedText)
-              : 0;
+            const usageMetadata =
+              responseUsage ??
+              (await getFallbackGeminiUsage({
+                accumulatedText,
+                cancellationToken,
+                client,
+                requestBody,
+              }));
+            inputTokens = usageMetadata.promptTokenCount;
 
             const finalChunk: GenerateContentResponse = {
               candidates: [
@@ -553,12 +570,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                   index: 0,
                 },
               ],
-              usageMetadata: {
-                promptTokenCount: inputTokenCount,
-                cachedContentTokenCount: 0,
-                candidatesTokenCount: outputTokenCount,
-                totalTokenCount: inputTokenCount + outputTokenCount,
-              },
+              usageMetadata,
               modelVersion: modelId,
             };
 
@@ -567,7 +579,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             });
 
             logger.info(
-              `← /v1beta/models/${modelWithMethod} (stream) | input: ${inputTokenCount} | output: ${outputTokenCount}`,
+              `← /v1beta/models/${modelWithMethod} (stream) | input: ${usageMetadata.promptTokenCount} | cache_read: ${usageMetadata.cachedContentTokenCount} | output: ${usageMetadata.candidatesTokenCount} | thoughts: ${usageMetadata.thoughtsTokenCount}`,
             );
             cancellationTokenSource?.dispose();
           },
@@ -595,10 +607,10 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                 },
               ],
               usageMetadata: {
-                promptTokenCount: inputTokenCount,
+                promptTokenCount: inputTokens,
                 cachedContentTokenCount: 0,
                 candidatesTokenCount: 0,
-                totalTokenCount: inputTokenCount,
+                totalTokenCount: inputTokens,
               },
               modelVersion: modelId,
             };
@@ -668,13 +680,13 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         );
       }
 
-      // 2. Prepare request and get token count
+      // 2. Count tokens using the simple fallback path. countTokens has no
+      // response stream, so no real Copilot usage metadata is available.
       cancellationTokenSource = new vscode.CancellationTokenSource();
-      const { inputTokenCount } = await prepareGeminiRequest({
-        requestBody,
-        client,
-        cancellationToken: cancellationTokenSource.token,
-      });
+      const inputTokenCount = await client.countTokens(
+        JSON.stringify(requestBody),
+        cancellationTokenSource.token,
+      );
       cancellationTokenSource.dispose();
 
       logger.info(
