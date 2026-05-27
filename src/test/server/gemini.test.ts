@@ -8,10 +8,100 @@ import {
   convertGeminiSystemInstructionToVSCode,
   convertGeminiToolConfigToVSCode,
   convertGeminiToolsToVSCode,
+  extractGeminiUsage,
   normalizeSchemaTypes,
 } from "../../server/utils/gemini";
 
 suite("Gemini Conversion Utils Test Suite", () => {
+  suite("extractGeminiUsage", () => {
+    const usagePart = (usage: unknown) =>
+      new vscode.LanguageModelDataPart(
+        Buffer.from(JSON.stringify(usage)),
+        "usage",
+      );
+
+    test("should parse uncached Copilot usage", () => {
+      const result = extractGeminiUsage(
+        usagePart({
+          completion_tokens: 406,
+          prompt_tokens: 16748,
+          prompt_tokens_details: { cached_tokens: 0 },
+          total_tokens: 17154,
+          reasoning_tokens: 0,
+        }),
+      );
+
+      assert.deepStrictEqual(result, {
+        cachedContentTokenCount: 0,
+        candidatesTokenCount: 406,
+        promptTokenCount: 16748,
+        thoughtsTokenCount: 0,
+        totalTokenCount: 17154,
+      });
+    });
+
+    test("should subtract cached prompt tokens from promptTokenCount", () => {
+      const result = extractGeminiUsage(
+        usagePart({
+          completion_tokens: 15,
+          prompt_tokens: 14127,
+          prompt_tokens_details: { cached_tokens: 13429 },
+          total_tokens: 14142,
+          reasoning_tokens: 0,
+        }),
+      );
+
+      assert.deepStrictEqual(result, {
+        cachedContentTokenCount: 13429,
+        candidatesTokenCount: 15,
+        promptTokenCount: 698,
+        thoughtsTokenCount: 0,
+        totalTokenCount: 14142,
+      });
+    });
+
+    test("should map reasoning tokens to thoughtsTokenCount", () => {
+      const result = extractGeminiUsage(
+        usagePart({
+          completion_tokens: 36,
+          prompt_tokens: 14055,
+          prompt_tokens_details: { cached_tokens: 0 },
+          total_tokens: 14188,
+          reasoning_tokens: 97,
+        }),
+      );
+
+      assert.deepStrictEqual(result, {
+        cachedContentTokenCount: 0,
+        candidatesTokenCount: 36,
+        promptTokenCount: 14055,
+        thoughtsTokenCount: 97,
+        totalTokenCount: 14188,
+      });
+    });
+
+    test("should ignore invalid nested usage values", () => {
+      const result = extractGeminiUsage(
+        usagePart({
+          completion_tokens: 20,
+          completion_tokens_details: { reasoning_tokens: -7 },
+          prompt_tokens: 100,
+          prompt_tokens_details: { cached_tokens: -10 },
+          reasoning_tokens: Number.NaN,
+          total_tokens: -1,
+        }),
+      );
+
+      assert.deepStrictEqual(result, {
+        cachedContentTokenCount: 0,
+        candidatesTokenCount: 20,
+        promptTokenCount: 100,
+        thoughtsTokenCount: 0,
+        totalTokenCount: 120,
+      });
+    });
+  });
+
   suite("convertGeminiContentToVSCode", () => {
     test("should convert user role with text part", () => {
       const content = {

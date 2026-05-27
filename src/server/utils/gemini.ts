@@ -9,6 +9,7 @@ import {
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import { extractCopilotUsagePayload } from "./copilotUsage";
 
 /**
  * Map of uppercase/mixed-case type values to lowercase JSON Schema types.
@@ -451,4 +452,49 @@ export const convertGeminiToolConfigToVSCode = (
     default:
       return undefined;
   }
+};
+
+export interface GeminiTokenUsage {
+  cachedContentTokenCount: number;
+  candidatesTokenCount: number;
+  promptTokenCount: number;
+  thoughtsTokenCount: number;
+  totalTokenCount: number;
+}
+
+const asNonNegativeFiniteNumber = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+
+export const extractGeminiUsage = (
+  chunk: vscode.LanguageModelDataPart,
+): GeminiTokenUsage | undefined => {
+  const usage = extractCopilotUsagePayload(chunk);
+  if (!usage) {
+    return undefined;
+  }
+
+  const cachedTokens =
+    asNonNegativeFiniteNumber(usage.prompt_tokens_details?.cached_tokens) ?? 0;
+  const reasoningTokens =
+    asNonNegativeFiniteNumber(
+      usage.completion_tokens_details?.reasoning_tokens,
+    ) ??
+    asNonNegativeFiniteNumber(
+      (usage as { reasoning_tokens?: unknown }).reasoning_tokens,
+    ) ??
+    0;
+  const totalTokens = asNonNegativeFiniteNumber(usage.total_tokens);
+  const promptTokenCount = Math.max(0, usage.prompt_tokens - cachedTokens);
+
+  return {
+    cachedContentTokenCount: cachedTokens,
+    candidatesTokenCount: usage.completion_tokens,
+    promptTokenCount,
+    thoughtsTokenCount: reasoningTokens,
+    totalTokenCount:
+      totalTokens ??
+      usage.prompt_tokens + usage.completion_tokens + reasoningTokens,
+  };
 };
