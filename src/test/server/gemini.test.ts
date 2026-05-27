@@ -79,6 +79,27 @@ suite("Gemini Conversion Utils Test Suite", () => {
         totalTokenCount: 14188,
       });
     });
+
+    test("should ignore invalid nested usage values", () => {
+      const result = extractGeminiUsage(
+        usagePart({
+          completion_tokens: 20,
+          completion_tokens_details: { reasoning_tokens: -7 },
+          prompt_tokens: 100,
+          prompt_tokens_details: { cached_tokens: -10 },
+          reasoning_tokens: Number.NaN,
+          total_tokens: -1,
+        }),
+      );
+
+      assert.deepStrictEqual(result, {
+        cachedContentTokenCount: 0,
+        candidatesTokenCount: 20,
+        promptTokenCount: 100,
+        thoughtsTokenCount: 0,
+        totalTokenCount: 120,
+      });
+    });
   });
 
   suite("convertGeminiContentToVSCode", () => {

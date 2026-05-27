@@ -462,6 +462,11 @@ export interface GeminiTokenUsage {
   totalTokenCount: number;
 }
 
+const asNonNegativeFiniteNumber = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+
 export const extractGeminiUsage = (
   chunk: vscode.LanguageModelDataPart,
 ): GeminiTokenUsage | undefined => {
@@ -470,11 +475,17 @@ export const extractGeminiUsage = (
     return undefined;
   }
 
-  const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
+  const cachedTokens =
+    asNonNegativeFiniteNumber(usage.prompt_tokens_details?.cached_tokens) ?? 0;
   const reasoningTokens =
-    usage.completion_tokens_details?.reasoning_tokens ??
-    (usage as { reasoning_tokens?: number }).reasoning_tokens ??
+    asNonNegativeFiniteNumber(
+      usage.completion_tokens_details?.reasoning_tokens,
+    ) ??
+    asNonNegativeFiniteNumber(
+      (usage as { reasoning_tokens?: unknown }).reasoning_tokens,
+    ) ??
     0;
+  const totalTokens = asNonNegativeFiniteNumber(usage.total_tokens);
   const promptTokenCount = Math.max(0, usage.prompt_tokens - cachedTokens);
 
   return {
@@ -483,7 +494,7 @@ export const extractGeminiUsage = (
     promptTokenCount,
     thoughtsTokenCount: reasoningTokens,
     totalTokenCount:
-      usage.total_tokens ??
+      totalTokens ??
       usage.prompt_tokens + usage.completion_tokens + reasoningTokens,
   };
 };
