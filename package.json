@@ -101,6 +101,14 @@
           "maximum": 2,
           "description": "Scale factor applied to fallback Anthropic token estimates and count_tokens responses when real Copilot usage metadata is unavailable. Default 1.25 means VS Code token counts are multiplied by 1.25.",
           "scope": "application"
+        },
+        "agent-maestro.anthropic.contextWindowScaleFactor": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0.1,
+          "maximum": 2,
+          "description": "Scale factor applied to the `max_input_tokens` reported for Anthropic models. Lowering it below 1 makes Claude Code compact context earlier, which can avoid edge cases near the model's full context window. A value of 1 reports 100% of the model's max input tokens.",
+          "scope": "application"
         }
       }
     },

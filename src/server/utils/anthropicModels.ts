@@ -15,6 +15,34 @@ const UNKNOWN_MODEL_CREATED_AT = "1970-01-01T00:00:00Z";
 const supported = { supported: true };
 const unsupported = { supported: false };
 
+const DEFAULT_CONTEXT_WINDOW_SCALE_FACTOR = 1;
+const MIN_CONTEXT_WINDOW_SCALE_FACTOR = 0.1;
+const MAX_CONTEXT_WINDOW_SCALE_FACTOR = 2;
+
+function getContextWindowScaleFactor(): number {
+  const scaleFactor = vscode.workspace
+    .getConfiguration("agent-maestro.anthropic")
+    .get<number>(
+      "contextWindowScaleFactor",
+      DEFAULT_CONTEXT_WINDOW_SCALE_FACTOR,
+    );
+
+  if (
+    typeof scaleFactor !== "number" ||
+    !Number.isFinite(scaleFactor) ||
+    scaleFactor < MIN_CONTEXT_WINDOW_SCALE_FACTOR ||
+    scaleFactor > MAX_CONTEXT_WINDOW_SCALE_FACTOR
+  ) {
+    return DEFAULT_CONTEXT_WINDOW_SCALE_FACTOR;
+  }
+
+  return scaleFactor;
+}
+
+function scaleMaxInputTokens(maxInputTokens: number): number {
+  return Math.floor(maxInputTokens * getContextWindowScaleFactor());
+}
+
 interface VSCodeModelCapabilities {
   supportsImageToText?: boolean;
   supportsToolCalling?: boolean;
@@ -79,7 +107,9 @@ export function convertVSCodeModelToAnthropicModel(
     capabilities: convertVSCodeCapabilitiesToAnthropic(model),
     created_at: UNKNOWN_MODEL_CREATED_AT,
     display_name: model.name,
-    max_input_tokens: model.maxInputTokens,
+    max_input_tokens: model.maxInputTokens
+      ? scaleMaxInputTokens(model.maxInputTokens)
+      : model.maxInputTokens,
     max_tokens: null,
     type: "model",
   };
