@@ -16,8 +16,6 @@ const supported = { supported: true };
 const unsupported = { supported: false };
 
 const DEFAULT_CONTEXT_WINDOW_SCALE_FACTOR = 1;
-const MIN_CONTEXT_WINDOW_SCALE_FACTOR = 0.1;
-const MAX_CONTEXT_WINDOW_SCALE_FACTOR = 2;
 
 function getContextWindowScaleFactor(): number {
   const scaleFactor = vscode.workspace
@@ -30,8 +28,7 @@ function getContextWindowScaleFactor(): number {
   if (
     typeof scaleFactor !== "number" ||
     !Number.isFinite(scaleFactor) ||
-    scaleFactor < MIN_CONTEXT_WINDOW_SCALE_FACTOR ||
-    scaleFactor > MAX_CONTEXT_WINDOW_SCALE_FACTOR
+    scaleFactor <= 0
   ) {
     return DEFAULT_CONTEXT_WINDOW_SCALE_FACTOR;
   }
