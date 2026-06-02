@@ -4,7 +4,10 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
-import { getChatModelClient } from "../../utils/chatModels";
+import {
+  getChatModelClient,
+  withCopilotContextSize,
+} from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import {
   GeminiErrorResponseSchema,
@@ -349,7 +352,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       // 3. Send request to VSCode LM API
       const response = await client.sendRequest(
         vsCodeLmMessages,
-        lmRequestOptions,
+        withCopilotContextSize(client, lmRequestOptions),
         cancellationTokenSource.token,
       );
 
@@ -489,7 +492,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         const cancellationToken = cancellationTokenSource.token;
         const response = await client.sendRequest(
           vsCodeLmMessages,
-          lmRequestOptions,
+          withCopilotContextSize(client, lmRequestOptions),
           cancellationToken,
         );
 

@@ -5,7 +5,10 @@ import OpenAI from "openai";
 import { ResponseUsage, Responses } from "openai/resources/responses/responses";
 import * as vscode from "vscode";
 
-import { getChatModelClient } from "../../../utils/chatModels";
+import {
+  getChatModelClient,
+  withCopilotContextSize,
+} from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
@@ -258,7 +261,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
       // 8. Send request to VSCode LM
       const response = await client.sendRequest(
         vsCodeMessages,
-        lmRequestOptions,
+        withCopilotContextSize(client, lmRequestOptions),
         cancellationToken,
       );
 

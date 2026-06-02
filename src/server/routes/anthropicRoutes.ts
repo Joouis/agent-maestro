@@ -7,7 +7,7 @@ import * as vscode from "vscode";
 import {
   chatModelsCache,
   getChatModelClient,
-  withCopilotLongContextConfiguration,
+  withCopilotContextSize,
 } from "../../utils/chatModels";
 import { resolveClaudeCodeModelId } from "../../utils/claude";
 import { logger } from "../../utils/logger";
@@ -382,7 +382,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       // 5. Send request to the VS Code LM API
       const response = await client.sendRequest(
         vsCodeLmMessages,
-        withCopilotLongContextConfiguration(client, lmRequestOptions),
+        withCopilotContextSize(client, lmRequestOptions),
         cancellationToken,
       );
 

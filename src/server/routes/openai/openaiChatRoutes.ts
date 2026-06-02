@@ -4,7 +4,10 @@ import { streamSSE } from "hono/streaming";
 import OpenAI from "openai";
 import * as vscode from "vscode";
 
-import { getChatModelClient } from "../../../utils/chatModels";
+import {
+  getChatModelClient,
+  withCopilotContextSize,
+} from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
@@ -152,7 +155,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
       // 4. Send request to VSCode LM API
       const response = await client.sendRequest(
         vsCodeLmMessages,
-        lmRequestOptions,
+        withCopilotContextSize(client, lmRequestOptions),
         cancellationToken,
       );
 
