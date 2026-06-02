@@ -135,6 +135,9 @@ export function registerConfiguratorCommands(
         const existingEnv = { ...existingSettings?.env };
         // Remove the deprecated Claude Code small-fast override when rewriting settings.
         delete existingEnv.ANTHROPIC_SMALL_FAST_MODEL;
+        const autoCompactWindow = selectedDefaultModel.maxInputTokens
+          ? String(selectedDefaultModel.maxInputTokens)
+          : undefined;
 
         // Create new settings
         const newSettings = {
@@ -147,6 +150,11 @@ export function registerConfiguratorCommands(
               selectedDefaultModel.modelId,
               selectedDefaultModel.maxInputTokens,
             ),
+            ...(autoCompactWindow
+              ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: autoCompactWindow }
+              : {}),
+            CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:
+              existingEnv.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE ?? "85",
             // Equivalent of setting `DISABLE_AUTOUPDATER`, `DISABLE_BUG_COMMAND`, `DISABLE_ERROR_REPORTING`, and `DISABLE_TELEMETRY` to true
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
             // Disable the x-anthropic-billing-header (CCH) which can break prompt caching on non-Anthropic LLM gateways
