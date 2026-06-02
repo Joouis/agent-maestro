@@ -216,30 +216,16 @@ type LanguageModelChatRequestOptionsWithConfiguration =
     configuration?: Record<string, unknown>;
   };
 
-function shouldUseCopilotLongContextConfiguration(
-  client: vscode.LanguageModelChat,
-): boolean {
-  if (client.vendor !== SUPPORTED_VENDOR || client.maxInputTokens <= 200_000) {
-    return false;
-  }
-
-  const modelText = [client.id, client.family, client.name]
-    .join(" ")
-    .toLowerCase();
-  return modelText.includes("1m") && modelText.includes("claude");
-}
-
 /**
  * VS Code stores provider-specific model configuration separately from public
- * `modelOptions`. Copilot uses `configuration.contextSize` to opt into the
- * long-context tier, so pass the advertised max input size when a selected
- * model exposes a larger context window than Copilot's default configuration.
+ * `modelOptions`. Copilot uses `configuration.contextSize` as the prompt/input
+ * budget, so pass through the model's advertised max input size.
  */
-export function withCopilotLongContextConfiguration(
+export function withCopilotContextSize(
   client: vscode.LanguageModelChat,
   options: vscode.LanguageModelChatRequestOptions,
 ): vscode.LanguageModelChatRequestOptions {
-  if (!shouldUseCopilotLongContextConfiguration(client)) {
+  if (client.vendor !== SUPPORTED_VENDOR || client.maxInputTokens <= 0) {
     return options;
   }
 
@@ -249,9 +235,7 @@ export function withCopilotLongContextConfiguration(
   // controlled separately by max_tokens/max_output_tokens in modelOptions.
   const contextSize = client.maxInputTokens;
 
-  logger.debug(
-    `Using Copilot long-context configuration for ${client.id} (contextSize: ${contextSize})`,
-  );
+  logger.debug(`Setting Copilot contextSize=${contextSize} for ${client.id}`);
 
   return {
     ...options,

@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 
 import {
   jaccardSimilarity,
-  withCopilotLongContextConfiguration,
+  withCopilotContextSize,
 } from "../../utils/chatModels";
 import {
   resolveClaudeCodeModelId,
@@ -140,10 +140,10 @@ suite("Model Resolution Test Suite", () => {
     });
   });
 
-  suite("withCopilotLongContextConfiguration", () => {
+  suite("withCopilotContextSize", () => {
     test("adds contextSize for Copilot 1M models", () => {
       const model = createMockModel({});
-      const result = withCopilotLongContextConfiguration(model, {
+      const result = withCopilotContextSize(model, {
         justification: "test",
       }) as vscode.LanguageModelChatRequestOptions & {
         configuration?: Record<string, unknown>;
@@ -152,41 +152,58 @@ suite("Model Resolution Test Suite", () => {
       assert.strictEqual(result.configuration?.contextSize, 936000);
     });
 
-    test("does not change regular Copilot models", () => {
+    test("adds contextSize for regular Copilot models", () => {
       const model = createMockModel({
         id: "claude-opus-4.6",
         family: "claude-opus-4.6",
         maxInputTokens: 200000,
       });
-      const options: vscode.LanguageModelChatRequestOptions = {
+      const result = withCopilotContextSize(model, {
         justification: "test",
+      }) as vscode.LanguageModelChatRequestOptions & {
+        configuration?: Record<string, unknown>;
       };
 
-      assert.strictEqual(
-        withCopilotLongContextConfiguration(model, options),
-        options,
-      );
+      assert.strictEqual(result.configuration?.contextSize, 200000);
     });
 
-    test("does not change non-Claude 1M models", () => {
-      const model = createMockModel({
-        id: "gemini-3.5-flash-1m",
-        name: "Gemini 3.5 Flash 1M",
-        family: "gemini",
-      });
+    test("does not change non-Copilot models", () => {
+      const model = createMockModel({ vendor: "custom" });
       const options: vscode.LanguageModelChatRequestOptions = {
         justification: "test",
       };
 
-      assert.strictEqual(
-        withCopilotLongContextConfiguration(model, options),
-        options,
-      );
+      assert.strictEqual(withCopilotContextSize(model, options), options);
+    });
+
+    test("does not change models without an advertised input size", () => {
+      const model = createMockModel({ maxInputTokens: 0 });
+      const options: vscode.LanguageModelChatRequestOptions = {
+        justification: "test",
+      };
+
+      assert.strictEqual(withCopilotContextSize(model, options), options);
+    });
+
+    test("adds contextSize for non-Claude long-context models", () => {
+      const model = createMockModel({
+        id: "gpt-5.5",
+        name: "GPT-5.5",
+        family: "gpt-5.5",
+        maxInputTokens: 921793,
+      });
+      const result = withCopilotContextSize(model, {
+        justification: "test",
+      }) as vscode.LanguageModelChatRequestOptions & {
+        configuration?: Record<string, unknown>;
+      };
+
+      assert.strictEqual(result.configuration?.contextSize, 921793);
     });
 
     test("preserves existing private configuration", () => {
       const model = createMockModel({});
-      const result = withCopilotLongContextConfiguration(model, {
+      const result = withCopilotContextSize(model, {
         justification: "test",
         configuration: { reasoningEffort: "high" },
       } as vscode.LanguageModelChatRequestOptions & {
