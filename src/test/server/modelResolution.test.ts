@@ -1,12 +1,35 @@
 import * as assert from "assert";
+import * as vscode from "vscode";
 
-import { jaccardSimilarity } from "../../utils/chatModels";
+import {
+  jaccardSimilarity,
+  withCopilotLongContextConfiguration,
+} from "../../utils/chatModels";
 import {
   resolveClaudeCodeModelId,
   withClaudeCode1mSuffix,
 } from "../../utils/claude";
 
 suite("Model Resolution Test Suite", () => {
+  function createMockModel(
+    overrides: Partial<vscode.LanguageModelChat>,
+  ): vscode.LanguageModelChat {
+    return {
+      id: "claude-opus-4.6-1m",
+      name: "Claude Opus 4.6 (1M context)",
+      family: "claude-opus-4.6-1m",
+      version: "4.6",
+      vendor: "copilot",
+      maxInputTokens: 936000,
+      capabilities: {},
+      sendRequest: async () => {
+        throw new Error("not implemented");
+      },
+      countTokens: async () => 0,
+      ...overrides,
+    } as vscode.LanguageModelChat;
+  }
+
   suite("resolveClaudeCodeModelId", () => {
     test("appends -1m-internal when context-1m beta header is present", () => {
       assert.strictEqual(
@@ -114,6 +137,66 @@ suite("Model Resolution Test Suite", () => {
       const oneM = jaccardSimilarity("claude-opus-4-6", "claude-opus-4.6-1m");
       assert.ok(base >= 0.3, `base (${base.toFixed(3)}) should be >= 0.3`);
       assert.ok(oneM >= 0.3, `1m (${oneM.toFixed(3)}) should be >= 0.3`);
+    });
+  });
+
+  suite("withCopilotLongContextConfiguration", () => {
+    test("adds contextSize for Copilot 1M models", () => {
+      const model = createMockModel({});
+      const result = withCopilotLongContextConfiguration(model, {
+        justification: "test",
+      }) as vscode.LanguageModelChatRequestOptions & {
+        configuration?: Record<string, unknown>;
+      };
+
+      assert.strictEqual(result.configuration?.contextSize, 936000);
+    });
+
+    test("does not change regular Copilot models", () => {
+      const model = createMockModel({
+        id: "claude-opus-4.6",
+        family: "claude-opus-4.6",
+        maxInputTokens: 200000,
+      });
+      const options: vscode.LanguageModelChatRequestOptions = {
+        justification: "test",
+      };
+
+      assert.strictEqual(
+        withCopilotLongContextConfiguration(model, options),
+        options,
+      );
+    });
+
+    test("does not change non-Claude 1M models", () => {
+      const model = createMockModel({
+        id: "gemini-3.5-flash-1m",
+        name: "Gemini 3.5 Flash 1M",
+        family: "gemini",
+      });
+      const options: vscode.LanguageModelChatRequestOptions = {
+        justification: "test",
+      };
+
+      assert.strictEqual(
+        withCopilotLongContextConfiguration(model, options),
+        options,
+      );
+    });
+
+    test("preserves existing private configuration", () => {
+      const model = createMockModel({});
+      const result = withCopilotLongContextConfiguration(model, {
+        justification: "test",
+        configuration: { reasoningEffort: "high" },
+      } as vscode.LanguageModelChatRequestOptions & {
+        configuration: Record<string, unknown>;
+      }) as vscode.LanguageModelChatRequestOptions & {
+        configuration?: Record<string, unknown>;
+      };
+
+      assert.strictEqual(result.configuration?.contextSize, 936000);
+      assert.strictEqual(result.configuration?.reasoningEffort, "high");
     });
   });
 });

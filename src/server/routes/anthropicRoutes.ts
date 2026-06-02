@@ -4,7 +4,11 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
-import { chatModelsCache, getChatModelClient } from "../../utils/chatModels";
+import {
+  chatModelsCache,
+  getChatModelClient,
+  withCopilotLongContextConfiguration,
+} from "../../utils/chatModels";
 import { resolveClaudeCodeModelId } from "../../utils/claude";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
@@ -378,7 +382,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       // 5. Send request to the VS Code LM API
       const response = await client.sendRequest(
         vsCodeLmMessages,
-        lmRequestOptions,
+        withCopilotLongContextConfiguration(client, lmRequestOptions),
         cancellationToken,
       );
 
