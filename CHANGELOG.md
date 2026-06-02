@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.9.3 - 2026.06.02
+
+- Opt into Copilot's long-context configuration for Claude models with larger context windows so VS Code does not fall back to the default 200K prompt budget.
+- Use Copilot usage metadata for Gemini-compatible responses, including cached prompt and reasoning token counts, while retaining token counting as a fallback.
+
 ## v2.9.2 - 2026.05.23
 
 - Use Copilot usage metadata for OpenAI-compatible chat completions and responses when available, including cached input and reasoning token details.
