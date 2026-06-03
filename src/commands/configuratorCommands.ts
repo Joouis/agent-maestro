@@ -266,14 +266,14 @@ export function registerConfiguratorCommands(
 
         const proxyPort = proxy.getStatus().port;
 
-        const modelContextWindow = selectedModel.maxInputTokens || undefined;
+        const modelContextWindow = selectedModel.maxInputTokens ?? undefined;
 
         // Build updated config by merging with existing config
         const updatedConfig = {
           ...existingConfig,
           model: selectedModel.modelId,
           model_provider: "agent-maestro",
-          ...(modelContextWindow && {
+          ...(modelContextWindow !== undefined && {
             model_context_window: modelContextWindow,
           }),
           model_providers: {
