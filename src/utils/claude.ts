@@ -6,12 +6,30 @@ import * as vscode from "vscode";
 import { logger } from "./logger";
 
 const CLAUDE_MODEL_1M_SUFFIX = "[1m]";
+// Band edges (not hard caps) bracketing real 1M models, which advertise
+// ~900K–1M input tokens. The upper edge is the 1M-band ceiling; future 2M+
+// tiers get their own band rather than widening this one.
+const CLAUDE_CODE_1M_BAND_LOW = 800_000;
+const CLAUDE_CODE_1M_BAND_HIGH = 1_500_000;
+
+function isClaudeModelId(model: string): boolean {
+  return model.toLowerCase().includes("claude");
+}
 
 /**
- * Append `[1m]` to 1M-context model IDs so Claude Code enables its 1M path.
+ * Append `[1m]` to models that advertise a roughly 1M-token input window so
+ * Claude Code enables its 1M path for both Claude and non-Claude backends.
  */
-export function withClaudeCode1mSuffix(modelId: string): string {
-  if (!modelId.includes("-1m") || modelId.endsWith(CLAUDE_MODEL_1M_SUFFIX)) {
+export function withClaudeCode1mSuffix(
+  modelId: string,
+  maxInputTokens?: number,
+): string {
+  if (
+    modelId.endsWith(CLAUDE_MODEL_1M_SUFFIX) ||
+    !maxInputTokens ||
+    maxInputTokens <= CLAUDE_CODE_1M_BAND_LOW ||
+    maxInputTokens >= CLAUDE_CODE_1M_BAND_HIGH
+  ) {
     return modelId;
   }
   return `${modelId}${CLAUDE_MODEL_1M_SUFFIX}`;
@@ -20,12 +38,17 @@ export function withClaudeCode1mSuffix(modelId: string): string {
 /**
  * Resolve Claude Code model IDs from its 1M context signal.
  *
- * Claude Code sends `model: "claude-opus-4-6"` in the body and signals the 1M context
- * variant via the `anthropic-beta` header (e.g. `context-1m-2025-08-07`).
- * GitHub Copilot currently exposes these as internal 1M model IDs (e.g.
- * `claude-opus-4.7-1m-internal`). Appending `-1m-internal` makes fuzzy
- * matching prefer that provider-specific variant first while still allowing
- * fallback to a plain `-1m` variant when no internal model is available.
+ * Claude Code sends Claude models like `claude-opus-4-6` in the body and
+ * signals the 1M context variant via the `anthropic-beta` header (e.g.
+ * `context-1m-2025-08-07`). GitHub Copilot currently exposes these as internal
+ * 1M model IDs (e.g. `claude-opus-4.7-1m-internal`). Appending
+ * `-1m-internal` makes fuzzy matching prefer that provider-specific variant
+ * first while still allowing fallback to a plain `-1m` variant when no
+ * internal model is available.
+ *
+ * Non-Claude models can also be used through Claude Code with a `[1m]` suffix;
+ * those should keep their original IDs and rely on Copilot's advertised
+ * maxInputTokens/contextSize instead of this Claude-specific rewrite.
  *
  * This is best-effort compatibility: users who need a specific 1M model
  * should run Configure Claude Code Settings and select that model explicitly.
@@ -37,6 +60,7 @@ export function resolveClaudeCodeModelId(
   if (
     betaHeader &&
     /\bcontext-1m\b/.test(betaHeader) &&
+    isClaudeModelId(model) &&
     !model.includes("1m")
   ) {
     const resolved = `${model}-1m-internal`;

@@ -62,6 +62,13 @@ suite("Model Resolution Test Suite", () => {
       );
     });
 
+    test("does not append Claude-specific 1M suffix to non-Claude models", () => {
+      assert.strictEqual(
+        resolveClaudeCodeModelId("gpt-5.5", "context-1m-2025-08-07"),
+        "gpt-5.5",
+      );
+    });
+
     test("returns model unchanged without context-1m beta header", () => {
       assert.strictEqual(
         resolveClaudeCodeModelId(
@@ -74,37 +81,37 @@ suite("Model Resolution Test Suite", () => {
   });
 
   suite("withClaudeCode1mSuffix", () => {
-    test("appends [1m] to a -1m variant", () => {
+    test("appends [1m] when max input tokens indicate a 1M context window", () => {
       assert.strictEqual(
-        withClaudeCode1mSuffix("claude-opus-4-6-1m"),
-        "claude-opus-4-6-1m[1m]",
+        withClaudeCode1mSuffix("claude-opus-4-6", 936000),
+        "claude-opus-4-6[1m]",
       );
     });
 
-    test("tags -1m variants with extra trailing segments", () => {
+    test("tags non-Claude 1M-capable models", () => {
       assert.strictEqual(
-        withClaudeCode1mSuffix("claude-opus-4.7-1m-internal"),
-        "claude-opus-4.7-1m-internal[1m]",
+        withClaudeCode1mSuffix("gpt-5.5", 921793),
+        "gpt-5.5[1m]",
       );
     });
 
-    test("does not tag IDs whose '1m' lacks a leading dash", () => {
+    test("does not tag models below the 1M context threshold", () => {
       assert.strictEqual(
-        withClaudeCode1mSuffix("claude1m-opus"),
-        "claude1m-opus",
-      );
-    });
-
-    test("does not tag plain models", () => {
-      assert.strictEqual(
-        withClaudeCode1mSuffix("claude-opus-4-6"),
+        withClaudeCode1mSuffix("claude-opus-4-6", 200000),
         "claude-opus-4-6",
+      );
+    });
+
+    test("does not tag models above the expected 1M context range", () => {
+      assert.strictEqual(
+        withClaudeCode1mSuffix("future-huge-model", 2_000_000),
+        "future-huge-model",
       );
     });
 
     test("is idempotent — does not double-tag", () => {
       assert.strictEqual(
-        withClaudeCode1mSuffix("claude-opus-4-6-1m[1m]"),
+        withClaudeCode1mSuffix("claude-opus-4-6-1m[1m]", 936000),
         "claude-opus-4-6-1m[1m]",
       );
     });
