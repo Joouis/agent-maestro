@@ -216,12 +216,11 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 
 **Available Settings:**
 
-| Setting                                        | Description                                                        | Default                        |
-| ---------------------------------------------- | ------------------------------------------------------------------ | ------------------------------ |
-| `agent-maestro.defaultRooIdentifier`           | Default Roo extension to use                                       | `"rooveterinaryinc.roo-cline"` |
-| `agent-maestro.proxyServerPort`                | Proxy server port                                                  | `23333`                        |
-| `agent-maestro.mcpServerPort`                  | MCP server port                                                    | `23334`                        |
-| `agent-maestro.codex.contextWindowScaleFactor` | Scale factor for Codex context window calculation (range: 0.1–2.0) | `1`                            |
+| Setting                              | Description                  | Default                        |
+| ------------------------------------ | ---------------------------- | ------------------------------ |
+| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"rooveterinaryinc.roo-cline"` |
+| `agent-maestro.proxyServerPort`      | Proxy server port            | `23333`                        |
+| `agent-maestro.mcpServerPort`        | MCP server port              | `23334`                        |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
 
@@ -233,7 +232,7 @@ Agent Maestro reports real Copilot usage metadata for Anthropic responses when V
 
 - **Claude Code (and other Anthropic API clients):** Fallback token estimates and `/messages/count_tokens` responses report the raw VS Code token count. To make Claude Code compact context earlier and avoid edge cases near the model's full window, configure its `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` environment variables — Agent Maestro writes these for you when you run **Agent Maestro: Configure Claude Code Settings** (default compaction at 85% of the model's reported window).
 
-- **`codex.contextWindowScaleFactor`** (for Codex): Used only when generating Codex's `config.toml` to set the `model_context_window` value (calculated as `maxInputTokens × scaleFactor`). This tells Codex the effective context window size upfront so it manages its own conversation history accordingly.
+- **Codex:** When you run **Agent Maestro: Configure Codex Settings**, Agent Maestro writes `model_context_window` into Codex's `config.toml` using the selected model's reported `maxInputTokens`. This tells Codex the effective context window size upfront so it manages its own conversation history accordingly. To customize it, edit `model_context_window` in `~/.codex/config.toml` directly.
 
 ### Prompt Cache Compatibility
 

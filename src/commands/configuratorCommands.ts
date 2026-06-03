@@ -266,30 +266,7 @@ export function registerConfiguratorCommands(
 
         const proxyPort = proxy.getStatus().port;
 
-        // Calculate model_context_window with scale factor
-        const DEFAULT_SCALE_FACTOR = 1;
-        const MIN_SCALE_FACTOR = 0.1;
-        const MAX_SCALE_FACTOR = 2;
-        let scaleFactor = vscode.workspace
-          .getConfiguration("agent-maestro.codex")
-          .get<number>("contextWindowScaleFactor", DEFAULT_SCALE_FACTOR);
-
-        // Validate scale factor is within reasonable bounds
-        if (
-          typeof scaleFactor !== "number" ||
-          !Number.isFinite(scaleFactor) ||
-          scaleFactor < MIN_SCALE_FACTOR ||
-          scaleFactor > MAX_SCALE_FACTOR
-        ) {
-          logger.warn(
-            `Invalid contextWindowScaleFactor: ${scaleFactor}. Using default: ${DEFAULT_SCALE_FACTOR}`,
-          );
-          scaleFactor = DEFAULT_SCALE_FACTOR;
-        }
-
-        const modelContextWindow = selectedModel.maxInputTokens
-          ? Math.floor(selectedModel.maxInputTokens * scaleFactor)
-          : undefined;
+        const modelContextWindow = selectedModel.maxInputTokens || undefined;
 
         // Build updated config by merging with existing config
         const updatedConfig = {
