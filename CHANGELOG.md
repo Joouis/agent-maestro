@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.9.4 - 2026.06.03
+
+- Use advertised max input tokens to mark 1M-capable Claude Code models, and avoid rewriting non-Claude 1M model IDs to Claude-specific internal variants.
+- Configure Claude Code auto-compaction from the selected model's max input tokens, with a default 85 percent compaction threshold when the user has not set one. Rerun **Agent Maestro: Configure Claude Code Settings** to apply these settings.
+- Pass Copilot's advertised max input tokens as the VS Code context size for proxied model requests.
+
 ## v2.9.3 - 2026.06.02
 
 - Opt into Copilot's long-context configuration for Claude models with larger context windows so VS Code does not fall back to the default 200K prompt budget.
