@@ -216,13 +216,11 @@ You can configure Agent Maestro settings per workspace by adding them to your pr
 
 **Available Settings:**
 
-| Setting                                         | Description                                                        | Default                        |
-| ----------------------------------------------- | ------------------------------------------------------------------ | ------------------------------ |
-| `agent-maestro.defaultRooIdentifier`            | Default Roo extension to use                                       | `"rooveterinaryinc.roo-cline"` |
-| `agent-maestro.proxyServerPort`                 | Proxy server port                                                  | `23333`                        |
-| `agent-maestro.mcpServerPort`                   | MCP server port                                                    | `23334`                        |
-| `agent-maestro.anthropic.tokenCountScaleFactor` | Scale factor for Anthropic token count estimation (range: 0.1–2.0) | `1.25`                         |
-| `agent-maestro.codex.contextWindowScaleFactor`  | Scale factor for Codex context window calculation (range: 0.1–2.0) | `1`                            |
+| Setting                              | Description                  | Default                        |
+| ------------------------------------ | ---------------------------- | ------------------------------ |
+| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"rooveterinaryinc.roo-cline"` |
+| `agent-maestro.proxyServerPort`      | Proxy server port            | `23333`                        |
+| `agent-maestro.mcpServerPort`        | MCP server port              | `23334`                        |
 
 This allows different projects to use different configurations without affecting your global VS Code settings.
 
@@ -230,11 +228,11 @@ This allows different projects to use different configurations without affecting
 
 Agent Maestro proxies requests through VS Code's Language Model API, which uses a different tokenizer (OpenAI's tiktoken / O200K) than the actual model providers. This mismatch means the token counts reported locally can be lower than the real usage, potentially causing requests to exceed the model's context window and fail unexpectedly.
 
-Agent Maestro reports real Copilot usage metadata for Anthropic responses when VS Code provides it. When that metadata is unavailable, Agent Maestro falls back to local token counting, and configurable scale factors can inflate those fallback counts to better approximate provider-side usage. Different coding agent clients require different approaches:
+Agent Maestro reports real Copilot usage metadata for Anthropic responses when VS Code provides it. When that metadata is unavailable, Agent Maestro falls back to local token counting and reports those counts unscaled. Different coding agent clients manage their context windows differently:
 
-- **`anthropic.tokenCountScaleFactor`** (for Claude Code and other Anthropic API clients): Applied to fallback token estimates and `/messages/count_tokens` responses. The proxy multiplies the raw VS Code token count by this factor (e.g., 10,000 tokens × 1.25 = 12,500 reported). Real Copilot usage metadata, when available, is reported directly instead of being scaled.
+- **Claude Code (and other Anthropic API clients):** Fallback token estimates and `/v1/messages/count_tokens` responses report the raw VS Code token count. To make Claude Code compact context earlier and avoid edge cases near the model's full window, configure its `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` environment variables — Agent Maestro writes these for you when you run **Agent Maestro: Configure Claude Code Settings** (default compaction at 85% of the model's reported window).
 
-- **`codex.contextWindowScaleFactor`** (for Codex): Used only when generating Codex's `config.toml` to set the `model_context_window` value (calculated as `maxInputTokens × scaleFactor`). This tells Codex the effective context window size upfront so it manages its own conversation history accordingly.
+- **Codex:** When you run **Agent Maestro: Configure Codex Settings**, Agent Maestro writes `model_context_window` into Codex's `config.toml` using the selected model's reported `maxInputTokens`. This tells Codex the effective context window size upfront so it manages its own conversation history accordingly. To customize it, edit `model_context_window` in `~/.codex/config.toml` directly.
 
 ### Prompt Cache Compatibility
 

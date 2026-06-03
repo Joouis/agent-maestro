@@ -18,7 +18,6 @@ import {
   convertAnthropicSystemToVSCode,
   convertAnthropicToolChoiceToVSCode,
   convertAnthropicToolToVSCode,
-  countAnthropicMessageTokens,
   extractAnthropicUsage,
 } from "../utils/anthropic";
 import {
@@ -389,19 +388,19 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       const getFallbackUsage = async (
         accumulatedText: string,
       ): Promise<AnthropicTokenUsage> => {
-        const inputTokenCount = await countAnthropicMessageTokens(
+        const inputTokenCount = await client.countTokens(
           JSON.stringify(requestBody),
-          client,
+          cancellationToken,
         );
         const outputTokenCount = accumulatedText
-          ? await countAnthropicMessageTokens(accumulatedText, client)
-          : { original: 1, calibrated: 1 };
+          ? await client.countTokens(accumulatedText, cancellationToken)
+          : 1;
 
         return {
           cache_creation_input_tokens: 0,
           cache_read_input_tokens: 0,
-          input_tokens: inputTokenCount.calibrated,
-          output_tokens: outputTokenCount.calibrated,
+          input_tokens: inputTokenCount,
+          output_tokens: outputTokenCount,
         };
       };
 
@@ -712,6 +711,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
   // POST /v1/messages/count_tokens - Count input tokens
   app.openapi(countTokensRoute, async (c: Context) => {
+    const cancellationTokenSource = new vscode.CancellationTokenSource();
     try {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
@@ -725,14 +725,14 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
       if (clientError) {
         return c.json(clientError, 404);
       }
-      const inputTokenCount = await countAnthropicMessageTokens(
+      const inputTokenCount = await client.countTokens(
         JSON.stringify(requestBody),
-        client,
+        cancellationTokenSource.token,
       );
 
       return c.json(
         {
-          input_tokens: inputTokenCount.calibrated,
+          input_tokens: inputTokenCount,
         },
         200,
       );
@@ -749,6 +749,8 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         },
         500,
       );
+    } finally {
+      cancellationTokenSource.dispose();
     }
   });
 }
