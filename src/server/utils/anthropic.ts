@@ -305,13 +305,6 @@ export const convertAnthropicToolChoiceToVSCode = (
   }
 };
 
-const DEFAULT_TOKEN_SCALE_FACTOR = 1.25;
-
-export interface TokenCounts {
-  original: number; // Original VSCode API token count
-  calibrated: number; // Scaled token count approximating actual API usage
-}
-
 export interface AnthropicTokenUsage {
   cache_creation_input_tokens: number;
   cache_read_input_tokens: number;
@@ -352,38 +345,3 @@ export function extractAnthropicUsage(chunk: {
     output_tokens: usage.completion_tokens,
   };
 }
-
-/**
- * Counts the estimated number of tokens in a message for Anthropic models.
- *
- * Applies a configurable scale factor to compensate for the difference between
- * VS Code's tiktoken-based counting and Anthropic's actual tokenization.
- * The scale factor can be adjusted via the `agent-maestro.anthropic.tokenCountScaleFactor` setting.
- *
- * @param message - The message text to count tokens for
- * @param client - The VSCode language model chat client
- * @returns Object containing both original and scaled token counts
- */
-export const countAnthropicMessageTokens = async (
-  message: string,
-  client: vscode.LanguageModelChat,
-): Promise<TokenCounts> => {
-  const scaleFactor = vscode.workspace
-    .getConfiguration("agent-maestro.anthropic")
-    .get<number>("tokenCountScaleFactor", DEFAULT_TOKEN_SCALE_FACTOR);
-
-  const cancellationTokenSource = new vscode.CancellationTokenSource();
-  try {
-    const tokenCount = await client.countTokens(
-      message,
-      cancellationTokenSource.token,
-    );
-
-    return {
-      original: tokenCount,
-      calibrated: Math.round(tokenCount * scaleFactor),
-    };
-  } finally {
-    cancellationTokenSource.dispose();
-  }
-};

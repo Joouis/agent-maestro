@@ -51,6 +51,11 @@ The configurator also writes:
 Users must rerun `Agent Maestro: Configure Claude Code Settings` for these env
 vars to be written into an existing Claude Code settings file.
 
+Fallback token estimates and `/v1/messages/count_tokens` responses report VS Code's
+raw token count unscaled. Earlier compaction is driven by the two env vars above —
+lower `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` for more headroom — rather than by inflating
+the reported counts.
+
 ## Proxy Behavior
 
 Before calling `LanguageModelChat.sendRequest`, Agent Maestro applies
