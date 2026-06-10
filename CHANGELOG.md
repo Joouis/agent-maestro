@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.9.5 - 2026.06.10
+
+- Fix Claude Code 1M model routing to preserve requested model IDs instead of rewriting them to synthetic internal Copilot variants.
+- Recommend `gemini-3.5-flash` instead of `gemini-2.5-pro` in `Configure Gemini CLI Settings`.
+- Sort models within each family group newest-first in the configurator model picker, so the latest models (e.g. `claude-opus-4.8`) appear at the top.
+- Remove the `agent-maestro.codex.contextWindowScaleFactor` setting. `Configure Codex Settings` command now writes `model_context_window` to Codex's `config.toml` directly from the selected model's reported `maxInputTokens`. To customize the window, edit `model_context_window` in `~/.codex/config.toml`.
+- Remove the `agent-maestro.anthropic.tokenCountScaleFactor` setting. Fallback Anthropic token estimates and `/v1/messages/count_tokens` responses are now reported using VS Code's raw token count instead of a configurable 1.25× multiplier. To make Claude Code compact context earlier, use its `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` env vars — rerun `Configure Claude Code Settings` to have these written for you.
+
 ## v2.9.4 - 2026.06.03
 
 - Use advertised max input tokens to mark 1M-capable Claude Code models, and avoid rewriting non-Claude 1M model IDs to Claude-specific internal variants.
