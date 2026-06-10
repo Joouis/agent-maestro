@@ -5,10 +5,7 @@ import {
   jaccardSimilarity,
   withCopilotContextSize,
 } from "../../utils/chatModels";
-import {
-  resolveClaudeCodeModelId,
-  withClaudeCode1mSuffix,
-} from "../../utils/claude";
+import { withClaudeCode1mSuffix } from "../../utils/claude";
 
 suite("Model Resolution Test Suite", () => {
   function createMockModel(
@@ -29,56 +26,6 @@ suite("Model Resolution Test Suite", () => {
       ...overrides,
     } as vscode.LanguageModelChat;
   }
-
-  suite("resolveClaudeCodeModelId", () => {
-    test("appends -1m-internal when context-1m beta header is present", () => {
-      assert.strictEqual(
-        resolveClaudeCodeModelId(
-          "claude-opus-4-7",
-          "context-1m-2025-08-07,interleaved-thinking-2025-05-14",
-        ),
-        "claude-opus-4-7-1m-internal",
-      );
-    });
-
-    test("does not append when model already contains 1m", () => {
-      assert.strictEqual(
-        resolveClaudeCodeModelId("claude-opus-4-7-1m", "context-1m-2025-08-07"),
-        "claude-opus-4-7-1m",
-      );
-      assert.strictEqual(
-        resolveClaudeCodeModelId(
-          "claude-opus-4.7-1m-internal",
-          "context-1m-2025-08-07",
-        ),
-        "claude-opus-4.7-1m-internal",
-      );
-      assert.strictEqual(
-        resolveClaudeCodeModelId(
-          "claude-opus-4.7-1m-internal[1m]",
-          "context-1m-2025-08-07",
-        ),
-        "claude-opus-4.7-1m-internal[1m]",
-      );
-    });
-
-    test("does not append Claude-specific 1M suffix to non-Claude models", () => {
-      assert.strictEqual(
-        resolveClaudeCodeModelId("gpt-5.5", "context-1m-2025-08-07"),
-        "gpt-5.5",
-      );
-    });
-
-    test("returns model unchanged without context-1m beta header", () => {
-      assert.strictEqual(
-        resolveClaudeCodeModelId(
-          "claude-opus-4-7",
-          "interleaved-thinking-2025-05-14",
-        ),
-        "claude-opus-4-7",
-      );
-    });
-  });
 
   suite("withClaudeCode1mSuffix", () => {
     test("appends [1m] when max input tokens indicate a 1M context window", () => {

@@ -74,17 +74,17 @@ For Copilot models with a positive `maxInputTokens`, this adds:
 This avoids VS Code/Copilot falling back to a smaller default context size for a
 model that advertises a larger prompt budget.
 
-## Legacy Claude Rewrite
+## Model Routing
 
-`resolveClaudeCodeModelId` exists as a legacy compatibility fallback for older or
-manual Claude Code configurations. If Claude Code sends a Claude model such as
-`claude-opus-4-6` together with the `context-1m` beta header, Agent Maestro may
-rewrite it to a Copilot-specific internal 1M candidate such as
-`claude-opus-4-6-1m-internal` before model matching.
+Claude Code uses the `[1m]` marker and `context-1m` beta header as client-side
+signals for its 1M context path. Agent Maestro does not translate those signals
+into synthetic Copilot model IDs; it passes the requested model ID into normal
+exact/fuzzy matching against Copilot's advertised model list.
 
-This rewrite is Claude-only. Non-Claude models configured for Claude Code with
-a marker, such as `gpt-5.5[1m]`, must keep their original model IDs and rely on
-the selected model's `maxInputTokens` plus `configuration.contextSize`.
+This keeps routing aligned with Copilot's current model catalogue, where the real
+model IDs and their `maxInputTokens` values are the source of truth. For example,
+if Copilot advertises `claude-opus-4.8` as a 1M model, Claude Code requests should
+continue to route to `claude-opus-4.8` instead of a fabricated internal variant.
 
 ## Known Limits
 

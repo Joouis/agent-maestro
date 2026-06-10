@@ -9,7 +9,6 @@ import {
   getChatModelClient,
   withCopilotContextSize,
 } from "../../utils/chatModels";
-import { resolveClaudeCodeModelId } from "../../utils/claude";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
 import {
@@ -337,14 +336,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         tool_choice,
         ...msgCreateParams
       } = requestBody;
-      const resolvedModel = resolveClaudeCodeModelId(
-        model,
-        c.req.header("anthropic-beta"),
-      );
-
       // 1. Get chat model client (handles model mapping internally)
       const { client: initialClient, error: clientError } =
-        await getChatModelClient(resolvedModel);
+        await getChatModelClient(model);
 
       if (initialClient) {
         effectiveModelId = initialClient.id;
@@ -358,7 +352,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
 
       // 3. Map Anthropic messages to VS Code LM API messages
       const { vsCodeLmMessages } = await prepareAnthropicMessages({
-        requestBody: { ...requestBody, model: resolvedModel },
+        requestBody,
       });
       lmChatMessages = vsCodeLmMessages;
       cancellationTokenSource = new vscode.CancellationTokenSource();
@@ -715,12 +709,9 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
     try {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
-      const resolvedModel = resolveClaudeCodeModelId(
+      const { client, error: clientError } = await getChatModelClient(
         requestBody.model,
-        c.req.header("anthropic-beta"),
       );
-      const { client, error: clientError } =
-        await getChatModelClient(resolvedModel);
 
       if (clientError) {
         return c.json(clientError, 404);
