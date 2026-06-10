@@ -196,6 +196,9 @@ export const getChatModelsQuickPickItems = async (
   for (const family of familyOrder) {
     const models = modelGroups[family];
     if (models.length > 0) {
+      models.sort((a, b) =>
+        b.name.localeCompare(a.name, undefined, { numeric: true }),
+      );
       modelOptions.push(
         {
           kind: vscode.QuickPickItemKind.Separator,
