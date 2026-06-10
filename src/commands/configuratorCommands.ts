@@ -402,7 +402,7 @@ export function registerConfiguratorCommands(
         }
 
         const modelOptions = await getChatModelsQuickPickItems({
-          recommendedModelId: "gemini-2.5-pro",
+          recommendedModelId: "gemini-3.5-flash",
           priorityFamily: "gemini",
         });
 
