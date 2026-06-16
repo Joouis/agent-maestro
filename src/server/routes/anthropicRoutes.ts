@@ -7,7 +7,8 @@ import * as vscode from "vscode";
 import {
   chatModelsCache,
   getChatModelClient,
-  withCopilotContextSize,
+  getCopilotModelConfiguration,
+  withCopilotConfiguration,
 } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import { AnthropicErrorResponseSchema } from "../schemas/anthropic";
@@ -334,6 +335,7 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         messages,
         tools,
         tool_choice,
+        output_config,
         ...msgCreateParams
       } = requestBody;
       // 1. Get chat model client (handles model mapping internally)
@@ -371,11 +373,19 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         tools: convertAnthropicToolToVSCode(tools),
         toolMode: convertAnthropicToolChoiceToVSCode(tool_choice),
       };
+      const copilotConfiguration = getCopilotModelConfiguration({
+        reasoningEffort: (output_config as { effort?: unknown } | undefined)
+          ?.effort,
+      });
 
       // 5. Send request to the VS Code LM API
       const response = await client.sendRequest(
         vsCodeLmMessages,
-        withCopilotContextSize(client, lmRequestOptions),
+        withCopilotConfiguration(
+          client,
+          lmRequestOptions,
+          copilotConfiguration,
+        ),
         cancellationToken,
       );
 

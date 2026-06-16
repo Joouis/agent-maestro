@@ -6,7 +6,8 @@ import * as vscode from "vscode";
 
 import {
   getChatModelClient,
-  withCopilotContextSize,
+  getCopilotModelConfiguration,
+  withCopilotConfiguration,
 } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
@@ -110,10 +111,16 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
         stream = false,
         tools,
         tool_choice,
+        reasoning_effort: reasoningEffort,
+        // Copilot manages prompt caching internally instead of using prompt_cache_key
+        prompt_cache_key: _cacheKey,
         ...otherParams
       } = requestBody;
-      const { prompt_cache_key: _promptCacheKey, ...modelOptions } =
-        otherParams as Record<string, unknown>;
+
+      const modelOptions = otherParams as Record<string, unknown>;
+      const copilotConfiguration = getCopilotModelConfiguration({
+        reasoningEffort,
+      });
       requestedModelId = modelId;
 
       // 1. Get chat model client
@@ -155,7 +162,11 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
       // 4. Send request to VSCode LM API
       const response = await client.sendRequest(
         vsCodeLmMessages,
-        withCopilotContextSize(client, lmRequestOptions),
+        withCopilotConfiguration(
+          client,
+          lmRequestOptions,
+          copilotConfiguration,
+        ),
         cancellationToken,
       );
 

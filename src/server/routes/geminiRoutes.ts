@@ -6,7 +6,7 @@ import * as vscode from "vscode";
 
 import {
   getChatModelClient,
-  withCopilotContextSize,
+  withCopilotConfiguration,
 } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import {
@@ -352,7 +352,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       // 3. Send request to VSCode LM API
       const response = await client.sendRequest(
         vsCodeLmMessages,
-        withCopilotContextSize(client, lmRequestOptions),
+        withCopilotConfiguration(client, lmRequestOptions),
         cancellationTokenSource.token,
       );
 
@@ -492,7 +492,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         const cancellationToken = cancellationTokenSource.token;
         const response = await client.sendRequest(
           vsCodeLmMessages,
-          withCopilotContextSize(client, lmRequestOptions),
+          withCopilotConfiguration(client, lmRequestOptions),
           cancellationToken,
         );
 

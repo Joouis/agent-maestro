@@ -214,39 +214,71 @@ export const getChatModelsQuickPickItems = async (
   return modelOptions;
 };
 
-type LanguageModelChatRequestOptionsWithConfiguration =
-  vscode.LanguageModelChatRequestOptions & {
-    configuration?: Record<string, unknown>;
-  };
+export type CopilotReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | (string & {});
+
+export interface CopilotModelConfiguration {
+  /** Prompt/input token budget used by Copilot for this request. */
+  contextSize?: number;
+  /** Thinking/reasoning effort level, validated by Copilot against the selected model. */
+  reasoningEffort?: CopilotReasoningEffort;
+  [key: string]: unknown;
+}
+
+interface ChatRequestOptionsWithConfig
+  extends vscode.LanguageModelChatRequestOptions {
+  configuration?: CopilotModelConfiguration;
+}
+
+export function getCopilotModelConfiguration({
+  reasoningEffort,
+}: {
+  reasoningEffort?: unknown;
+}): CopilotModelConfiguration {
+  const configuration: CopilotModelConfiguration = {};
+  if (typeof reasoningEffort === "string" && reasoningEffort.trim()) {
+    configuration.reasoningEffort = reasoningEffort.trim();
+  }
+  return configuration;
+}
 
 /**
  * VS Code stores provider-specific model configuration separately from public
- * `modelOptions`. Copilot uses `configuration.contextSize` as the prompt/input
- * budget, so pass through the model's advertised max input size.
+ * `modelOptions`. Copilot reads this bag for settings like context size and
+ * reasoning effort.
  */
-export function withCopilotContextSize(
+export function withCopilotConfiguration(
   client: vscode.LanguageModelChat,
   options: vscode.LanguageModelChatRequestOptions,
+  configuration: CopilotModelConfiguration = {},
 ): vscode.LanguageModelChatRequestOptions {
   if (client.vendor !== SUPPORTED_VENDOR || client.maxInputTokens <= 0) {
     return options;
   }
 
-  const existingOptions =
-    options as LanguageModelChatRequestOptionsWithConfiguration;
   // Copilot treats contextSize as the prompt/input budget; response tokens stay
   // controlled separately by max_tokens/max_output_tokens in modelOptions.
   const contextSize = client.maxInputTokens;
+  const copilotConfiguration: CopilotModelConfiguration = {
+    ...configuration,
+    contextSize,
+  };
 
-  logger.debug(`Setting Copilot contextSize=${contextSize} for ${client.id}`);
+  logger.debug(
+    `Setting Copilot configuration for ${client.id}: contextSize=${copilotConfiguration.contextSize}, reasoningEffort=${copilotConfiguration.reasoningEffort ?? "default"}`,
+  );
 
   return {
     ...options,
-    configuration: {
-      ...existingOptions.configuration,
-      contextSize,
-    },
-  } as LanguageModelChatRequestOptionsWithConfiguration;
+    configuration: copilotConfiguration,
+  } as ChatRequestOptionsWithConfig;
 }
 
 /**
