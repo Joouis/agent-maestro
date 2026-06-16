@@ -257,6 +257,8 @@ Perfect for GitHub Copilot and Claude Code integration:
 - **`POST /api/anthropic/v1/messages`** - Anthropic Claude API compatibility using VS Code's Language Model API
 - **`POST /api/anthropic/v1/messages/count_tokens`** - Token counting for Anthropic-compatible messages
 
+> **Reasoning effort**: `output_config.effort` is forwarded to Copilot but is not yet applied to Anthropic Messages requests, pending upstream Copilot support. It currently has no effect for Claude models.
+
 ### OpenAI-Compatible Endpoints
 
 Perfect for Codex and OpenAI model integration:
@@ -271,6 +273,8 @@ Perfect for Gemini CLI integration:
 - **`POST /api/gemini/v1beta/models/{model}:generateContent`** - Google Gemini API compatibility using VS Code's Language Model API
 - **`POST /api/gemini/v1beta/models/{model}:streamGenerateContent`** - Streaming support for Gemini API
 - **`POST /api/gemini/v1beta/models/{model}:countTokens`** - Token counting for Gemini-compatible messages
+
+> **Thinking levels**: Not forwarded for Gemini. Copilot's Gemini path does not read the `thinkingConfig.thinkingLevel` parameter from the model configuration; it only applies a hardcoded `low` effort behind an internal experiment flag, so any forwarded value would be ignored.
 
 ### RooCode Agent Routes
 

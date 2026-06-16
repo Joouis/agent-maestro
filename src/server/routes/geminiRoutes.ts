@@ -350,6 +350,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       );
 
       // 3. Send request to VSCode LM API
+      // No Gemini request field is currently mapped to Copilot reasoning effort.
       const response = await client.sendRequest(
         vsCodeLmMessages,
         withCopilotConfiguration(client, lmRequestOptions),
@@ -489,6 +490,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         );
 
         // 3. Send request to VSCode LM API
+        // No Gemini request field is currently mapped to Copilot reasoning effort.
         const cancellationToken = cancellationTokenSource.token;
         const response = await client.sendRequest(
           vsCodeLmMessages,

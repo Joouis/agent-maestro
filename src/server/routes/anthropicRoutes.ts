@@ -373,9 +373,11 @@ export function registerAnthropicRoutes(app: OpenAPIHono) {
         tools: convertAnthropicToolToVSCode(tools),
         toolMode: convertAnthropicToolChoiceToVSCode(tool_choice),
       };
+      // Forwarded to Copilot, but Copilot's Anthropic Messages path does not yet
+      // apply reasoning effort to the outgoing request, so this is a no-op until
+      // upstream support lands. Keep forwarding so it works once it does.
       const copilotConfiguration = getCopilotModelConfiguration({
-        reasoningEffort: (output_config as { effort?: unknown } | undefined)
-          ?.effort,
+        reasoningEffort: output_config?.effort,
       });
 
       // 5. Send request to the VS Code LM API
