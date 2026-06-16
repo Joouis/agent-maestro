@@ -2,8 +2,10 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 
 import {
+  type CopilotModelConfiguration,
+  getCopilotModelConfiguration,
   jaccardSimilarity,
-  withCopilotContextSize,
+  withCopilotConfiguration,
 } from "../../utils/chatModels";
 import { withClaudeCode1mSuffix } from "../../utils/claude";
 
@@ -94,13 +96,13 @@ suite("Model Resolution Test Suite", () => {
     });
   });
 
-  suite("withCopilotContextSize", () => {
+  suite("withCopilotConfiguration", () => {
     test("adds contextSize for Copilot 1M models", () => {
       const model = createMockModel({});
-      const result = withCopilotContextSize(model, {
+      const result = withCopilotConfiguration(model, {
         justification: "test",
       }) as vscode.LanguageModelChatRequestOptions & {
-        configuration?: Record<string, unknown>;
+        configuration?: CopilotModelConfiguration;
       };
 
       assert.strictEqual(result.configuration?.contextSize, 936000);
@@ -112,10 +114,10 @@ suite("Model Resolution Test Suite", () => {
         family: "claude-opus-4.6",
         maxInputTokens: 200000,
       });
-      const result = withCopilotContextSize(model, {
+      const result = withCopilotConfiguration(model, {
         justification: "test",
       }) as vscode.LanguageModelChatRequestOptions & {
-        configuration?: Record<string, unknown>;
+        configuration?: CopilotModelConfiguration;
       };
 
       assert.strictEqual(result.configuration?.contextSize, 200000);
@@ -127,7 +129,7 @@ suite("Model Resolution Test Suite", () => {
         justification: "test",
       };
 
-      assert.strictEqual(withCopilotContextSize(model, options), options);
+      assert.strictEqual(withCopilotConfiguration(model, options), options);
     });
 
     test("does not change models without an advertised input size", () => {
@@ -136,7 +138,7 @@ suite("Model Resolution Test Suite", () => {
         justification: "test",
       };
 
-      assert.strictEqual(withCopilotContextSize(model, options), options);
+      assert.strictEqual(withCopilotConfiguration(model, options), options);
     });
 
     test("adds contextSize for non-Claude long-context models", () => {
@@ -146,28 +148,44 @@ suite("Model Resolution Test Suite", () => {
         family: "gpt-5.5",
         maxInputTokens: 921793,
       });
-      const result = withCopilotContextSize(model, {
+      const result = withCopilotConfiguration(model, {
         justification: "test",
       }) as vscode.LanguageModelChatRequestOptions & {
-        configuration?: Record<string, unknown>;
+        configuration?: CopilotModelConfiguration;
       };
 
       assert.strictEqual(result.configuration?.contextSize, 921793);
     });
 
-    test("preserves existing private configuration", () => {
+    test("merges request-specific Copilot configuration", () => {
       const model = createMockModel({});
-      const result = withCopilotContextSize(model, {
-        justification: "test",
-        configuration: { reasoningEffort: "high" },
-      } as vscode.LanguageModelChatRequestOptions & {
-        configuration: Record<string, unknown>;
-      }) as vscode.LanguageModelChatRequestOptions & {
-        configuration?: Record<string, unknown>;
+      const result = withCopilotConfiguration(
+        model,
+        { justification: "test" },
+        { reasoningEffort: "medium" },
+      ) as vscode.LanguageModelChatRequestOptions & {
+        configuration?: CopilotModelConfiguration;
       };
 
       assert.strictEqual(result.configuration?.contextSize, 936000);
-      assert.strictEqual(result.configuration?.reasoningEffort, "high");
+      assert.strictEqual(result.configuration?.reasoningEffort, "medium");
+    });
+  });
+
+  suite("getCopilotModelConfiguration", () => {
+    test("extracts reasoningEffort from a non-empty string", () => {
+      assert.deepStrictEqual(
+        getCopilotModelConfiguration({ reasoningEffort: " high " }),
+        { reasoningEffort: "high" },
+      );
+    });
+
+    test("ignores missing or non-string reasoning effort values", () => {
+      assert.deepStrictEqual(getCopilotModelConfiguration({}), {});
+      assert.deepStrictEqual(
+        getCopilotModelConfiguration({ reasoningEffort: 1 }),
+        {},
+      );
     });
   });
 });
