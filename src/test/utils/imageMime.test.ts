@@ -4,9 +4,10 @@ import { mimeForVscodeLm } from "../../server/utils/imageMime";
 import { JPEG_50x50_BASE64, WEBP_1024x935_BASE64 } from "./imageMime.fixtures";
 
 /**
- * Build a minimal valid PNG (8-byte signature + IHDR chunk) with a forged
- * width/height so `image-size` reports exactly those dimensions. Lets the 768px
- * boundary be tested without large fixtures.
+ * Build a minimal PNG header (8-byte signature + IHDR chunk) with a forged
+ * width/height so `image-size` reports exactly those dimensions. CRC bytes are
+ * left zero — this is not a spec-valid PNG, just enough for `image-size` to
+ * parse. Lets the 768px boundary be tested without large fixtures.
  */
 function makePng(width: number, height: number): Buffer {
   const signature = Buffer.from([
