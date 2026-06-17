@@ -26,6 +26,10 @@ Primary language: **TypeScript** (ESM, Node ≥ 22, VS Code ≥ 1.100). Package 
 - `docs/`, `website/` — user-facing documentation.
 - `.changeset/` — pending release notes (Changesets).
 
+## Known upstream (VS Code) issues
+
+- **Image MIME re-encode** — the VS Code LM API re-encodes images to PNG when both dimensions exceed 768px without updating their declared MIME type, which breaks providers that sniff bytes (e.g. Anthropic vision). Worked around in `src/server/utils/imageMime.ts`. **Re-check this whenever bumping `engines.vscode`** — if upstream starts preserving the source format, the workaround must be removed or it will cause a new mismatch. See `docs/vscode-image-mime-defect.md`.
+
 ## Commands
 
 Run via pnpm. Do not use npm or yarn.

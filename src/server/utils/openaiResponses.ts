@@ -23,6 +23,7 @@ import {
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import { mimeForVscodeLm } from "./imageMime";
 
 /**
  * Import types from OpenAI SDK for Responses API
@@ -159,9 +160,10 @@ const convertInputImageToVSCodePart = (
     if (match) {
       const mimeType = match[1];
       const base64Data = match[2];
+      const bytes = Buffer.from(base64Data, "base64");
       return new vscode.LanguageModelDataPart(
-        Buffer.from(base64Data, "base64"),
-        mimeType,
+        bytes,
+        mimeForVscodeLm(bytes, mimeType),
       );
     }
   }

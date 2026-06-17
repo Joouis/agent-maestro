@@ -10,6 +10,7 @@ import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
 import { extractCopilotUsagePayload } from "./copilotUsage";
+import { mimeForVscodeLm } from "./imageMime";
 
 /**
  * Map of uppercase/mixed-case type values to lowercase JSON Schema types.
@@ -163,9 +164,12 @@ const convertGeminiPartToVSCodePart = (
   if (part.inlineData) {
     if (part.inlineData.data) {
       const buffer = Buffer.from(part.inlineData.data, "base64");
+      const mimeType = part.inlineData.mimeType || "application/octet-stream";
       return new vscode.LanguageModelDataPart(
         buffer,
-        part.inlineData.mimeType || "application/octet-stream",
+        mimeType.startsWith("image/")
+          ? mimeForVscodeLm(buffer, mimeType)
+          : mimeType,
       );
     }
     // Fallback to text representation
