@@ -10,6 +10,7 @@ import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
 import { extractCopilotUsagePayload } from "./copilotUsage";
+import { mimeForVscodeLm } from "./imageMime";
 
 /**
  * Map of uppercase/mixed-case type values to lowercase JSON Schema types.
@@ -163,9 +164,14 @@ const convertGeminiPartToVSCodePart = (
   if (part.inlineData) {
     if (part.inlineData.data) {
       const buffer = Buffer.from(part.inlineData.data, "base64");
+      const mimeType = part.inlineData.mimeType || "application/octet-stream";
+      // mimeForVscodeLm sniffs the bytes; non-image data (audio, etc.) has no
+      // readable dimensions and is returned unchanged, so this is safe to call
+      // unconditionally — and it lets images mislabeled as octet-stream still
+      // be corrected.
       return new vscode.LanguageModelDataPart(
         buffer,
-        part.inlineData.mimeType || "application/octet-stream",
+        mimeForVscodeLm(buffer, mimeType),
       );
     }
     // Fallback to text representation

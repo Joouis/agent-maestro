@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
 import { extractCopilotUsagePayload } from "./copilotUsage";
+import { mimeForVscodeLm } from "./imageMime";
 
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
@@ -14,9 +15,10 @@ const imageBlockParamToVSCodePart = (
     return new vscode.LanguageModelTextPart(JSON.stringify(param));
   }
 
+  const bytes = Buffer.from(param.source.data, "base64");
   return new vscode.LanguageModelDataPart(
-    Buffer.from(param.source.data, "base64"),
-    param.source.media_type,
+    bytes,
+    mimeForVscodeLm(bytes, param.source.media_type),
   );
 };
 
