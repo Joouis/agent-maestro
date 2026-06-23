@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.9.6 - 2026.06.23
+
+- Forward reasoning effort settings to Copilot for OpenAI and Anthropic proxy requests. OpenAI-backed models apply the setting today; Claude/Anthropic requests forward it but require upstream Copilot support to take effect.
+- Fix images sent to Copilot vision models being rejected as a media-type mismatch (e.g. "specified image/jpeg, but the image appears to be image/png"). The VS Code Language Model API re-encodes images to PNG when both dimensions exceed 768px without updating their declared MIME type; Agent Maestro now relabels affected images so the type matches the bytes. Applies to the Anthropic, OpenAI Chat, OpenAI Responses, and Gemini routes.
+
 ## v2.9.5 - 2026.06.10
 
 - Fix Claude Code 1M model routing to preserve requested model IDs instead of rewriting them to synthetic internal Copilot variants.
