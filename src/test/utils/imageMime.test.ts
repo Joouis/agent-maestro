@@ -50,16 +50,15 @@ suite("imageMime Test Suite", () => {
       const jpeg = Buffer.from(JPEG_50x50_BASE64, "base64");
       const webp = Buffer.from(WEBP_1024x935_BASE64, "base64");
 
-      test("keeps mime for a small JPEG (50x50, below the 768 gate)", () => {
-        // VS Code passes images <=768 on a side through verbatim, so the
-        // original JPEG bytes survive and the label must stay image/jpeg.
+      test("keeps mime for a small JPEG (50x50)", () => {
+        // The JPEG bytes are forwarded unchanged, so the label stays image/jpeg.
         assert.strictEqual(mimeForVscodeLm(jpeg, "image/jpeg"), "image/jpeg");
       });
 
-      test("relabels a large WebP (1024x935, both sides > 768) to png", () => {
-        // Both dimensions exceed 768, so VS Code re-encodes to PNG via
-        // canvas.toBlob; the label must follow the bytes to image/png.
-        assert.strictEqual(mimeForVscodeLm(webp, "image/webp"), "image/png");
+      test("keeps mime for a large WebP (1024x935, both sides > 768)", () => {
+        // The bytes are forwarded unchanged, so the label follows them
+        // regardless of size — VS Code no longer re-encodes to PNG here.
+        assert.strictEqual(mimeForVscodeLm(webp, "image/webp"), "image/webp");
       });
 
       test("fixtures decode to the expected formats", () => {
@@ -70,22 +69,19 @@ suite("imageMime Test Suite", () => {
       });
     });
 
-    suite("GIF (size-gated like other formats on the LM API path)", () => {
-      // The LM API path calls resizeImage() WITHOUT a mimeType, so VS Code's
-      // `isGif` branch never fires and GIFs follow the same 768 gate as
-      // everything else — small GIFs are NOT re-encoded.
-      test("keeps mime for a small GIF (a side <= 768)", () => {
+    suite("GIF (label follows the real bytes)", () => {
+      test("keeps mime for a small GIF", () => {
         assert.strictEqual(
           mimeForVscodeLm(makeGif(640, 480), "image/gif"),
           "image/gif",
         );
       });
 
-      test("relabels a large GIF (both sides > 768) to png", () => {
-        // Large GIF is re-encoded to a single-frame PNG; the label follows.
+      test("keeps mime for a large GIF (both sides > 768)", () => {
+        // Size no longer changes the label; the GIF bytes pass through as-is.
         assert.strictEqual(
           mimeForVscodeLm(makeGif(1024, 900), "image/gif"),
-          "image/png",
+          "image/gif",
         );
       });
 
@@ -97,35 +93,32 @@ suite("imageMime Test Suite", () => {
       });
     });
 
-    suite("768px boundary (the VS Code re-encode gate)", () => {
-      // These use PNG bytes with a matching image/png label so the assertions
-      // isolate the size gate from the byte-sniffing in the mislabel suite.
-      test("relabels to png when both sides exceed 768", () => {
+    suite("size does not change the label (bytes decide)", () => {
+      // The label follows the forwarded bytes regardless of dimensions, so a
+      // PNG stays image/png at any size. These guard against a size-based
+      // relabel branch being reintroduced.
+      test("keeps png when both sides exceed 768", () => {
         assert.strictEqual(
           mimeForVscodeLm(makePng(769, 769), "image/png"),
           "image/png",
         );
       });
 
-      test("keeps mime when both sides are exactly 768", () => {
-        // VS Code's gate is `width <= 768 || height <= 768` (inclusive), so
-        // 768 is the pass-through case, not the re-encode case.
+      test("keeps png when both sides are exactly 768", () => {
         assert.strictEqual(
           mimeForVscodeLm(makePng(768, 768), "image/png"),
           "image/png",
         );
       });
 
-      test("does not re-encode wide-but-short images (one side <= 768)", () => {
-        // 4000x500: VS Code's `||` gate passes it through untouched because
-        // height <= 768, so it must NOT be relabeled to png-via-re-encode.
+      test("keeps png for wide-but-short images", () => {
         assert.strictEqual(
           mimeForVscodeLm(makePng(4000, 500), "image/png"),
           "image/png",
         );
       });
 
-      test("does not re-encode tall-but-narrow images (one side <= 768)", () => {
+      test("keeps png for tall-but-narrow images", () => {
         assert.strictEqual(
           mimeForVscodeLm(makePng(500, 4000), "image/png"),
           "image/png",
@@ -133,9 +126,6 @@ suite("imageMime Test Suite", () => {
       });
 
       test("keeps a real small JPEG as image/jpeg (pass-through)", () => {
-        // Bytes and label agree: a small JPEG must survive as image/jpeg, not
-        // be coerced to png. Guards the wide/tall cases above from silently
-        // passing only because the bytes happened to be png.
         const jpeg = Buffer.from(JPEG_50x50_BASE64, "base64");
         assert.strictEqual(mimeForVscodeLm(jpeg, "image/jpeg"), "image/jpeg");
       });
@@ -166,11 +156,21 @@ suite("imageMime Test Suite", () => {
         );
       });
 
-      test("large mislabeled image is png regardless of label (re-encode wins)", () => {
-        // Re-encode path: both sides > 768 → png no matter the incoming label.
+      test("large mislabeled image follows its real bytes (byte sniffing wins)", () => {
+        // A large PNG mislabeled as jpeg is still image/png: the bytes decide.
         assert.strictEqual(
           mimeForVscodeLm(makePng(1000, 1000), "image/jpeg"),
           "image/png",
+        );
+      });
+
+      test("sniffs a short-but-valid JPEG header (fewer than 12 bytes)", () => {
+        // Signature detection must not require a full 12-byte prefix; a 3-byte
+        // JPEG header mislabeled as png must still resolve to image/jpeg.
+        const shortJpeg = Buffer.from([0xff, 0xd8, 0xff]);
+        assert.strictEqual(
+          mimeForVscodeLm(shortJpeg, "image/png"),
+          "image/jpeg",
         );
       });
     });

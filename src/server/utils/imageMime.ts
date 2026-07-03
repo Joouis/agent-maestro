@@ -14,47 +14,45 @@ const TYPE_TO_MIME: Record<string, string> = {
 /**
  * Sniff the true image format from the leading magic bytes.
  *
- * This is the most reliable signal we have and is independent of both the
- * caller's declared label and `image-size`'s dimension parsing. Returns
- * `undefined` when the buffer does not start with a recognized signature.
+ * Each signature is length-checked independently so short-but-valid buffers
+ * (a 3-byte JPEG/GIF header, a 2-byte BMP header) are still recognized; only
+ * WebP needs the full 12-byte `RIFF....WEBP` prefix. Returns `undefined` when
+ * the buffer matches no known signature.
  */
 function sniffMimeFromBytes(buffer: Buffer): string | undefined {
-  if (!buffer || buffer.length < 12) {
+  if (!buffer || buffer.length < 2) {
     return undefined;
   }
 
+  const at = (i: number, v: number) => buffer.length > i && buffer[i] === v;
+
   // JPEG: FF D8 FF
-  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+  if (at(0, 0xff) && at(1, 0xd8) && at(2, 0xff)) {
     return "image/jpeg";
   }
   // PNG: 89 50 4E 47
-  if (
-    buffer[0] === 0x89 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x4e &&
-    buffer[3] === 0x47
-  ) {
+  if (at(0, 0x89) && at(1, 0x50) && at(2, 0x4e) && at(3, 0x47)) {
     return "image/png";
   }
   // GIF: 47 49 46
-  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
+  if (at(0, 0x47) && at(1, 0x49) && at(2, 0x46)) {
     return "image/gif";
   }
   // WebP: RIFF....WEBP
   if (
-    buffer[0] === 0x52 &&
-    buffer[1] === 0x49 &&
-    buffer[2] === 0x46 &&
-    buffer[3] === 0x46 &&
-    buffer[8] === 0x57 &&
-    buffer[9] === 0x45 &&
-    buffer[10] === 0x42 &&
-    buffer[11] === 0x50
+    at(0, 0x52) &&
+    at(1, 0x49) &&
+    at(2, 0x46) &&
+    at(3, 0x46) &&
+    at(8, 0x57) &&
+    at(9, 0x45) &&
+    at(10, 0x42) &&
+    at(11, 0x50)
   ) {
     return "image/webp";
   }
   // BMP: 42 4D
-  if (buffer[0] === 0x42 && buffer[1] === 0x4d) {
+  if (at(0, 0x42) && at(1, 0x4d)) {
     return "image/bmp";
   }
 
@@ -68,20 +66,21 @@ function sniffMimeFromBytes(buffer: Buffer): string | undefined {
  * that sniff the payload (Anthropic) reject any byte/label mismatch ("specified
  * image/png, but the image appears to be image/jpeg").
  *
- * We therefore trust the real bytes over the caller's declared label:
+ * Because the bytes are forwarded unchanged, the label simply follows them:
  *   1. magic-byte signature (most reliable) — used whenever recognized;
  *   2. otherwise the format reported by `image-size`;
  *   3. otherwise fall back to the declared mimeType.
  *
- * NOTE: An earlier version force-labeled any image whose width AND height
- * exceeded 768px as `image/png`, on the assumption that the VS Code LM API
- * re-encodes large images to PNG (`mainThreadLanguageModels.ts` →
- * `resizeImage`) while leaving the label untouched. That assumption no longer
- * holds — when VS Code does not re-encode, a large JPEG kept its JPEG bytes but
- * shipped with an `image/png` label, producing the exact mismatch above. Since
- * we do not transcode the bytes here, relabeling would always be a lie, so the
- * force-to-PNG branch has been removed. If large images genuinely need to be
- * PNG in the future, transcode the buffer rather than relabel it.
+ * HISTORY: an earlier version force-labeled any image whose width AND height
+ * exceeded 768px as `image/png`, to match a VS Code LM API defect that
+ * re-encoded large images to PNG (`mainThreadLanguageModels.ts` ->
+ * `resizeImage`, called with no source mimeType) while leaving the label
+ * untouched. VS Code's `resizeImage` now preserves the source format when a
+ * mimeType is supplied, and observed builds no longer produce the PNG bytes for
+ * large JPEG/WebP, so force-labeling to PNG became a NEW mismatch (PNG label on
+ * JPEG bytes). We therefore follow the real bytes unconditionally. If a VS Code
+ * build is ever found to still re-encode large images to PNG on this path, the
+ * correct fix is to transcode the buffer to PNG here, not to relabel it.
  */
 export function mimeForVscodeLm(buffer: Buffer, originalMime: string): string {
   const sniffed = sniffMimeFromBytes(buffer);
