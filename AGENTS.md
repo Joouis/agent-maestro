@@ -28,7 +28,7 @@ Primary language: **TypeScript** (ESM, Node ≥ 22, VS Code ≥ 1.100). Package 
 
 ## Known upstream (VS Code) issues
 
-- **Image MIME labeling** — providers that sniff image bytes (e.g. Anthropic vision) reject any byte/label mismatch. `src/server/utils/imageMime.ts` makes the declared MIME follow the real bytes (magic-byte sniff, then `image-size`, then the declared type); it no longer relabels large images to PNG. **Re-check whenever bumping `engines.vscode`** — if a VS Code build is found to still re-encode large images to PNG on the LM API path (`mainThreadLanguageModels.ts` -> `resizeImage` with no mimeType), the fix is to transcode the buffer to PNG there, not to relabel. See `docs/vscode-image-mime-defect.md`.
+- **Image MIME re-encode** — the VS Code LM API re-encodes images to PNG when both dimensions exceed 768px without updating their declared MIME type, which breaks providers that sniff bytes (e.g. Anthropic vision). Worked around in `src/server/utils/imageMime.ts`. **Re-check this whenever bumping `engines.vscode`** — if upstream starts preserving the source format, the workaround must be removed or it will cause a new mismatch. See `docs/vscode-image-mime-defect.md`.
 
 ## Commands
 

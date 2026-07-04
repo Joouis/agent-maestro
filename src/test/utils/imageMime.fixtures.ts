@@ -1,6 +1,6 @@
 // Real image fixtures used by imageMime tests.
-// JPEG: 50x50 (small, mime preserved from its bytes).
-// WebP: 1024x935 (large; label still follows the real bytes, no PNG relabel).
+// JPEG: 50x50 (below VS Code's 768 resize gate -> mime preserved).
+// WebP: 1024x935 (both sides > 768 -> VS Code re-encodes to PNG -> relabel).
 // Base64 payloads are the data portion of a data: URI (no prefix).
 
 export const JPEG_50x50_BASE64 =

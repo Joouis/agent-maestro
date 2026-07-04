@@ -1,70 +1,78 @@
-# VS Code LM API image MIME handling
+# VS Code LM API image MIME re-encode defect
 
 ## Summary
 
-Providers that validate image bytes against the declared MIME type (notably
-Anthropic vision) reject any request where the two disagree:
+The VS Code Language Model API silently re-encodes images to PNG when sending
+them to a model provider, but does **not** update the part's declared MIME type.
+Providers that validate image bytes against the declared type (notably Anthropic)
+reject the request:
 
 ```
 messages.0.content.4.image.source.base64: The image was specified using the
-image/png media type, but the image appears to be a image/jpeg image
+image/jpeg media type, but the image appears to be a image/png image
 ```
 
-Two independent things can cause that mismatch on the proxy routes that forward
-images to Copilot vision models (Anthropic `/v1/messages`, OpenAI Chat, OpenAI
-Responses, Gemini):
+This affects every proxy route that forwards images to Copilot vision models:
+Anthropic (`/v1/messages`), OpenAI Chat, OpenAI Responses, and Gemini.
 
-1. A client mislabels its bytes (e.g. JPEG bytes under an `image/png` label).
-2. Historically, the VS Code LM API re-encoded large images to PNG without
-   updating the declared MIME type (see the version note below).
+(The same error can also originate from a client that mislabels its bytes —
+e.g. PNG data under an `image/jpeg` label. The workaround below handles both,
+since both reduce to "declared type disagrees with bytes".)
 
-## Current behavior (this repo)
+## Root cause (VS Code side)
+
+On the request path, `mainThreadLanguageModels.ts` runs every `image_url` part
+through `resizeImage()` (`vs/workbench/contrib/chat/browser/chatImageUtils.ts`):
+
+- `resizeImage(data)` is called **without** the source MIME type.
+- With no MIME, the canvas re-encode always picks `image/png`
+  (`outputMimeType = mimeType && jpegTypes.includes(mimeType) ? 'image/jpeg' : 'image/png'`).
+- The part's `mimeType` field is left untouched at its original value.
+
+The resize only triggers when **both** dimensions exceed 768px — the early
+return is `(width <= 768 || height <= 768)`. This is uniform across formats on
+the LM API path:
+
+| Input               | VS Code behavior               | Result                        |
+| ------------------- | ------------------------------ | ----------------------------- |
+| Either side ≤ 768px | passes through verbatim        | label must match bytes        |
+| Both sides > 768px  | re-encodes to PNG, keeps label | **mismatch unless relabeled** |
+
+PNG inputs are unaffected because the forced PNG output happens to match the
+PNG label. (`resizeImage()` has an `isGif` branch that re-encodes GIFs at any
+size, but the LM API path never passes a mimeType, so it never fires here.)
+
+## Workaround (this repo)
 
 `src/server/utils/imageMime.ts` exports `mimeForVscodeLm(buffer, originalMime)`,
-applied at all image-construction sites. It makes the declared type follow the
-bytes we actually forward, since those bytes pass through unchanged:
+applied at all four image-construction sites. It sniffs the real format from the
+bytes (header-only, via `image-size`, which also yields the dimensions) and
+returns:
 
-1. sniff the real format from the leading magic bytes (JPEG/PNG/GIF/WebP/BMP) —
-   the most reliable signal;
-2. otherwise use the format reported by `image-size`;
-3. otherwise fall back to the declared `originalMime`.
+- both sides > 768px → `image/png` (VS Code will re-encode it to PNG)
+- otherwise → the **sniffed** true MIME type (the bytes pass through unchanged)
+- bytes not recognizable as an image → fall back to the declared `originalMime`
 
-There is **no size-based relabeling**. The label is purely a function of the
-bytes, which fixes the client-mislabel case at any size and never invents a
-type the bytes don't have.
+Using the sniffed type for the pass-through case fixes a second, independent
+source of mismatch: a client that mislabels the bytes (e.g. PNG bytes under an
+`image/jpeg` label). Such an image, if small enough to skip VS Code's re-encode,
+would otherwise ship the wrong label unchanged and be rejected. Trusting the
+bytes over the caller's label corrects both that and the VS Code re-encode in
+one rule.
 
-## History: the VS Code re-encode defect
+This makes the declared type match the bytes the provider actually receives.
 
-Earlier, on the request path, `mainThreadLanguageModels.ts` ran every
-`image_url` part through `resizeImage()`
-(`vs/workbench/contrib/chat/browser/chatImageUtils.ts`) **without** the source
-MIME type. With no MIME the canvas re-encode picked `image/png`, and the part's
-`mimeType` field was left untouched — so a large JPEG/WebP arrived at the
-provider as PNG bytes under a non-PNG label. The resize only triggered when
-**both** dimensions exceeded 768px (early return `(width <= 768 || height <= 768)`).
+## ⚠️ When VS Code fixes this, revisit the workaround
 
-To match that, `imageMime.ts` used to force `image/png` for any image with both
-sides > 768px. That branch has been removed:
+The **re-encode half** is coupled to the VS Code defect. If VS Code starts
+preserving the source format (e.g. passing the MIME into `resizeImage`, or
+re-encoding JPEG as JPEG), then forcing `image/png` for large JPEG/WebP becomes
+a _new_ mismatch.
 
-- VS Code's `resizeImage` now takes a `mimeType` and preserves the source format
-  when one is supplied
-  (`outputMimeType = mimeType && jpegTypes.includes(mimeType) ? 'image/jpeg' : 'image/png'`).
-- On observed builds, large JPEG/WebP images are no longer delivered as PNG
-  bytes on this path, so force-labeling to PNG produced a **new** mismatch
-  (PNG label on JPEG bytes) — the exact failure this workaround exists to avoid.
-
-## ⚠️ Version dependency — re-check when bumping `engines.vscode`
-
-The upstream caller `mainThreadLanguageModels.ts` still invokes
-`resizeImage(part.value.data.buffer)` **without** a mimeType on the LM API path.
-Whether a given VS Code build actually re-encodes large images to PNG there
-therefore depends on the exact build.
-
-- If a build is found to **still** re-encode large images to PNG on this path,
-  following the original bytes is wrong for those images. The correct fix is to
-  **transcode the buffer to PNG** in `imageMime.ts` (so bytes and label are both
-  PNG), **not** to relabel bytes we don't convert.
-- The byte-sniffing itself is not VS Code-specific and should stay regardless —
-  it guards against mislabeled client input.
+Check this whenever bumping the VS Code engine (`engines.vscode` in
+`package.json`). If the upstream resize path preserves format, drop the
+`width/height > 768 → image/png` branch. The **byte-sniffing half** (returning
+the sniffed true type) is not VS Code-specific and should stay — it guards
+against mislabeled client input regardless of the resize behavior.
 
 Tests: `src/test/utils/imageMime.test.ts` (fixtures in `imageMime.fixtures.ts`).

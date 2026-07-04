@@ -14,6 +14,7 @@ import {
   findAnthropicModelById,
 } from "../../server/utils/anthropicModels";
 import { isResponseTooLongError } from "../../server/utils/languageModelErrors";
+import { WEBP_1024x935_BASE64 } from "../utils/imageMime.fixtures";
 
 function createMockModel(
   overrides: Partial<vscode.LanguageModelChat> & {
@@ -308,6 +309,38 @@ suite("Anthropic Conversion Utils Test Suite", () => {
           "image block should not be delivered as a JSON-stringified text blob",
         );
       }
+    });
+
+    test("should preserve tool_result image media type for large images", () => {
+      const message = {
+        role: "user" as const,
+        content: [
+          {
+            type: "tool_result" as const,
+            tool_use_id: "tool-large-image",
+            content: [
+              {
+                type: "image" as const,
+                source: {
+                  type: "base64" as const,
+                  media_type: "image/webp" as const,
+                  data: WEBP_1024x935_BASE64,
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = convertAnthropicMessageToVSCode(message);
+
+      assert.ok(!Array.isArray(result));
+      const toolResultPart = result
+        .content[0] as vscode.LanguageModelToolResultPart;
+      const imagePart = toolResultPart.content[0];
+
+      assert.ok(imagePart instanceof vscode.LanguageModelDataPart);
+      assert.strictEqual(imagePart.mimeType, "image/webp");
     });
 
     test("should convert tool_result with mixed text and image content", () => {
