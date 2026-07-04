@@ -218,6 +218,7 @@
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vscode-test",
+    "smoke:vision": "node --experimental-strip-types scripts/test-vision.ts --all-image-types",
     "prepare": "husky",
     "changeset": "changeset",
     "changeset:version": "pnpm changeset version && node .changeset/changelog-polish.js",

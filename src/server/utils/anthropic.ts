@@ -10,6 +10,7 @@ const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
 
 const imageBlockParamToVSCodePart = (
   param: Anthropic.Messages.ImageBlockParam,
+  options: { preserveMimeType?: boolean } = {},
 ) => {
   if (param.source.type === "url") {
     return new vscode.LanguageModelTextPart(JSON.stringify(param));
@@ -18,7 +19,9 @@ const imageBlockParamToVSCodePart = (
   const bytes = Buffer.from(param.source.data, "base64");
   return new vscode.LanguageModelDataPart(
     bytes,
-    mimeForVscodeLm(bytes, param.source.media_type),
+    options.preserveMimeType
+      ? param.source.media_type
+      : mimeForVscodeLm(bytes, param.source.media_type),
   );
 };
 
@@ -54,7 +57,7 @@ const toolResultBlockParamToVSCodePart = (
           c.type === "text"
             ? textBlockParamToVSCodePart(c)
             : c.type === "image"
-              ? imageBlockParamToVSCodePart(c)
+              ? imageBlockParamToVSCodePart(c, { preserveMimeType: true })
               : new vscode.LanguageModelTextPart(JSON.stringify(c)),
         );
   return new vscode.LanguageModelToolResultPart(param.tool_use_id, content);
