@@ -1,7 +1,10 @@
 import * as vscode from "vscode";
 
 import { McpServer } from "../server/McpServer";
-import { ANOTHER_INSTANCE_RUNNING_MESSAGE } from "../utils/constant";
+import {
+  ANOTHER_INSTANCE_RUNNING_MESSAGE,
+  MCP_TASK_MANAGER_UNAVAILABLE_MESSAGE,
+} from "../utils/constant";
 import { logger } from "../utils/logger";
 import {
   addAgentMaestroMcpConfig,
@@ -25,7 +28,10 @@ export function registerMcpCommands(
           );
         } else {
           // Don't show error message for "another instance running" case
-          if (result.reason === ANOTHER_INSTANCE_RUNNING_MESSAGE) {
+          if (
+            result.reason === ANOTHER_INSTANCE_RUNNING_MESSAGE ||
+            result.reason === MCP_TASK_MANAGER_UNAVAILABLE_MESSAGE
+          ) {
             logger.info(`MCP server startup skipped: ${result.reason}`);
           } else {
             vscode.window.showInformationMessage(

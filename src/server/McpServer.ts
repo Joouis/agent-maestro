@@ -6,6 +6,7 @@ import { ExtensionController } from "../core/controller";
 import { DEFAULT_CONFIG } from "../utils/config";
 import {
   ANOTHER_INSTANCE_RUNNING_MESSAGE,
+  MCP_TASK_MANAGER_UNAVAILABLE_MESSAGE,
   PORT_MONITOR_INTERVAL_MS,
 } from "../utils/constant";
 import { logger } from "../utils/logger";
@@ -73,8 +74,7 @@ export class McpServer {
       if (!rooAdapter) {
         return {
           started: false,
-          reason:
-            "MCP Server will not start because task manager is not available, this could be no Roo extension is installed nor active.",
+          reason: MCP_TASK_MANAGER_UNAVAILABLE_MESSAGE,
         };
       }
       this.taskManager = new McpTaskManager(rooAdapter);

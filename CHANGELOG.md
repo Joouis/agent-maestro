@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.9.7 - 2026.07.04
+
+- Fix Anthropic tool-result images being rejected as a media-type mismatch when large JPEG/GIF/WebP bytes were relabeled as PNG. Top-level image parts still keep the VS Code resize workaround, while nested tool-result images now preserve their declared media type.
+- Stop showing an MCP startup notification during extension activation when no Roo-compatible task manager is available.
+
 ## v2.9.6 - 2026.06.23
 
 - Forward reasoning effort settings to Copilot for OpenAI and Anthropic proxy requests. OpenAI-backed models apply the setting today; Claude/Anthropic requests forward it but require upstream Copilot support to take effect.

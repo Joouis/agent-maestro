@@ -1,7 +1,7 @@
-onlyBuiltDependencies:
-  - "@vscode/vsce-sign"
-  - esbuild
-  - keytar
+allowBuilds:
+  "@vscode/vsce-sign": true
+  esbuild: true
+  keytar: true
 
 packageExtensions:
   "@roo-code/types":
