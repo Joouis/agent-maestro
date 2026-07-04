@@ -10,7 +10,7 @@
     "vscode": "^1.120.0",
     "node": ">=22"
   },
-  "packageManager": "pnpm@10.28.2",
+  "packageManager": "pnpm@11.9.0",
   "categories": [
     "AI",
     "Chat",
