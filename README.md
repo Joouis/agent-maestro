@@ -83,6 +83,24 @@ Additionally, it creates or updates `settings.json` in the same folder to skip t
 }
 ```
 
+### Experimental GPT-5+ Web Search Patch
+
+Run `Agent Maestro: Enable Experimental GPT-5+ Web Search` to patch the built-in Copilot bundle for the currently running VS Code app and append the server-side web search tool from GPT-5+ OpenAI Responses requests.
+
+This command:
+
+- Uses the currently loaded GitHub Copilot Chat extension bundle, including Extension Development Host bundles; falls back to the current VS Code app root when needed
+- Creates a timestamped backup before writing changes
+- Enables `agent-maestro.experimentalGpt5PlusWebSearchEnabled` so OpenAI Responses requests that include web search tools can signal the patched Copilot bundle
+- Applies the patch only once when the expected Copilot bundle shape is found
+- Reloads VS Code after the patch is applied
+
+To undo the local patch, run `Agent Maestro: Restore Experimental GPT-5+ Web Search Backup`, choose one of the backups created for the currently loaded Copilot bundle, and Agent Maestro will restore it, disable `agent-maestro.experimentalGpt5PlusWebSearchEnabled`, and reload VS Code.
+
+This is an experimental local modification. Agent Maestro only injects the web search tool declaration from the OpenAI Responses request, following the [OpenAI web search tool guide](https://developers.openai.com/api/docs/guides/tools-web-search); actual availability, behavior, and errors depend on the active Copilot model backend. VS Code updates can overwrite this patch.
+
+See [docs/experimental-gpt5-plus-web-search.md](docs/experimental-gpt5-plus-web-search.md) for implementation details, restore behavior, and troubleshooting notes.
+
 ### Usage
 
 1. **Explore API Capabilities**: Access the complete OpenAPI specification at [`http://localhost:23333/openapi.json`](http://localhost:23333/openapi.json).
@@ -112,6 +130,8 @@ Additionally, it creates or updates `settings.json` in the same folder to skip t
    - `Agent Maestro: Configure Claude Code Settings` - One-click Claude Code setup
    - `Agent Maestro: Configure Codex Settings` - One-click Codex setup
    - `Agent Maestro: Configure Gemini CLI Settings` - One-click Gemini CLI setup
+   - `Agent Maestro: Enable Experimental GPT-5+ Web Search` - Patch the current VS Code Copilot bundle to append web search for GPT major version 5 or newer model requests
+   - `Agent Maestro: Restore Experimental GPT-5+ Web Search Backup` - Restore a Copilot bundle backup created by the experimental patch command
    - `Agent Maestro: Set LLM API Key` - Configure authentication for LLM API endpoints
 
 3. **Development Resources**:

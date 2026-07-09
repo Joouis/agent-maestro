@@ -17,20 +17,22 @@ pnpm run watch-tests
 
 ## Test Coverage Summary
 
-| Test File                         | Tests | What It Covers                                            |
-| --------------------------------- | ----- | --------------------------------------------------------- |
-| `extension.test.ts`               | 11    | Extension activation, command registration, configuration |
-| `utils/config.test.ts`            | 5     | Configuration defaults and reading                        |
-| `utils/mimeTypes.test.ts`         | 12    | MIME type detection for file extensions                   |
-| `utils/rooSettingsFilter.test.ts` | 5     | API key filtering from settings                           |
-| `utils/updateEnvFile.test.ts`     | 13    | .env file creation/update logic                           |
-| `schemas/cline.test.ts`           | 6     | Cline API request/response validation                     |
-| `schemas/roo.test.ts`             | 7     | Roo API request/response validation                       |
-| `schemas/common.test.ts`          | 7     | Common schemas (file ops, extension info, OS info)        |
-| `server/anthropic.test.ts`        | 23    | Anthropic → VS Code message conversion                    |
-| `server/openaiChat.test.ts`       | 15    | OpenAI → VS Code message conversion                       |
-| `server/openaiResponses.test.ts`  | 45    | OpenAI Responses → VS Code conversion                     |
-| `server/gemini.test.ts`           | 27    | Gemini → VS Code message conversion                       |
+| Test File                             | Tests | What It Covers                                            |
+| ------------------------------------- | ----- | --------------------------------------------------------- |
+| `extension.test.ts`                   | 13    | Extension activation, command registration, configuration |
+| `utils/copilotWebSearchPatch.test.ts` | 14    | Experimental Copilot web search bundle patching           |
+| `utils/config.test.ts`                | 5     | Configuration defaults and reading                        |
+| `utils/mimeTypes.test.ts`             | 12    | MIME type detection for file extensions                   |
+| `utils/rooSettingsFilter.test.ts`     | 5     | API key filtering from settings                           |
+| `utils/updateEnvFile.test.ts`         | 13    | .env file creation/update logic                           |
+| `schemas/cline.test.ts`               | 6     | Cline API request/response validation                     |
+| `schemas/roo.test.ts`                 | 7     | Roo API request/response validation                       |
+| `schemas/common.test.ts`              | 7     | Common schemas (file ops, extension info, OS info)        |
+| `server/anthropic.test.ts`            | 23    | Anthropic → VS Code message conversion                    |
+| `server/modelResolution.test.ts`      | 19    | Model matching and Copilot model configuration            |
+| `server/openaiChat.test.ts`           | 15    | OpenAI → VS Code message conversion                       |
+| `server/openaiResponses.test.ts`      | 54    | OpenAI Responses → VS Code conversion                     |
+| `server/gemini.test.ts`               | 27    | Gemini → VS Code message conversion                       |
 
 ## How Tests Prevent Regressions
 
@@ -81,6 +83,7 @@ src/test/
 │   ├── openaiChat.test.ts
 │   └── openaiResponses.test.ts
 └── utils/                     # Utility function tests
+    ├── copilotWebSearchPatch.test.ts
     ├── config.test.ts
     ├── mimeTypes.test.ts
     ├── rooSettingsFilter.test.ts
