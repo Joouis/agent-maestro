@@ -19,8 +19,7 @@ pnpm run watch-tests
 
 | Test File                         | Tests | What It Covers                                            |
 | --------------------------------- | ----- | --------------------------------------------------------- |
-| `extension.test.ts`               | 12    | Extension activation, command registration, configuration |
-| `copilotFixer.test.ts`            | 12    | Copilot header removal, backup/restore functionality      |
+| `extension.test.ts`               | 11    | Extension activation, command registration, configuration |
 | `utils/config.test.ts`            | 5     | Configuration defaults and reading                        |
 | `utils/mimeTypes.test.ts`         | 12    | MIME type detection for file extensions                   |
 | `utils/rooSettingsFilter.test.ts` | 5     | API key filtering from settings                           |
@@ -72,7 +71,6 @@ If any test fails, the command exits with a non-zero code.
 ```
 src/test/
 ├── extension.test.ts          # Extension activation and commands
-├── copilotFixer.test.ts       # Copilot Chat fix functionality
 ├── schemas/                   # Zod schema validation tests
 │   ├── cline.test.ts
 │   ├── common.test.ts
