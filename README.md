@@ -83,20 +83,6 @@ Additionally, it creates or updates `settings.json` in the same folder to skip t
 }
 ```
 
-### GitHub Copilot Chat Model Enhancement
-
-Enable additional models in GitHub Copilot Chat with the `Agent Maestro: Fix GitHub Copilot Chat - Model is not supported error` command. ([ref](https://github.com/cline/cline/issues/2186#issuecomment-2727010228))
-
-This feature:
-
-- Automatically locates your GitHub Copilot Chat extension
-- Creates a timestamped backup before making changes
-- Removes the `x-onbehalf-extension-id` header restriction
-- Verifies the fix was applied successfully
-- Prompts you to reload VS Code for changes to take effect
-
-**Note**: This modification may be overwritten when the Copilot Chat extension updates. Simply run the command again after updates if needed.
-
 ### Usage
 
 1. **Explore API Capabilities**: Access the complete OpenAPI specification at [`http://localhost:23333/openapi.json`](http://localhost:23333/openapi.json).
@@ -126,7 +112,6 @@ This feature:
    - `Agent Maestro: Configure Claude Code Settings` - One-click Claude Code setup
    - `Agent Maestro: Configure Codex Settings` - One-click Codex setup
    - `Agent Maestro: Configure Gemini CLI Settings` - One-click Gemini CLI setup
-   - `Agent Maestro: Fix GitHub Copilot Chat - Model is not supported error` - Remove header restriction to enable additional models
    - `Agent Maestro: Set LLM API Key` - Configure authentication for LLM API endpoints
 
 3. **Development Resources**:

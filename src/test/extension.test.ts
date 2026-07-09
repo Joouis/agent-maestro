@@ -20,7 +20,11 @@ suite("Extension Test Suite", () => {
         await extension.activate();
       }
 
-      assert.strictEqual(extension.isActive, true, "Extension should be active");
+      assert.strictEqual(
+        extension.isActive,
+        true,
+        "Extension should be active",
+      );
     });
   });
 
@@ -84,15 +88,6 @@ suite("Extension Test Suite", () => {
       assert.ok(
         commands.includes("agent-maestro.getStatus"),
         "getStatus command should be registered",
-      );
-    });
-
-    test("copilot fix command should be registered", async () => {
-      const commands = await vscode.commands.getCommands(true);
-
-      assert.ok(
-        commands.includes("agent-maestro.fixCopilotChatModelNotSupported"),
-        "fixCopilotChatModelNotSupported command should be registered",
       );
     });
   });
