@@ -99,9 +99,18 @@ Agent Maestro is stateless and doesn't persist responses between requests.
 
 **Error Response**: Return 400 with clear explanation directing users to send full history.
 
+### Supported Tools
+
+| Tool Type          | Handling                                                                                                                                                                                                                                                                      |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `function`         | Passed through with its JSON Schema parameters.                                                                                                                                                                                                                               |
+| `custom`           | Registered as a schema-less tool; the model's call is serialized back as a `custom_tool_call` (raw string input) instead of a `function_call`.                                                                                                                                |
+| `namespace`        | Nested `function`/`custom` tools are flattened. Since VSCode LM's tool-call shape has no namespace slot, each nested tool is registered under an encoded name `<namespace>__<name>` and decoded back into a separate `namespace` + bare `name` on output via a mapping table. |
+| `additional_tools` | Developer-injected tools carried on input items; merged with request-level tools before dispatch.                                                                                                                                                                             |
+
 ### Unsupported Tools
 
-Only `function` type tools are supported. Other tools are filtered out with a warning log.
+Other tool types are filtered out with a debug log.
 
 | Tool Type              | Reason                                        |
 | ---------------------- | --------------------------------------------- |
@@ -112,7 +121,6 @@ Only `function` type tools are supported. Other tools are filtered out with a wa
 | `image_gen`            | No VSCode LM equivalent                       |
 | `local_shell`          | Security concerns                             |
 | `mcp`                  | Would require separate MCP server integration |
-| `custom`               | No VSCode LM equivalent for custom tool input |
 | `shell`                | No VSCode LM equivalent                       |
 | `apply_patch`          | No VSCode LM equivalent                       |
 
