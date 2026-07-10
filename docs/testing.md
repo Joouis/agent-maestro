@@ -20,7 +20,7 @@ pnpm run watch-tests
 | Test File                             | Tests | What It Covers                                            |
 | ------------------------------------- | ----- | --------------------------------------------------------- |
 | `extension.test.ts`                   | 13    | Extension activation, command registration, configuration |
-| `utils/copilotWebSearchPatch.test.ts` | 14    | Experimental Copilot web search bundle patching           |
+| `utils/copilotWebSearchPatch.test.ts` | 16    | Experimental Copilot web search bundle patching           |
 | `utils/config.test.ts`                | 5     | Configuration defaults and reading                        |
 | `utils/mimeTypes.test.ts`             | 12    | MIME type detection for file extensions                   |
 | `utils/rooSettingsFilter.test.ts`     | 5     | API key filtering from settings                           |

@@ -138,8 +138,14 @@ export function patchCopilotWebSearchBundle(
     patchReadableResponsesBundle(content);
 
   if (patchedContent) {
-    const backupPath = createBundleBackup(bundlePath);
-    fs.writeFileSync(bundlePath, patchedContent);
+    let backupPath: string;
+
+    try {
+      backupPath = createBundleBackup(bundlePath);
+      fs.writeFileSync(bundlePath, patchedContent);
+    } catch (error) {
+      throwCopilotBundleWriteError(error);
+    }
 
     return {
       status: "patched",
@@ -272,7 +278,39 @@ export function restoreCopilotWebSearchBackup(
     throw new Error(`Backup not found: ${backupPath}`);
   }
 
-  fs.copyFileSync(backupPath, bundlePath);
+  try {
+    fs.copyFileSync(backupPath, bundlePath);
+  } catch (error) {
+    throwCopilotBundleWriteError(error);
+  }
+}
+
+function throwCopilotBundleWriteError(error: unknown): never {
+  if (isPermissionError(error)) {
+    throw new Error(getCopilotBundlePermissionMessage());
+  }
+
+  throw error;
+}
+
+function isPermissionError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return code === "EACCES" || code === "EPERM";
+}
+
+export function getCopilotBundlePermissionMessage(
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const permissionHint =
+    platform === "win32"
+      ? "Run VS Code as Administrator or use the VS Code User Installer, then try again."
+      : "Restart VS Code with write access to the app bundle, or use a user-writable VS Code install.";
+
+  return `No write access to the VS Code Copilot bundle. ${permissionHint}`;
 }
 
 function createBundleBackup(bundlePath: string): string {

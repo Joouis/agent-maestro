@@ -69,5 +69,6 @@ If that development bundle is rebuilt or overwritten after reload, the patch can
 - Check Agent Maestro output for `Experimental GPT-5+ web search: ... injected=true`.
 - If the log says `injected=false`, verify the setting is enabled, the request includes a `web_search*` tool, and the selected model resolves to GPT major version 5 or newer.
 - If the model says it has no local `web_search` tool, that is not definitive. Hosted web search is inserted into the server-side Responses tool list, not exposed as a local function tool.
+- On Windows, a system VS Code install under `C:\Program Files` usually requires running VS Code as Administrator before the patch command can write the bundle and create a backup. The VS Code User Installer avoids this by installing under a user-writable location.
 - If the backend returns a 400 error, the hosted tool shape or selected model variant may not be accepted by that Copilot backend.
 - If a reload or rebuild happened after enabling, run the enable command again because the bundle may have been regenerated.

@@ -7,6 +7,7 @@ import {
   GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET,
   READABLE_GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET,
   getCopilotBundlePath,
+  getCopilotBundlePermissionMessage,
   getRunningCopilotBundlePath,
   listCopilotWebSearchBackups,
   patchCopilotWebSearchBundle,
@@ -286,5 +287,25 @@ ${legacyReadablePatch}  const contextManagementEnabled = true;
       () => patchCopilotWebSearchBundle(bundlePath),
       /Expected to find a supported Copilot Responses tool injection point/,
     );
+  });
+
+  test("should format Windows permission failures", () => {
+    const message = getCopilotBundlePermissionMessage("win32");
+
+    assert.ok(
+      message.includes("No write access to the VS Code Copilot bundle"),
+    );
+    assert.ok(message.includes("Run VS Code as Administrator"));
+    assert.ok(message.includes("VS Code User Installer"));
+  });
+
+  test("should format non-Windows permission failures", () => {
+    const message = getCopilotBundlePermissionMessage("darwin");
+
+    assert.ok(
+      message.includes("No write access to the VS Code Copilot bundle"),
+    );
+    assert.ok(message.includes("user-writable VS Code install"));
+    assert.ok(!message.includes("Administrator"));
   });
 });
