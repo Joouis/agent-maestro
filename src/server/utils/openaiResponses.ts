@@ -401,7 +401,6 @@ export const convertResponsesItemToVSCode = (
   }
 
   logger.warn("Unknown input item type, skipping:", typedItem.type);
-  logger.debug(JSON.stringify(typedItem, null, 2));
   return null;
 };
 
@@ -499,6 +498,12 @@ export const convertResponsesToolsToVSCode = (
     description?: string | null,
     parameters?: unknown,
   ) => {
+    if (toolMap.has(encodedName)) {
+      logger.warn(
+        `Duplicate tool definition for \"${encodedName}\"; keeping the first definition`,
+      );
+      return;
+    }
     vsCodeTools.push({
       name: encodedName,
       description: description ?? "",
@@ -714,5 +719,5 @@ export const customToolCallInput = (input: unknown): string => {
   ) {
     return (input as { input: string }).input;
   }
-  return JSON.stringify(input ?? "");
+  return input === null || input === undefined ? "" : JSON.stringify(input);
 };

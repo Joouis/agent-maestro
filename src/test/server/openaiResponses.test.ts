@@ -503,6 +503,35 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       });
     });
 
+    test("should keep the first duplicate tool definition", () => {
+      const tools = [
+        {
+          type: "function" as const,
+          name: "wait",
+          description: "Original definition",
+          parameters: { type: "object", properties: {} },
+        },
+        {
+          type: "function" as const,
+          name: "wait",
+          description: "Duplicate definition",
+          parameters: {
+            type: "object",
+            properties: { ms: { type: "number" } },
+          },
+        },
+      ];
+      const { tools: result, toolMap } = convertResponsesToolsToVSCode(
+        tools as any,
+      );
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(result[0].description, "Original definition");
+      assert.deepStrictEqual(toolMap.get("wait"), {
+        name: "wait",
+        isCustom: false,
+      });
+    });
+
     test("should skip non-function tools", () => {
       const tools = [
         { type: "function" as const, name: "valid_function" },
@@ -811,8 +840,8 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
     });
 
     test("should stringify null/undefined to empty string", () => {
-      assert.strictEqual(customToolCallInput(null), '""');
-      assert.strictEqual(customToolCallInput(undefined), '""');
+      assert.strictEqual(customToolCallInput(null), "");
+      assert.strictEqual(customToolCallInput(undefined), "");
     });
   });
 
