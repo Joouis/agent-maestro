@@ -65,7 +65,7 @@ only the `languageModelProxy` consumer proposal.
 `getModelProxy()` asks the registered provider for a proxy dedicated to the
 requesting extension. The GitHub Copilot provider creates a new
 `OpenAILanguageModelServer`, starts it on a random loopback port, and returns its
-URI and generated nonce. Disposing the returned object stops that server.
+URI and generated proxy key. Disposing the returned object stops that server.
 
 The caller therefore does not need to discover a port, access a Copilot token,
 or depend on GitHub Copilot's private extension exports.
@@ -78,7 +78,7 @@ flowchart LR
     AM["Agent Maestro /api/openai/v2/responses"]
     VSCode["vscode.lm.getModelProxy()"]
     Copilot["GitHub Copilot extension"]
-    Proxy["OpenAILanguageModelServer\nloopback URI + nonce"]
+    Proxy["OpenAILanguageModelServer\nloopback URI + proxy key"]
     Endpoint["Copilot model endpoint"]
 
     Client --> AM
@@ -319,8 +319,8 @@ Before release, require at least one of these controls, preferably both:
 - bind the Agent Maestro API server to loopback by default;
 - require an Agent Maestro API key for `/api/openai/v2/*`.
 
-The inner Copilot nonce is not a replacement for Agent Maestro authentication;
-it must remain private to the extension.
+The inner Copilot proxy key is not a replacement for Agent Maestro
+authentication; it must remain private to the extension.
 
 ### Codex Configuration
 
