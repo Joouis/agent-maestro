@@ -19,6 +19,12 @@ import {
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
+import {
+  LanguageModelClientDisconnectedError,
+  LanguageModelRequestLifecycle,
+  LanguageModelRequestTimeoutError,
+  interruptibleLanguageModelStream,
+} from "../../utils/languageModelRequestLifecycle";
 import { extractOpenAIResponsesUsage } from "../../utils/openai";
 import {
   OutputItem,
@@ -123,16 +129,35 @@ Limitations:
       },
       description: "Internal server error",
     },
+    504: {
+      content: {
+        "application/json": {
+          schema: CommonResponseError,
+        },
+      },
+      description:
+        "Gateway timeout - language model request exceeded 10 minutes",
+    },
   },
 });
 
-export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
+export interface OpenaiResponsesRoutesOptions {
+  requestTimeoutMs?: number;
+  resolveChatModelClient?: typeof getChatModelClient;
+}
+
+export function registerOpenaiResponsesRoutes(
+  app: OpenAPIHono,
+  options: OpenaiResponsesRoutesOptions = {},
+) {
+  const resolveChatModelClient =
+    options.resolveChatModelClient ?? getChatModelClient;
   app.openapi(createResponseRoute, async (c: Context): Promise<Response> => {
     let rawRequestBody: Responses.ResponseCreateParams | undefined;
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let requestedModelId = "";
     let inputTokens = 0;
-    let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
+    let requestLifecycle: LanguageModelRequestLifecycle | undefined;
 
     try {
       // 1. Parse request and extract fields
@@ -236,7 +261,8 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
       }
 
       // 4. Get chat model client
-      const { client, error: clientError } = await getChatModelClient(model);
+      const { client, error: clientError } =
+        await resolveChatModelClient(model);
 
       if (clientError) {
         return c.json(clientError, 404);
@@ -244,8 +270,11 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
 
       logger.debug("/v1/responses payload:");
       logger.debug(JSON.stringify(requestBody, null, 2));
-      cancellationTokenSource = new vscode.CancellationTokenSource();
-      const cancellationToken = cancellationTokenSource.token;
+      requestLifecycle = new LanguageModelRequestLifecycle(
+        c.req.raw.signal,
+        options.requestTimeoutMs,
+      );
+      const cancellationToken = requestLifecycle.token;
 
       logger.info(
         `→ /v1/responses | model: ${
@@ -349,14 +378,16 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
       });
 
       // 8. Send request to VSCode LM
-      const response = await client.sendRequest(
-        vsCodeMessages,
-        withCopilotConfiguration(
-          client,
-          lmRequestOptions,
-          copilotConfiguration,
+      const response = await requestLifecycle.waitFor(
+        client.sendRequest(
+          vsCodeMessages,
+          withCopilotConfiguration(
+            client,
+            lmRequestOptions,
+            copilotConfiguration,
+          ),
+          cancellationToken,
         ),
-        cancellationToken,
       );
 
       // 9. Handle non-streaming response
@@ -366,7 +397,10 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           [];
         let responseUsage: ResponseUsage | undefined;
 
-        for await (const chunk of response.stream) {
+        for await (const chunk of interruptibleLanguageModelStream(
+          response.stream,
+          requestLifecycle,
+        )) {
           if (chunk instanceof vscode.LanguageModelTextPart) {
             accumulatedText += chunk.value;
           } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
@@ -384,13 +418,19 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         const output = buildResponseOutput(accumulatedText, toolCalls, toolMap);
 
         if (!responseUsage) {
-          const [fallbackInputTokens, outputTokens] = await Promise.all([
-            client.countTokens(JSON.stringify(requestBody), cancellationToken),
-            client.countTokens(
-              accumulatedText + JSON.stringify(toolCalls),
-              cancellationToken,
-            ),
-          ]);
+          const [fallbackInputTokens, outputTokens] =
+            await requestLifecycle.waitFor(
+              Promise.all([
+                client.countTokens(
+                  JSON.stringify(requestBody),
+                  cancellationToken,
+                ),
+                client.countTokens(
+                  accumulatedText + JSON.stringify(toolCalls),
+                  cancellationToken,
+                ),
+              ]),
+            );
           inputTokens = fallbackInputTokens;
           responseUsage = {
             input_tokens: fallbackInputTokens,
@@ -421,7 +461,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           `← /v1/responses | input: ${responseUsage?.input_tokens} | cache_read: ${responseUsage?.input_tokens_details?.cached_tokens} | output: ${responseUsage?.output_tokens}`,
         );
 
-        cancellationTokenSource.dispose();
+        requestLifecycle.dispose();
         return c.json(responseObj);
       }
 
@@ -432,6 +472,9 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           const responseId = generateResponseId();
           const createdAt = getCurrentTimestamp();
           const sequenceNumberRef = { value: 0 };
+          const writeSSE = (
+            message: Parameters<typeof sseStream.writeSSE>[0],
+          ) => requestLifecycle!.waitFor(sseStream.writeSSE(message));
 
           // Build base response object
           const baseResponse = {
@@ -464,7 +507,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           });
 
           // Emit response.created
-          await sseStream.writeSSE({
+          await writeSSE({
             event: "response.created",
             data: JSON.stringify({
               type: "response.created",
@@ -474,7 +517,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           });
 
           // Emit response.in_progress
-          await sseStream.writeSSE({
+          await writeSSE({
             event: "response.in_progress",
             data: JSON.stringify({
               type: "response.in_progress",
@@ -492,14 +535,17 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           let totalOutputText = ""; // Track all output for token counting
           let responseUsage: ResponseUsage | undefined;
 
-          for await (const chunk of response.stream) {
+          for await (const chunk of interruptibleLanguageModelStream(
+            response.stream,
+            requestLifecycle!,
+          )) {
             if (chunk instanceof vscode.LanguageModelTextPart) {
               if (!currentMessageId) {
                 // Start new message output item
                 currentMessageId = generateMessageId();
                 contentIndex = 0;
 
-                await sseStream.writeSSE({
+                await writeSSE({
                   event: "response.output_item.added",
                   data: JSON.stringify({
                     type: "response.output_item.added",
@@ -515,7 +561,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                   }),
                 });
 
-                await sseStream.writeSSE({
+                await writeSSE({
                   event: "response.content_part.added",
                   data: JSON.stringify({
                     type: "response.content_part.added",
@@ -531,7 +577,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               // Emit text delta
               accumulatedText += chunk.value;
               totalOutputText += chunk.value;
-              await sseStream.writeSSE({
+              await writeSSE({
                 event: "response.output_text.delta",
                 data: JSON.stringify({
                   type: "response.output_text.delta",
@@ -546,7 +592,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               // Close current message if open
               if (currentMessageId) {
                 const outputItem = await closeMessageOutputItem(
-                  sseStream,
+                  writeSSE,
                   currentMessageId,
                   outputIndex,
                   contentIndex,
@@ -571,7 +617,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                 const callId = chunk.callId;
                 const inputStr = customToolCallInput(chunk.input);
 
-                await sseStream.writeSSE({
+                await writeSSE({
                   event: "response.output_item.added",
                   data: JSON.stringify({
                     type: "response.output_item.added",
@@ -588,7 +634,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                   }),
                 });
 
-                await sseStream.writeSSE({
+                await writeSSE({
                   event: "response.custom_tool_call_input.delta",
                   data: JSON.stringify({
                     type: "response.custom_tool_call_input.delta",
@@ -599,7 +645,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                   }),
                 });
 
-                await sseStream.writeSSE({
+                await writeSSE({
                   event: "response.custom_tool_call_input.done",
                   data: JSON.stringify({
                     type: "response.custom_tool_call_input.done",
@@ -619,7 +665,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                   ...(toolNamespace ? { namespace: toolNamespace } : {}),
                 });
 
-                await sseStream.writeSSE({
+                await writeSSE({
                   event: "response.output_item.done",
                   data: JSON.stringify({
                     type: "response.output_item.done",
@@ -638,7 +684,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
               const callId = chunk.callId;
               const argsStr = JSON.stringify(chunk.input ?? {});
 
-              await sseStream.writeSSE({
+              await writeSSE({
                 event: "response.output_item.added",
                 data: JSON.stringify({
                   type: "response.output_item.added",
@@ -656,7 +702,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                 }),
               });
 
-              await sseStream.writeSSE({
+              await writeSSE({
                 event: "response.function_call_arguments.delta",
                 data: JSON.stringify({
                   type: "response.function_call_arguments.delta",
@@ -667,7 +713,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                 }),
               });
 
-              await sseStream.writeSSE({
+              await writeSSE({
                 event: "response.function_call_arguments.done",
                 data: JSON.stringify({
                   type: "response.function_call_arguments.done",
@@ -688,7 +734,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                 ...(toolNamespace ? { namespace: toolNamespace } : {}),
               });
 
-              await sseStream.writeSSE({
+              await writeSSE({
                 event: "response.output_item.done",
                 data: JSON.stringify({
                   type: "response.output_item.done",
@@ -708,7 +754,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           // Close any remaining message
           if (currentMessageId) {
             const outputItem = await closeMessageOutputItem(
-              sseStream,
+              writeSSE,
               currentMessageId,
               outputIndex,
               contentIndex,
@@ -720,13 +766,16 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           }
 
           if (!responseUsage) {
-            const [fallbackInputTokens, outputTokens] = await Promise.all([
-              client.countTokens(
-                JSON.stringify(requestBody),
-                cancellationToken,
-              ),
-              client.countTokens(totalOutputText, cancellationToken),
-            ]);
+            const [fallbackInputTokens, outputTokens] =
+              await requestLifecycle!.waitFor(
+                Promise.all([
+                  client.countTokens(
+                    JSON.stringify(requestBody),
+                    cancellationToken,
+                  ),
+                  client.countTokens(totalOutputText, cancellationToken),
+                ]),
+              );
             inputTokens = fallbackInputTokens;
             responseUsage = {
               input_tokens: fallbackInputTokens,
@@ -738,7 +787,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           }
 
           // Emit response.completed
-          await sseStream.writeSSE({
+          await writeSSE({
             event: "response.completed",
             data: JSON.stringify({
               type: "response.completed",
@@ -755,41 +804,76 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           logger.info(
             `← /v1/responses (stream) | input: ${responseUsage?.input_tokens} | cache_read: ${responseUsage?.input_tokens_details?.cached_tokens} | cache_write: ${responseUsage?.input_tokens_details?.cache_write_tokens} | output: ${responseUsage?.output_tokens}`,
           );
-          cancellationTokenSource?.dispose();
+          requestLifecycle?.dispose();
         },
         async (error, sseStream) => {
+          if (error instanceof LanguageModelClientDisconnectedError) {
+            logger.info("/v1/responses | client disconnected");
+            requestLifecycle?.dispose();
+            await sseStream.close();
+            return;
+          }
+
           logger.error("✕ /v1/responses (stream) |", error);
-          cancellationTokenSource?.dispose();
 
           const responseId = generateResponseId();
           const createdAt = getCurrentTimestamp();
 
-          await sseStream.writeSSE({
-            event: "response.failed",
-            data: JSON.stringify({
-              type: "response.failed",
-              response: {
-                id: responseId,
-                object: "response",
-                status: "failed",
-                created_at: createdAt,
-                model: model,
-                output: [],
-                error: {
-                  code: "server_error",
-                  message:
-                    error instanceof Error ? error.message : String(error),
+          try {
+            await sseStream.writeSSE({
+              event: "response.failed",
+              data: JSON.stringify({
+                type: "response.failed",
+                response: {
+                  id: responseId,
+                  object: "response",
+                  status: "failed",
+                  created_at: createdAt,
+                  model: model,
+                  output: [],
+                  error: {
+                    code:
+                      error instanceof LanguageModelRequestTimeoutError
+                        ? "request_timeout"
+                        : "server_error",
+                    message:
+                      error instanceof Error ? error.message : String(error),
+                  },
+                  incomplete_details: null,
+                  usage: null,
+                  metadata,
                 },
-                incomplete_details: null,
-                usage: null,
-                metadata,
-              },
-            }),
-          });
+              }),
+            });
+          } finally {
+            requestLifecycle?.dispose();
+            await sseStream.close();
+          }
         },
       );
     } catch (error) {
-      cancellationTokenSource?.dispose();
+      requestLifecycle?.dispose();
+
+      if (error instanceof LanguageModelRequestTimeoutError) {
+        logger.error("✕ /v1/responses |", error);
+        return c.json(
+          {
+            error: {
+              type: "timeout_error",
+              message: error.message,
+              param: null,
+              code: "request_timeout",
+            },
+          },
+          504,
+        );
+      }
+
+      if (error instanceof LanguageModelClientDisconnectedError) {
+        logger.info("/v1/responses | client disconnected");
+        return new Response(null, { status: 499 });
+      }
+
       logger.error("✕ /v1/responses |", error);
 
       const logFilePath = await handleErrorWithLogging({

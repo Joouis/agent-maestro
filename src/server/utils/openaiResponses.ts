@@ -95,7 +95,9 @@ export const getCurrentTimestamp = (): number => Math.floor(Date.now() / 1000);
  * Helper for closing a message output item in streaming responses
  */
 export const closeMessageOutputItem = async (
-  sseStream: SSEStreamingApi,
+  writeSSE: (
+    message: Parameters<SSEStreamingApi["writeSSE"]>[0],
+  ) => Promise<void>,
   messageId: string,
   outputIndex: number,
   contentIndex: number,
@@ -105,7 +107,7 @@ export const closeMessageOutputItem = async (
   const nextSeq = () =>
     sequenceNumberRef ? sequenceNumberRef.value++ : undefined;
 
-  await sseStream.writeSSE({
+  await writeSSE({
     event: "response.output_text.done",
     data: JSON.stringify({
       type: "response.output_text.done",
@@ -117,7 +119,7 @@ export const closeMessageOutputItem = async (
     }),
   });
 
-  await sseStream.writeSSE({
+  await writeSSE({
     event: "response.content_part.done",
     data: JSON.stringify({
       type: "response.content_part.done",
@@ -147,7 +149,7 @@ export const closeMessageOutputItem = async (
     status: "completed",
   };
 
-  await sseStream.writeSSE({
+  await writeSSE({
     event: "response.output_item.done",
     data: JSON.stringify({
       type: "response.output_item.done",
