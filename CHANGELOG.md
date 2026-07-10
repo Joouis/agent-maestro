@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.10.0 - 2026.07.10
+
+- Add support for OpenAI Responses API `additional_tools`, `custom`, and `namespace` tools, enabling GPT-5.6 and Codex tool calling through Agent Maestro. Custom tool calls now preserve raw string input, and named `tool_choice` requests are enforced.
+- Remove the GitHub Copilot Chat header fixer command because current VS Code builds ship Copilot Chat as a built-in extension, making the old user-extension patch path obsolete.
+
 ## v2.9.7 - 2026.07.04
 
 - Fix Anthropic tool-result images being rejected as a media-type mismatch when large JPEG/GIF/WebP bytes were relabeled as PNG. Top-level image parts still keep the VS Code resize workaround, while nested tool-result images now preserve their declared media type.
