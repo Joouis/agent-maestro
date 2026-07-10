@@ -32,7 +32,7 @@ importers:
         version: 1.39.3
       fastmcp:
         specifier: ^3.5.0
-        version: 3.5.0
+        version: 3.5.0(supports-color@8.1.1)
       hono:
         specifier: ^4.8.9
         version: 4.8.9
@@ -40,8 +40,8 @@ importers:
         specifier: ^2.0.2
         version: 2.0.2
       openai:
-        specifier: ^6.38.0
-        version: 6.38.0(ws@8.18.3)(zod@4.0.10)
+        specifier: ^6.46.0
+        version: 6.46.0(ws@8.18.3)(zod@4.0.10)
       smol-toml:
         specifier: ^1.6.0
         version: 1.6.0
@@ -57,7 +57,7 @@ importers:
         version: 2.29.4
       "@trivago/prettier-plugin-sort-imports":
         specifier: ^5.2.2
-        version: 5.2.2(prettier@3.5.3)
+        version: 5.2.2(prettier@3.5.3)(supports-color@8.1.1)
       "@types/mocha":
         specifier: ^10.0.10
         version: 10.0.10
@@ -65,35 +65,35 @@ importers:
         specifier: 20.x
         version: 20.17.57
       "@types/vscode":
-        specifier: ^1.120.0
-        version: 1.120.0
+        specifier: ^1.125.0
+        version: 1.125.0
       "@typescript-eslint/eslint-plugin":
         specifier: ^8.31.1
-        version: 8.33.0(@typescript-eslint/parser@8.33.0(eslint@9.28.0)(typescript@5.8.3))(eslint@9.28.0)(typescript@5.8.3)
+        version: 8.33.0(@typescript-eslint/parser@8.33.0(eslint@9.28.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3))(eslint@9.28.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3)
       "@typescript-eslint/parser":
         specifier: ^8.31.1
-        version: 8.33.0(eslint@9.28.0)(typescript@5.8.3)
+        version: 8.33.0(eslint@9.28.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3)
       "@vscode/test-cli":
         specifier: ^0.0.10
         version: 0.0.10
       "@vscode/test-electron":
         specifier: ^2.5.2
-        version: 2.5.2
+        version: 2.5.2(supports-color@8.1.1)
       "@vscode/vsce":
         specifier: ^3.7.0
-        version: 3.7.0
+        version: 3.7.0(supports-color@8.1.1)
       esbuild:
         specifier: ^0.25.3
         version: 0.25.5
       eslint:
         specifier: ^9.25.1
-        version: 9.28.0
+        version: 9.28.0(supports-color@8.1.1)
       husky:
         specifier: ^9.1.7
         version: 9.1.7
       lint-staged:
         specifier: ^16.1.0
-        version: 16.1.0
+        version: 16.1.0(supports-color@8.1.1)
       npm-run-all:
         specifier: ^4.1.5
         version: 4.1.5
@@ -1258,10 +1258,10 @@ packages:
         integrity: sha512-kRz0VEkJqWLf1LLVN4pT1cg1Z9wAuvI6L97V3m2f5B76Tg8d413ddvLBPTEHAZJlnn4XSvu0FkZtViCQGVyrXQ==,
       }
 
-  "@types/vscode@1.120.0":
+  "@types/vscode@1.125.0":
     resolution:
       {
-        integrity: sha512-feaT4Rst+FkTch5zz/ZbNCxoIvo55YU80Be2kiL7OJcod4+CUYf2lUBPdIJzozNnSEMq1VRTGrWEcCGFB3fBmA==,
+        integrity: sha512-0icm/ZQAaism87P0ekHqi4/Ju9du+Tm0RUW+y7vqRsxY2cY0FNRX1nAnaW7nT6npPt2tfHiheZ55Zm9UhqonFA==,
       }
 
   "@typescript-eslint/eslint-plugin@8.33.0":
@@ -2920,6 +2920,7 @@ packages:
       {
         integrity: sha512-7Bv8RF0k6xjo7d4A/PxYLbUCfb6c+Vpd2/mB2yRDlew7Jb5hEXiCD9ibfO7wpk8i4sevK6DFny9h7EYbM3/sHg==,
       }
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   glob@11.0.2:
@@ -2928,6 +2929,7 @@ packages:
         integrity: sha512-YT7U7Vye+t5fZ/QMkBFrTJ7ZQxInIUjwyAjVj84CYXqgBdv30MFUPGnBR6sQaVq6Is15wYJUsnzTuWaGRBhBAQ==,
       }
     engines: { node: 20 || >=22 }
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   glob@7.2.3:
@@ -2935,7 +2937,7 @@ packages:
       {
         integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==,
       }
-    deprecated: Glob versions prior to v9 are no longer supported
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   glob@8.1.0:
     resolution:
@@ -2943,7 +2945,7 @@ packages:
         integrity: sha512-r8hpEjiQEYlF2QU0df3dS+nxxSIreXQS1qRhMJM0Q5NDdR386C7jb7Hwwod8Fgiuex+k0GFjgft18yvxm5XoCQ==,
       }
     engines: { node: ">=12" }
-    deprecated: Glob versions prior to v9 are no longer supported
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   globals@14.0.0:
     resolution:
@@ -4316,16 +4318,24 @@ packages:
       }
     engines: { node: ">=18" }
 
-  openai@6.38.0:
+  openai@6.46.0:
     resolution:
       {
-        integrity: sha512-AoMplt2UalrpgUDMh3L09QWjNRlgJPipclQvA6sYAaeF6nHNBMgmikAZGmcYLn8on4d9sQY9Q8bOLfrBS7Lc8g==,
+        integrity: sha512-DFg6jEPT2RO+oAyXtddeUJU8zkGy1OQ1AjGzNIJUMQG03TTqvCpy9tBpQ+2VVVnvrl3E56F8GEin2JYtWpITtA==,
       }
-    hasBin: true
     peerDependencies:
+      "@aws-sdk/credential-provider-node": ">=3.972.0 <4"
+      "@smithy/hash-node": ">=4.3.0 <5"
+      "@smithy/signature-v4": ">=5.4.0 <6"
       ws: ^8.18.0
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:
+      "@aws-sdk/credential-provider-node":
+        optional: true
+      "@smithy/hash-node":
+        optional: true
+      "@smithy/signature-v4":
+        optional: true
       ws:
         optional: true
       zod:
@@ -4677,6 +4687,7 @@ packages:
         integrity: sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug==,
       }
     engines: { node: ">=10" }
+    deprecated: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.
     hasBin: true
 
   prelude-ls@1.2.1:
@@ -5743,6 +5754,7 @@ packages:
       {
         integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==,
       }
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   v8-to-istanbul@9.3.0:
@@ -5785,6 +5797,7 @@ packages:
         integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==,
       }
     engines: { node: ">=18" }
+    deprecated: Use @exodus/bytes instead for a more spec-conformant and faster implementation
 
   whatwg-mimetype@4.0.0:
     resolution:
@@ -6188,7 +6201,7 @@ snapshots:
       "@babel/parser": 7.28.3
       "@babel/types": 7.28.2
 
-  "@babel/traverse@7.28.3":
+  "@babel/traverse@7.28.3(supports-color@8.1.1)":
     dependencies:
       "@babel/code-frame": 7.27.1
       "@babel/generator": 7.28.3
@@ -6440,14 +6453,14 @@ snapshots:
   "@esbuild/win32-x64@0.25.5":
     optional: true
 
-  "@eslint-community/eslint-utils@4.7.0(eslint@9.28.0)":
+  "@eslint-community/eslint-utils@4.7.0(eslint@9.28.0(supports-color@8.1.1))":
     dependencies:
-      eslint: 9.28.0
+      eslint: 9.28.0(supports-color@8.1.1)
       eslint-visitor-keys: 3.4.3
 
   "@eslint-community/regexpp@4.12.1": {}
 
-  "@eslint/config-array@0.20.0":
+  "@eslint/config-array@0.20.0(supports-color@8.1.1)":
     dependencies:
       "@eslint/object-schema": 2.1.6
       debug: 4.4.1(supports-color@8.1.1)
@@ -6461,7 +6474,7 @@ snapshots:
     dependencies:
       "@types/json-schema": 7.0.15
 
-  "@eslint/eslintrc@3.3.1":
+  "@eslint/eslintrc@3.3.1(supports-color@8.1.1)":
     dependencies:
       ajv: 6.12.6
       debug: 4.4.1(supports-color@8.1.1)
@@ -6569,15 +6582,15 @@ snapshots:
       globby: 11.1.0
       read-yaml-file: 1.1.0
 
-  "@modelcontextprotocol/sdk@1.13.0":
+  "@modelcontextprotocol/sdk@1.13.0(supports-color@8.1.1)":
     dependencies:
       ajv: 6.12.6
       content-type: 1.0.5
       cors: 2.8.5
       cross-spawn: 7.0.6
       eventsource: 3.0.7
-      express: 5.1.0
-      express-rate-limit: 7.5.1(express@5.1.0)
+      express: 5.1.0(supports-color@8.1.1)
+      express-rate-limit: 7.5.1(express@5.1.0(supports-color@8.1.1))
       pkce-challenge: 5.0.0
       raw-body: 3.0.0
       zod: 3.25.76
@@ -6785,7 +6798,7 @@ snapshots:
     dependencies:
       "@textlint/ast-node-types": 15.3.0
 
-  "@tokenizer/inflate@0.2.7":
+  "@tokenizer/inflate@0.2.7(supports-color@8.1.1)":
     dependencies:
       debug: 4.4.1(supports-color@8.1.1)
       fflate: 0.8.2
@@ -6795,11 +6808,11 @@ snapshots:
 
   "@tokenizer/token@0.3.0": {}
 
-  "@trivago/prettier-plugin-sort-imports@5.2.2(prettier@3.5.3)":
+  "@trivago/prettier-plugin-sort-imports@5.2.2(prettier@3.5.3)(supports-color@8.1.1)":
     dependencies:
       "@babel/generator": 7.28.3
       "@babel/parser": 7.28.3
-      "@babel/traverse": 7.28.3
+      "@babel/traverse": 7.28.3(supports-color@8.1.1)
       "@babel/types": 7.28.2
       javascript-natural-sort: 0.7.1
       lodash: 4.17.21
@@ -6830,17 +6843,17 @@ snapshots:
 
   "@types/sarif@2.1.7": {}
 
-  "@types/vscode@1.120.0": {}
+  "@types/vscode@1.125.0": {}
 
-  "@typescript-eslint/eslint-plugin@8.33.0(@typescript-eslint/parser@8.33.0(eslint@9.28.0)(typescript@5.8.3))(eslint@9.28.0)(typescript@5.8.3)":
+  "@typescript-eslint/eslint-plugin@8.33.0(@typescript-eslint/parser@8.33.0(eslint@9.28.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3))(eslint@9.28.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3)":
     dependencies:
       "@eslint-community/regexpp": 4.12.1
-      "@typescript-eslint/parser": 8.33.0(eslint@9.28.0)(typescript@5.8.3)
+      "@typescript-eslint/parser": 8.33.0(eslint@9.28.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3)
       "@typescript-eslint/scope-manager": 8.33.0
-      "@typescript-eslint/type-utils": 8.33.0(eslint@9.28.0)(typescript@5.8.3)
-      "@typescript-eslint/utils": 8.33.0(eslint@9.28.0)(typescript@5.8.3)
+      "@typescript-eslint/type-utils": 8.33.0(eslint@9.28.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3)
+      "@typescript-eslint/utils": 8.33.0(eslint@9.28.0(supports-color@8.1.1))(typescript@5.8.3)
       "@typescript-eslint/visitor-keys": 8.33.0
-      eslint: 9.28.0
+      eslint: 9.28.0(supports-color@8.1.1)
       graphemer: 1.4.0
       ignore: 7.0.5
       natural-compare: 1.4.0
@@ -6849,19 +6862,19 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  "@typescript-eslint/parser@8.33.0(eslint@9.28.0)(typescript@5.8.3)":
+  "@typescript-eslint/parser@8.33.0(eslint@9.28.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3)":
     dependencies:
       "@typescript-eslint/scope-manager": 8.33.0
       "@typescript-eslint/types": 8.33.0
-      "@typescript-eslint/typescript-estree": 8.33.0(typescript@5.8.3)
+      "@typescript-eslint/typescript-estree": 8.33.0(supports-color@8.1.1)(typescript@5.8.3)
       "@typescript-eslint/visitor-keys": 8.33.0
       debug: 4.4.1(supports-color@8.1.1)
-      eslint: 9.28.0
+      eslint: 9.28.0(supports-color@8.1.1)
       typescript: 5.8.3
     transitivePeerDependencies:
       - supports-color
 
-  "@typescript-eslint/project-service@8.33.0(typescript@5.8.3)":
+  "@typescript-eslint/project-service@8.33.0(supports-color@8.1.1)(typescript@5.8.3)":
     dependencies:
       "@typescript-eslint/tsconfig-utils": 8.33.0(typescript@5.8.3)
       "@typescript-eslint/types": 8.33.0
@@ -6879,12 +6892,12 @@ snapshots:
     dependencies:
       typescript: 5.8.3
 
-  "@typescript-eslint/type-utils@8.33.0(eslint@9.28.0)(typescript@5.8.3)":
+  "@typescript-eslint/type-utils@8.33.0(eslint@9.28.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.8.3)":
     dependencies:
-      "@typescript-eslint/typescript-estree": 8.33.0(typescript@5.8.3)
-      "@typescript-eslint/utils": 8.33.0(eslint@9.28.0)(typescript@5.8.3)
+      "@typescript-eslint/typescript-estree": 8.33.0(supports-color@8.1.1)(typescript@5.8.3)
+      "@typescript-eslint/utils": 8.33.0(eslint@9.28.0(supports-color@8.1.1))(typescript@5.8.3)
       debug: 4.4.1(supports-color@8.1.1)
-      eslint: 9.28.0
+      eslint: 9.28.0(supports-color@8.1.1)
       ts-api-utils: 2.1.0(typescript@5.8.3)
       typescript: 5.8.3
     transitivePeerDependencies:
@@ -6892,9 +6905,9 @@ snapshots:
 
   "@typescript-eslint/types@8.33.0": {}
 
-  "@typescript-eslint/typescript-estree@8.33.0(typescript@5.8.3)":
+  "@typescript-eslint/typescript-estree@8.33.0(supports-color@8.1.1)(typescript@5.8.3)":
     dependencies:
-      "@typescript-eslint/project-service": 8.33.0(typescript@5.8.3)
+      "@typescript-eslint/project-service": 8.33.0(supports-color@8.1.1)(typescript@5.8.3)
       "@typescript-eslint/tsconfig-utils": 8.33.0(typescript@5.8.3)
       "@typescript-eslint/types": 8.33.0
       "@typescript-eslint/visitor-keys": 8.33.0
@@ -6908,13 +6921,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  "@typescript-eslint/utils@8.33.0(eslint@9.28.0)(typescript@5.8.3)":
+  "@typescript-eslint/utils@8.33.0(eslint@9.28.0(supports-color@8.1.1))(typescript@5.8.3)":
     dependencies:
-      "@eslint-community/eslint-utils": 4.7.0(eslint@9.28.0)
+      "@eslint-community/eslint-utils": 4.7.0(eslint@9.28.0(supports-color@8.1.1))
       "@typescript-eslint/scope-manager": 8.33.0
       "@typescript-eslint/types": 8.33.0
-      "@typescript-eslint/typescript-estree": 8.33.0(typescript@5.8.3)
-      eslint: 9.28.0
+      "@typescript-eslint/typescript-estree": 8.33.0(supports-color@8.1.1)(typescript@5.8.3)
+      eslint: 9.28.0(supports-color@8.1.1)
       typescript: 5.8.3
     transitivePeerDependencies:
       - supports-color
@@ -6926,8 +6939,8 @@ snapshots:
 
   "@typespec/ts-http-runtime@0.2.3":
     dependencies:
-      http-proxy-agent: 7.0.2
-      https-proxy-agent: 7.0.6
+      http-proxy-agent: 7.0.2(supports-color@8.1.1)
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       tslib: 2.8.1
     transitivePeerDependencies:
       - supports-color
@@ -6944,10 +6957,10 @@ snapshots:
       supports-color: 9.4.0
       yargs: 17.7.2
 
-  "@vscode/test-electron@2.5.2":
+  "@vscode/test-electron@2.5.2(supports-color@8.1.1)":
     dependencies:
-      http-proxy-agent: 7.0.2
-      https-proxy-agent: 7.0.6
+      http-proxy-agent: 7.0.2(supports-color@8.1.1)
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       jszip: 3.10.1
       ora: 8.2.0
       semver: 7.7.2
@@ -6993,7 +7006,7 @@ snapshots:
       "@vscode/vsce-sign-win32-arm64": 2.0.5
       "@vscode/vsce-sign-win32-x64": 2.0.5
 
-  "@vscode/vsce@3.7.0":
+  "@vscode/vsce@3.7.0(supports-color@8.1.1)":
     dependencies:
       "@azure/identity": 4.10.1
       "@secretlint/node": 10.2.2
@@ -7016,7 +7029,7 @@ snapshots:
       minimatch: 3.1.2
       parse-semver: 1.1.1
       read: 1.0.7
-      secretlint: 10.2.2
+      secretlint: 10.2.2(supports-color@8.1.1)
       semver: 7.7.2
       tmp: 0.2.3
       typed-rest-client: 1.8.11
@@ -7150,7 +7163,7 @@ snapshots:
       readable-stream: 3.6.2
     optional: true
 
-  body-parser@2.2.0:
+  body-parser@2.2.0(supports-color@8.1.1):
     dependencies:
       bytes: 3.1.2
       content-type: 1.0.5
@@ -7668,14 +7681,14 @@ snapshots:
 
   eslint-visitor-keys@4.2.0: {}
 
-  eslint@9.28.0:
+  eslint@9.28.0(supports-color@8.1.1):
     dependencies:
-      "@eslint-community/eslint-utils": 4.7.0(eslint@9.28.0)
+      "@eslint-community/eslint-utils": 4.7.0(eslint@9.28.0(supports-color@8.1.1))
       "@eslint-community/regexpp": 4.12.1
-      "@eslint/config-array": 0.20.0
+      "@eslint/config-array": 0.20.0(supports-color@8.1.1)
       "@eslint/config-helpers": 0.2.2
       "@eslint/core": 0.14.0
-      "@eslint/eslintrc": 3.3.1
+      "@eslint/eslintrc": 3.3.1(supports-color@8.1.1)
       "@eslint/js": 9.28.0
       "@eslint/plugin-kit": 0.3.1
       "@humanfs/node": 0.16.6
@@ -7760,14 +7773,14 @@ snapshots:
   expand-template@2.0.3:
     optional: true
 
-  express-rate-limit@7.5.1(express@5.1.0):
+  express-rate-limit@7.5.1(express@5.1.0(supports-color@8.1.1)):
     dependencies:
-      express: 5.1.0
+      express: 5.1.0(supports-color@8.1.1)
 
-  express@5.1.0:
+  express@5.1.0(supports-color@8.1.1):
     dependencies:
       accepts: 2.0.0
-      body-parser: 2.2.0
+      body-parser: 2.2.0(supports-color@8.1.1)
       content-disposition: 1.0.0
       content-type: 1.0.5
       cookie: 0.7.2
@@ -7776,7 +7789,7 @@ snapshots:
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
-      finalhandler: 2.1.0
+      finalhandler: 2.1.0(supports-color@8.1.1)
       fresh: 2.0.0
       http-errors: 2.0.0
       merge-descriptors: 2.0.0
@@ -7787,8 +7800,8 @@ snapshots:
       proxy-addr: 2.0.7
       qs: 6.14.0
       range-parser: 1.2.1
-      router: 2.2.0
-      send: 1.2.0
+      router: 2.2.0(supports-color@8.1.1)
+      send: 1.2.0(supports-color@8.1.1)
       serve-static: 2.2.0
       statuses: 2.0.2
       type-is: 2.0.1
@@ -7824,12 +7837,12 @@ snapshots:
 
   fast-uri@3.0.6: {}
 
-  fastmcp@3.5.0:
+  fastmcp@3.5.0(supports-color@8.1.1):
     dependencies:
-      "@modelcontextprotocol/sdk": 1.13.0
+      "@modelcontextprotocol/sdk": 1.13.0(supports-color@8.1.1)
       "@standard-schema/spec": 1.0.0
       execa: 9.6.0
-      file-type: 21.0.0
+      file-type: 21.0.0(supports-color@8.1.1)
       fuse.js: 7.1.0
       mcp-proxy: 5.1.1
       strict-event-emitter-types: 2.0.0
@@ -7869,9 +7882,9 @@ snapshots:
     dependencies:
       flat-cache: 4.0.1
 
-  file-type@21.0.0:
+  file-type@21.0.0(supports-color@8.1.1):
     dependencies:
-      "@tokenizer/inflate": 0.2.7
+      "@tokenizer/inflate": 0.2.7(supports-color@8.1.1)
       strtok3: 10.3.1
       token-types: 6.0.0
       uint8array-extras: 1.4.0
@@ -7882,7 +7895,7 @@ snapshots:
     dependencies:
       to-regex-range: 5.0.1
 
-  finalhandler@2.1.0:
+  finalhandler@2.1.0(supports-color@8.1.1):
     dependencies:
       debug: 4.4.1(supports-color@8.1.1)
       encodeurl: 2.0.0
@@ -7982,7 +7995,7 @@ snapshots:
   gaxios@7.1.3:
     dependencies:
       extend: 3.0.2
-      https-proxy-agent: 7.0.6
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       node-fetch: 3.3.2
       rimraf: 5.0.10
     transitivePeerDependencies:
@@ -8182,14 +8195,14 @@ snapshots:
       statuses: 2.0.1
       toidentifier: 1.0.1
 
-  http-proxy-agent@7.0.2:
+  http-proxy-agent@7.0.2(supports-color@8.1.1):
     dependencies:
       agent-base: 7.1.3
       debug: 4.4.1(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
-  https-proxy-agent@7.0.6:
+  https-proxy-agent@7.0.6(supports-color@8.1.1):
     dependencies:
       agent-base: 7.1.3
       debug: 4.4.1(supports-color@8.1.1)
@@ -8561,7 +8574,7 @@ snapshots:
     dependencies:
       uc.micro: 2.1.0
 
-  lint-staged@16.1.0:
+  lint-staged@16.1.0(supports-color@8.1.1):
     dependencies:
       chalk: 5.4.1
       commander: 14.0.0
@@ -8665,7 +8678,7 @@ snapshots:
 
   mcp-proxy@5.1.1:
     dependencies:
-      "@modelcontextprotocol/sdk": 1.13.0
+      "@modelcontextprotocol/sdk": 1.13.0(supports-color@8.1.1)
       eventsource: 4.0.0
       yargs: 18.0.0
     transitivePeerDependencies:
@@ -8860,7 +8873,7 @@ snapshots:
       is-inside-container: 1.0.0
       is-wsl: 3.1.0
 
-  openai@6.38.0(ws@8.18.3)(zod@4.0.10):
+  openai@6.46.0(ws@8.18.3)(zod@4.0.10):
     optionalDependencies:
       ws: 8.18.3
       zod: 4.0.10
@@ -8896,7 +8909,7 @@ snapshots:
 
   ovsx@0.10.4:
     dependencies:
-      "@vscode/vsce": 3.7.0
+      "@vscode/vsce": 3.7.0(supports-color@8.1.1)
       commander: 6.2.1
       follow-redirects: 1.15.9
       is-ci: 2.0.0
@@ -9219,7 +9232,7 @@ snapshots:
       glob: 11.0.2
       package-json-from-dist: 1.0.1
 
-  router@2.2.0:
+  router@2.2.0(supports-color@8.1.1):
     dependencies:
       debug: 4.4.1(supports-color@8.1.1)
       depd: 2.0.0
@@ -9262,7 +9275,7 @@ snapshots:
 
   sax@1.4.1: {}
 
-  secretlint@10.2.2:
+  secretlint@10.2.2(supports-color@8.1.1):
     dependencies:
       "@secretlint/config-creator": 10.2.2
       "@secretlint/formatter": 10.2.2
@@ -9278,7 +9291,7 @@ snapshots:
 
   semver@7.7.2: {}
 
-  send@1.2.0:
+  send@1.2.0(supports-color@8.1.1):
     dependencies:
       debug: 4.4.1(supports-color@8.1.1)
       encodeurl: 2.0.0
@@ -9303,7 +9316,7 @@ snapshots:
       encodeurl: 2.0.0
       escape-html: 1.0.3
       parseurl: 1.3.3
-      send: 1.2.0
+      send: 1.2.0(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
