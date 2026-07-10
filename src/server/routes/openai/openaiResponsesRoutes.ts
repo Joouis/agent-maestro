@@ -8,14 +8,21 @@ import * as vscode from "vscode";
 import {
   getChatModelClient,
   getCopilotModelConfiguration,
+  isGpt5PlusModel,
   withCopilotConfiguration,
 } from "../../../utils/chatModels";
+import { readConfiguration } from "../../../utils/config";
+import {
+  AGENT_MAESTRO_WEB_SEARCH_SENTINEL_PARAMETER,
+  AGENT_MAESTRO_WEB_SEARCH_SENTINEL_TOOL_NAME,
+} from "../../../utils/copilotWebSearchConstants";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
 import { extractOpenAIResponsesUsage } from "../../utils/openai";
 import {
   OutputItem,
+  ResponseTool,
   ToolChoice,
   buildResponseOutput,
   closeMessageOutputItem,
@@ -29,6 +36,7 @@ import {
   generateMessageId,
   generateResponseId,
   getCurrentTimestamp,
+  getResponsesWebSearchTool,
   narrowToolsForChoice,
 } from "../../utils/openaiResponses";
 
@@ -53,7 +61,7 @@ const createResponseRoute = createRoute({
 
 Limitations:
 - Stateless: previous_response_id, conversation, item_reference not supported (send full history in input array)
-- Tools: function, custom, namespace, and additional_tools are supported; file_search, web_search, code_interpreter, mcp, etc. are ignored
+- Tools: function, custom, namespace, and additional_tools are supported; web_search tools can be passed through when the experimental GPT-5+ patch is enabled; file_search, code_interpreter, mcp, etc. are ignored
 - Images: only base64 data URI supported (URL-based images fall back to JSON)
 - input_file: not supported (serialized as JSON text)
 - Annotations: always empty (VSCode LM doesn't provide annotations)
@@ -256,8 +264,45 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         ...(tools ?? []),
         ...extractAdditionalTools(input),
       ];
-      const { tools: vsCodeTools, toolMap } =
-        convertResponsesToolsToVSCode(effectiveTools);
+      const webSearchTool = getResponsesWebSearchTool(effectiveTools);
+      const experimentalWebSearchEnabled = webSearchTool
+        ? readConfiguration().experimentalGpt5PlusWebSearchEnabled
+        : false;
+      const gpt5Plus = webSearchTool ? isGpt5PlusModel(model, client) : false;
+      const shouldUseExperimentalWebSearch =
+        !!webSearchTool && experimentalWebSearchEnabled && gpt5Plus;
+
+      if (webSearchTool) {
+        logger.debug(
+          `Experimental GPT-5+ web search: enabled=${experimentalWebSearchEnabled}, gpt5Plus=${gpt5Plus}, toolType=${webSearchTool.type}, injected=${shouldUseExperimentalWebSearch}`,
+        );
+      }
+
+      if (shouldUseExperimentalWebSearch) {
+        const sentinelTool: ResponseTool = {
+          type: "function",
+          name: AGENT_MAESTRO_WEB_SEARCH_SENTINEL_TOOL_NAME,
+          description:
+            "Internal Agent Maestro marker for Copilot bundle web search patching.",
+          strict: false,
+          parameters: {
+            type: "object",
+            properties: {
+              [AGENT_MAESTRO_WEB_SEARCH_SENTINEL_PARAMETER]: {
+                const: webSearchTool,
+              },
+            },
+          },
+        };
+        effectiveTools.push(sentinelTool);
+      }
+
+      const { tools: vsCodeTools, toolMap } = convertResponsesToolsToVSCode(
+        effectiveTools,
+        {
+          webSearchHandledByCopilotPatch: shouldUseExperimentalWebSearch,
+        },
+      );
       const shouldPassTools =
         tool_choice !== "none" && effectiveTools.length > 0;
 

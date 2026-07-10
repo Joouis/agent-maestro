@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import {
   type CopilotModelConfiguration,
   getCopilotModelConfiguration,
+  isGpt5PlusModel,
   jaccardSimilarity,
   withCopilotConfiguration,
 } from "../../utils/chatModels";
@@ -185,6 +186,37 @@ suite("Model Resolution Test Suite", () => {
       assert.deepStrictEqual(
         getCopilotModelConfiguration({ reasoningEffort: 1 }),
         {},
+      );
+    });
+  });
+
+  suite("isGpt5PlusModel", () => {
+    test("matches GPT major version 5 from the requested model id", () => {
+      assert.strictEqual(isGpt5PlusModel("gpt-5", createMockModel({})), true);
+      assert.strictEqual(isGpt5PlusModel("gpt-5.5", createMockModel({})), true);
+    });
+
+    test("matches GPT major version 5 or newer from model metadata", () => {
+      assert.strictEqual(
+        isGpt5PlusModel(
+          "custom-alias",
+          createMockModel({ family: "gpt-5.5", name: "GPT-6 Preview" }),
+        ),
+        true,
+      );
+    });
+
+    test("does not match earlier GPT or non-GPT models", () => {
+      assert.strictEqual(
+        isGpt5PlusModel(
+          "gpt-4.1",
+          createMockModel({ id: "gpt-4.1", family: "gpt-4.1" }),
+        ),
+        false,
+      );
+      assert.strictEqual(
+        isGpt5PlusModel("claude-opus", createMockModel({})),
+        false,
       );
     });
   });

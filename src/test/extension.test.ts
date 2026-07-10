@@ -82,6 +82,21 @@ suite("Extension Test Suite", () => {
       }
     });
 
+    test("experimental commands should be registered", async () => {
+      const commands = await vscode.commands.getCommands(true);
+
+      assert.ok(
+        commands.includes("agent-maestro.enableExperimentalGpt5PlusWebSearch"),
+        "enableExperimentalGpt5PlusWebSearch command should be registered",
+      );
+      assert.ok(
+        commands.includes(
+          "agent-maestro.restoreExperimentalGpt5PlusWebSearchBackup",
+        ),
+        "restoreExperimentalGpt5PlusWebSearchBackup command should be registered",
+      );
+    });
+
     test("status command should be registered", async () => {
       const commands = await vscode.commands.getCommands(true);
 
@@ -137,6 +152,18 @@ suite("Extension Test Suite", () => {
       assert.ok(
         typeof identifier === "string" && identifier.length > 0,
         "defaultRooIdentifier should be a non-empty string",
+      );
+    });
+
+    test("experimentalGpt5PlusWebSearchEnabled should be a boolean", () => {
+      const config = vscode.workspace.getConfiguration("agent-maestro");
+      const enabled = config.get<boolean>(
+        "experimentalGpt5PlusWebSearchEnabled",
+      );
+
+      assert.ok(
+        typeof enabled === "boolean",
+        "experimentalGpt5PlusWebSearchEnabled should be a boolean",
       );
     });
   });

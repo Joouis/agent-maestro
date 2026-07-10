@@ -14,6 +14,7 @@ import {
   generateFunctionCallId,
   generateMessageId,
   generateResponseId,
+  getResponsesWebSearchTool,
   narrowToolsForChoice,
 } from "../../server/utils/openaiResponses";
 
@@ -539,6 +540,41 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         { type: "web_search_preview" as const },
       ] as any[];
       const { tools: result } = convertResponsesToolsToVSCode(tools);
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(result[0].name, "valid_function");
+    });
+
+    test("should return web search tools", () => {
+      const tools = [
+        { type: "function" as const, name: "valid_function" },
+        {
+          type: "web_search" as const,
+          external_web_access: true,
+          search_content_types: ["text", "image"],
+        },
+      ] as any[];
+
+      assert.deepStrictEqual(getResponsesWebSearchTool(tools), {
+        type: "web_search",
+        external_web_access: true,
+        search_content_types: ["text", "image"],
+      });
+      assert.strictEqual(
+        getResponsesWebSearchTool([{ type: "function", name: "fn" }] as any),
+        undefined,
+      );
+    });
+
+    test("should suppress web search skip log when handled by Copilot patch", () => {
+      const tools = [
+        { type: "function" as const, name: "valid_function" },
+        { type: "web_search" as const },
+      ] as any[];
+
+      const { tools: result } = convertResponsesToolsToVSCode(tools, {
+        webSearchHandledByCopilotPatch: true,
+      });
+
       assert.strictEqual(result.length, 1);
       assert.strictEqual(result[0].name, "valid_function");
     });

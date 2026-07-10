@@ -84,6 +84,12 @@
           "default": false,
           "description": "Allow the extension to access files outside of the current workspace",
           "scope": "application"
+        },
+        "agent-maestro.experimentalGpt5PlusWebSearchEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the experimental GPT-5+ web search Copilot bundle patch for OpenAI Responses requests. This is toggled by the Agent Maestro patch/restore commands.",
+          "scope": "application"
         }
       }
     },
@@ -146,6 +152,16 @@
       {
         "command": "agent-maestro.configureGeminiCli",
         "title": "Configure Gemini CLI Settings",
+        "category": "Agent Maestro"
+      },
+      {
+        "command": "agent-maestro.enableExperimentalGpt5PlusWebSearch",
+        "title": "Enable Experimental GPT-5+ Web Search",
+        "category": "Agent Maestro"
+      },
+      {
+        "command": "agent-maestro.restoreExperimentalGpt5PlusWebSearchBackup",
+        "title": "Restore Experimental GPT-5+ Web Search Backup",
         "category": "Agent Maestro"
       },
       {
