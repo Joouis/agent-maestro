@@ -29,11 +29,15 @@ import {
   convertResponsesInputToVSCode,
   convertResponsesToolsToVSCode,
   convertToolChoice,
+  customToolCallInput,
+  extractAdditionalTools,
+  generateCustomToolCallId,
   generateFunctionCallId,
   generateMessageId,
   generateResponseId,
   getCurrentTimestamp,
   getResponsesWebSearchTool,
+  narrowToolsForChoice,
 } from "../../utils/openaiResponses";
 
 type NonStreamingResponse = Omit<
@@ -57,7 +61,7 @@ const createResponseRoute = createRoute({
 
 Limitations:
 - Stateless: previous_response_id, conversation, item_reference not supported (send full history in input array)
-- Only function tools supported by default; web_search tools can be passed through when the experimental GPT-5+ web search patch is enabled
+- Tools: function, custom, namespace, and additional_tools are supported; web_search tools can be passed through when the experimental GPT-5+ patch is enabled; file_search, code_interpreter, mcp, etc. are ignored
 - Images: only base64 data URI supported (URL-based images fall back to JSON)
 - input_file: not supported (serialized as JSON text)
 - Annotations: always empty (VSCode LM doesn't provide annotations)
@@ -254,10 +258,13 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
       lmChatMessages = vsCodeMessages;
 
       // 7. Build request options
-      const shouldPassTools =
-        tool_choice !== "none" && tools && tools.length > 0;
-      const effectiveTools = tools ? [...tools] : undefined;
-      const webSearchTool = getResponsesWebSearchTool(tools);
+      // Tools may arrive both at the top level and as `additional_tools`
+      // items injected mid-conversation; merge both sources.
+      const effectiveTools = [
+        ...(tools ?? []),
+        ...extractAdditionalTools(input),
+      ];
+      const webSearchTool = getResponsesWebSearchTool(effectiveTools);
       const experimentalWebSearchEnabled = webSearchTool
         ? readConfiguration().experimentalGpt5PlusWebSearchEnabled
         : false;
@@ -271,7 +278,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         );
       }
 
-      if (shouldUseExperimentalWebSearch && effectiveTools) {
+      if (shouldUseExperimentalWebSearch) {
         const sentinelTool: ResponseTool = {
           type: "function",
           name: AGENT_MAESTRO_WEB_SEARCH_SENTINEL_TOOL_NAME,
@@ -290,15 +297,49 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         effectiveTools.push(sentinelTool);
       }
 
+      const { tools: vsCodeTools, toolMap } = convertResponsesToolsToVSCode(
+        effectiveTools,
+        {
+          webSearchHandledByCopilotPatch: shouldUseExperimentalWebSearch,
+        },
+      );
+      const shouldPassTools =
+        tool_choice !== "none" && effectiveTools.length > 0;
+
+      let narrowedTools = vsCodeTools;
+      if (shouldPassTools) {
+        const narrowed = narrowToolsForChoice(
+          tool_choice as ToolChoice,
+          vsCodeTools,
+          toolMap,
+        );
+        if (!narrowed.ok) {
+          return c.json(
+            {
+              error: {
+                type: "invalid_request_error",
+                message:
+                  `tool_choice named "${narrowed.targetName}" matched ` +
+                  `${narrowed.matchCount} tools. A named tool_choice must ` +
+                  "resolve to exactly one available tool.",
+                param: "tool_choice",
+                code:
+                  narrowed.matchCount === 0
+                    ? "tool_not_found"
+                    : "ambiguous_tool_choice",
+              },
+            },
+            400,
+          );
+        }
+        narrowedTools = narrowed.tools;
+      }
+
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
         justification:
           "OpenAI Responses API endpoint using VS Code Language Model API",
         modelOptions,
-        tools: shouldPassTools
-          ? convertResponsesToolsToVSCode(effectiveTools, {
-              webSearchHandledByCopilotPatch: shouldUseExperimentalWebSearch,
-            })
-          : undefined,
+        tools: shouldPassTools ? narrowedTools : undefined,
         toolMode: shouldPassTools
           ? convertToolChoice(tool_choice as ToolChoice)
           : undefined,
@@ -340,7 +381,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         }
 
         // Build output
-        const output = buildResponseOutput(accumulatedText, toolCalls);
+        const output = buildResponseOutput(accumulatedText, toolCalls, toolMap);
 
         if (!responseUsage) {
           const [fallbackInputTokens, outputTokens] = await Promise.all([
@@ -353,7 +394,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           inputTokens = fallbackInputTokens;
           responseUsage = {
             input_tokens: fallbackInputTokens,
-            input_tokens_details: { cached_tokens: 0 },
+            input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 },
             output_tokens: outputTokens,
             output_tokens_details: { reasoning_tokens: 0 },
             total_tokens: fallbackInputTokens + outputTokens,
@@ -377,7 +418,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
         logger.debug("/v1/responses response:");
         logger.debug(JSON.stringify(responseObj, null, 2));
         logger.info(
-          `← /v1/responses | input: ${responseUsage.input_tokens} | cache_read: ${responseUsage.input_tokens_details.cached_tokens} | output: ${responseUsage.output_tokens}`,
+          `← /v1/responses | input: ${responseUsage?.input_tokens} | cache_read: ${responseUsage?.input_tokens_details?.cached_tokens} | output: ${responseUsage?.output_tokens}`,
         );
 
         cancellationTokenSource.dispose();
@@ -518,11 +559,84 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                 accumulatedText = "";
               }
 
+              totalOutputText += JSON.stringify(chunk);
+
+              const toolInfo = toolMap.get(chunk.name);
+              const toolName = toolInfo?.name ?? chunk.name;
+              const toolNamespace = toolInfo?.namespace;
+
+              if (toolInfo?.isCustom) {
+                // Emit custom tool call events (raw string input, no JSON args)
+                const ctcId = generateCustomToolCallId();
+                const callId = chunk.callId;
+                const inputStr = customToolCallInput(chunk.input);
+
+                await sseStream.writeSSE({
+                  event: "response.output_item.added",
+                  data: JSON.stringify({
+                    type: "response.output_item.added",
+                    output_index: outputIndex,
+                    item: {
+                      type: "custom_tool_call",
+                      id: ctcId,
+                      call_id: callId,
+                      name: toolName,
+                      input: "",
+                      ...(toolNamespace ? { namespace: toolNamespace } : {}),
+                    },
+                    sequence_number: sequenceNumberRef.value++,
+                  }),
+                });
+
+                await sseStream.writeSSE({
+                  event: "response.custom_tool_call_input.delta",
+                  data: JSON.stringify({
+                    type: "response.custom_tool_call_input.delta",
+                    item_id: ctcId,
+                    output_index: outputIndex,
+                    delta: inputStr,
+                    sequence_number: sequenceNumberRef.value++,
+                  }),
+                });
+
+                await sseStream.writeSSE({
+                  event: "response.custom_tool_call_input.done",
+                  data: JSON.stringify({
+                    type: "response.custom_tool_call_input.done",
+                    item_id: ctcId,
+                    output_index: outputIndex,
+                    input: inputStr,
+                    sequence_number: sequenceNumberRef.value++,
+                  }),
+                });
+
+                output.push({
+                  type: "custom_tool_call",
+                  id: ctcId,
+                  call_id: callId,
+                  name: toolName,
+                  input: inputStr,
+                  ...(toolNamespace ? { namespace: toolNamespace } : {}),
+                });
+
+                await sseStream.writeSSE({
+                  event: "response.output_item.done",
+                  data: JSON.stringify({
+                    type: "response.output_item.done",
+                    output_index: outputIndex,
+                    item: output[outputIndex],
+                    sequence_number: sequenceNumberRef.value++,
+                  }),
+                });
+
+                outputIndex++;
+                continue;
+              }
+
               // Emit function call events
               const fcId = generateFunctionCallId();
               const callId = chunk.callId;
               const argsStr = JSON.stringify(chunk.input ?? {});
-              totalOutputText += JSON.stringify(chunk);
 
               await sseStream.writeSSE({
                 event: "response.output_item.added",
@@ -533,9 +647,10 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                     type: "function_call",
                     id: fcId,
                     call_id: callId,
-                    name: chunk.name,
+                    name: toolName,
                     arguments: "",
                     status: "in_progress",
+                    ...(toolNamespace ? { namespace: toolNamespace } : {}),
                   },
                   sequence_number: sequenceNumberRef.value++,
                 }),
@@ -567,9 +682,10 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
                 type: "function_call",
                 id: fcId,
                 call_id: callId,
-                name: chunk.name,
+                name: toolName,
                 arguments: argsStr,
                 status: "completed",
+                ...(toolNamespace ? { namespace: toolNamespace } : {}),
               });
 
               await sseStream.writeSSE({
@@ -614,7 +730,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
             inputTokens = fallbackInputTokens;
             responseUsage = {
               input_tokens: fallbackInputTokens,
-              input_tokens_details: { cached_tokens: 0 },
+              input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 },
               output_tokens: outputTokens,
               output_tokens_details: { reasoning_tokens: 0 },
               total_tokens: fallbackInputTokens + outputTokens,
@@ -637,7 +753,7 @@ export function registerOpenaiResponsesRoutes(app: OpenAPIHono) {
           });
 
           logger.info(
-            `← /v1/responses (stream) | input: ${responseUsage.input_tokens} | cache_read: ${responseUsage.input_tokens_details.cached_tokens} | output: ${responseUsage.output_tokens}`,
+            `← /v1/responses (stream) | input: ${responseUsage?.input_tokens} | cache_read: ${responseUsage?.input_tokens_details?.cached_tokens} | cache_write: ${responseUsage?.input_tokens_details?.cache_write_tokens} | output: ${responseUsage?.output_tokens}`,
           );
           cancellationTokenSource?.dispose();
         },

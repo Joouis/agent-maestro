@@ -2,7 +2,7 @@
   "name": "agent-maestro",
   "displayName": "Agent Maestro",
   "description": "Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code or Codex straight in through an OpenAI/Anthropic-compatible API.",
-  "version": "2.9.7",
+  "version": "2.10.0",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
   "repository": "https://github.com/Joouis/agent-maestro",
@@ -186,7 +186,7 @@
     "fastmcp": "^3.5.0",
     "hono": "^4.8.9",
     "image-size": "^2.0.2",
-    "openai": "^6.38.0",
+    "openai": "^6.46.0",
     "smol-toml": "^1.6.0",
     "uuid": "^11.1.0",
     "zod": "^4.0.10"

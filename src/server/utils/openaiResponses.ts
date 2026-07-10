@@ -3,6 +3,9 @@ import { SSEStreamingApi } from "hono/streaming";
 import {
   EasyInputMessage,
   FunctionTool,
+  NamespaceTool,
+  ResponseCustomToolCall,
+  ResponseCustomToolCallOutput,
   ResponseFunctionToolCall,
   ResponseInput,
   ResponseInputContent,
@@ -43,7 +46,10 @@ export type ResponseTool = Tool;
 /**
  * Output item types for Responses API (subset we generate)
  */
-export type OutputItem = ResponseOutputMessage | ResponseFunctionToolCall;
+export type OutputItem =
+  | ResponseOutputMessage
+  | ResponseFunctionToolCall
+  | ResponseCustomToolCall;
 
 /**
  * Generate random string for IDs using crypto
@@ -73,6 +79,12 @@ export const generateMessageId = (): string => `msg_AM-${randomString(12)}`;
  * Generate unique function call ID
  */
 export const generateFunctionCallId = (): string => `fc_AM-${randomString(12)}`;
+
+/**
+ * Generate unique custom tool call ID
+ */
+export const generateCustomToolCallId = (): string =>
+  `ctc_AM-${randomString(12)}`;
 
 /**
  * Get current Unix timestamp in seconds
@@ -180,6 +192,14 @@ const convertInputImageToVSCodePart = (
 export const convertInputContentToVSCodePart = (
   content: ResponseInputContent | ResponseOutputText,
 ): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
+  // `encrypted_content` is an opaque encrypted reasoning blob (Codex/OpenAI
+  // round-trips it back to the provider). It's not in the SDK content union.
+  // VSCode LM can't decrypt or use it, and dumping the ciphertext into the
+  // prompt is harmful, so drop it.
+  if ((content as { type?: string }).type === "encrypted_content") {
+    logger.debug("Dropping encrypted_content part (not usable by VSCode LM)");
+    return new vscode.LanguageModelTextPart("");
+  }
   switch (content.type) {
     case "input_text":
       return new vscode.LanguageModelTextPart(content.text ?? "");
@@ -285,8 +305,13 @@ export const convertResponsesItemToVSCode = (
     } catch (e) {
       logger.warn("Failed to parse function_call arguments:", e);
     }
+    // Namespaced tools are registered under an encoded name; re-encode so the
+    // replayed call matches a tool the model can still see (see toolMap).
+    const name = fc.namespace
+      ? encodeNamespacedName(fc.namespace, fc.name)
+      : fc.name;
     return vscode.LanguageModelChatMessage.Assistant([
-      new vscode.LanguageModelToolCallPart(fc.call_id, fc.name, input),
+      new vscode.LanguageModelToolCallPart(fc.call_id, name, input),
     ]);
   }
 
@@ -300,6 +325,62 @@ export const convertResponsesItemToVSCode = (
       new vscode.LanguageModelToolResultPart(fco.call_id, [
         new vscode.LanguageModelTextPart(outputText),
       ]),
+    ]);
+  }
+
+  // Handle custom_tool_call (assistant call to a `custom` tool). Its `input`
+  // is a raw string, not JSON. VSCode's tool call part requires an object
+  // input, so wrap it; downstream consumers read the raw string back out.
+  if (typedItem.type === "custom_tool_call") {
+    const ctc = item as unknown as ResponseCustomToolCall;
+    const name = ctc.namespace
+      ? encodeNamespacedName(ctc.namespace, ctc.name)
+      : ctc.name;
+    return vscode.LanguageModelChatMessage.Assistant([
+      new vscode.LanguageModelToolCallPart(ctc.call_id, name, {
+        input: ctc.input,
+      }),
+    ]);
+  }
+
+  // Handle custom_tool_call_output (result of a `custom` tool execution).
+  if (typedItem.type === "custom_tool_call_output") {
+    const ctco = item as unknown as ResponseCustomToolCallOutput;
+    const outputText =
+      typeof ctco.output === "string"
+        ? ctco.output
+        : JSON.stringify(ctco.output);
+    return vscode.LanguageModelChatMessage.User([
+      new vscode.LanguageModelToolResultPart(ctco.call_id, [
+        new vscode.LanguageModelTextPart(outputText),
+      ]),
+    ]);
+  }
+
+  // Handle additional_tools (tools injected mid-conversation).
+  // These carry no message content; their tools are merged separately via
+  // extractAdditionalTools, so there is nothing to convert into a message.
+  if (typedItem.type === "additional_tools") {
+    return null;
+  }
+
+  // Handle agent_message (Codex sub-agent/collaboration inter-agent message).
+  // Not part of the OpenAI SDK; its `content` is an array of input_* parts.
+  // Surface it as a User message so the model sees the exchanged text, tagging
+  // the author/recipient so provenance survives the flattening.
+  if (typedItem.type === "agent_message") {
+    const am = item as unknown as {
+      author?: string;
+      recipient?: string;
+      content?: ResponseInputContent[];
+    };
+    const parts = (am.content ?? []).map(convertInputContentToVSCodePart);
+    const header = `[agent_message${am.author ? ` from ${am.author}` : ""}${
+      am.recipient ? ` to ${am.recipient}` : ""
+    }]`;
+    return vscode.LanguageModelChatMessage.User([
+      new vscode.LanguageModelTextPart(header),
+      ...parts,
     ]);
   }
 
@@ -368,17 +449,72 @@ export const convertResponsesInputToVSCode = (
 };
 
 /**
- * Convert Responses API tools to VSCode LM tools (filter unsupported)
+ * Convert Responses API tools to VSCode LM tools.
+ *
+ * VSCode's LanguageModelChatTool only models flat function-style tools
+ * (name/description/inputSchema). Codex injects richer tool shapes via
+ * `additional_tools`, so we flatten them here:
+ *  - `function`: passed through directly.
+ *  - `custom`: exposed as a schema-less tool (freeform/grammar input the model
+ *    supplies as a raw string). The grammar/format hint cannot be represented
+ *    in VSCode LM and is dropped, but the tool stays callable by name.
+ *  - `namespace`: expanded into its nested function/custom tools. VSCode LM's
+ *    tool-call shape has no namespace slot, so each nested tool is registered
+ *    under an *encoded* name `<namespace>__<name>` to keep it unique across
+ *    namespaces. The returned `toolMap` records how to decode that back into a
+ *    separate `namespace` + bare `name` when serializing the model's tool call.
+ * Other tool types (file_search, web_search, etc.) are not executable via
+ * VSCode LM and are skipped.
  */
+export const NAMESPACE_SEPARATOR = "__";
+
+export const encodeNamespacedName = (namespace: string, name: string): string =>
+  `${namespace}${NAMESPACE_SEPARATOR}${name}`;
+
+export type ToolCallInfo = {
+  namespace?: string;
+  name: string;
+  isCustom: boolean;
+};
+
+export type ToolMap = Map<string, ToolCallInfo>;
+
+export type ConvertedTools = {
+  tools: vscode.LanguageModelChatTool[];
+  toolMap: ToolMap;
+};
+
 export const convertResponsesToolsToVSCode = (
   tools?: Tool[],
   options: { webSearchHandledByCopilotPatch?: boolean } = {},
-): vscode.LanguageModelChatTool[] => {
+): ConvertedTools => {
+  const vsCodeTools: vscode.LanguageModelChatTool[] = [];
+  const toolMap: ToolMap = new Map();
   if (!tools) {
-    return [];
+    return { tools: vsCodeTools, toolMap };
   }
 
-  const vsCodeTools: vscode.LanguageModelChatTool[] = [];
+  const push = (
+    encodedName: string,
+    info: ToolCallInfo,
+    description?: string | null,
+    parameters?: unknown,
+  ) => {
+    if (toolMap.has(encodedName)) {
+      logger.warn(
+        `Duplicate tool definition for \"${encodedName}\"; keeping the first definition`,
+      );
+      return;
+    }
+    vsCodeTools.push({
+      name: encodedName,
+      description: description ?? "",
+      inputSchema: info.isCustom
+        ? undefined
+        : ((parameters as object) ?? undefined),
+    });
+    toolMap.set(encodedName, info);
+  };
 
   for (const tool of tools) {
     if (!tool || typeof tool !== "object") {
@@ -387,12 +523,33 @@ export const convertResponsesToolsToVSCode = (
 
     if (tool.type === "function") {
       const funcTool = tool as FunctionTool;
-
-      vsCodeTools.push({
-        name: funcTool.name,
-        description: funcTool.description ?? "",
-        inputSchema: funcTool.parameters ?? undefined,
-      });
+      push(
+        funcTool.name,
+        { name: funcTool.name, isCustom: false },
+        funcTool.description,
+        funcTool.parameters,
+      );
+    } else if (tool.type === "custom") {
+      push(tool.name, { name: tool.name, isCustom: true }, tool.description);
+    } else if (tool.type === "namespace") {
+      const ns = tool as NamespaceTool;
+      for (const nested of ns.tools ?? []) {
+        const encoded = encodeNamespacedName(ns.name, nested.name);
+        if (nested.type === "custom") {
+          push(
+            encoded,
+            { namespace: ns.name, name: nested.name, isCustom: true },
+            nested.description,
+          );
+        } else {
+          push(
+            encoded,
+            { namespace: ns.name, name: nested.name, isCustom: false },
+            nested.description,
+            nested.parameters,
+          );
+        }
+      }
     } else if (
       !(options.webSearchHandledByCopilotPatch && isWebSearchTool(tool))
     ) {
@@ -401,7 +558,36 @@ export const convertResponsesToolsToVSCode = (
     }
   }
 
-  return vsCodeTools;
+  return { tools: vsCodeTools, toolMap };
+};
+
+/**
+ * Extract tools carried by `additional_tools` items in the input array.
+ * These are tools the developer injects mid-conversation; they must be merged
+ * with the request-level tools before being handed to the VSCode LM.
+ */
+export const extractAdditionalTools = (
+  input: string | ResponseInput | undefined,
+): Tool[] => {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const tools: Tool[] = [];
+  for (const item of input) {
+    if (
+      item &&
+      typeof item === "object" &&
+      (item as { type?: string }).type === "additional_tools"
+    ) {
+      const additional = item as ResponseInputItem.AdditionalTools;
+      if (Array.isArray(additional.tools)) {
+        tools.push(...additional.tools);
+      }
+    }
+  }
+
+  return tools;
 };
 
 export function getResponsesWebSearchTool(tools?: Tool[]): Tool | undefined {
@@ -423,11 +609,59 @@ export const convertToolChoice = (
   }
   if (
     toolChoice === "required" ||
-    (typeof toolChoice === "object" && toolChoice.type === "function")
+    (typeof toolChoice === "object" &&
+      (toolChoice.type === "function" || toolChoice.type === "custom"))
   ) {
     return vscode.LanguageModelChatToolMode.Required;
   }
   return vscode.LanguageModelChatToolMode.Auto; // Default for "auto"
+};
+
+/**
+ * When `tool_choice` names a single tool (`{ type: "function" | "custom", name }`),
+ * VSCode LM's `Required` mode can only force *some* tool call, not a *specific*
+ * one. To honor the choice we narrow the exposed tool list to just that tool.
+ *
+ * `tool_choice` carries no namespace, so we match by the tool's bare name via
+ * the `toolMap`, and additionally require the chosen `type` to agree with the
+ * tool's kind (`function` ↔ non-custom, `custom` ↔ custom) so a named choice
+ * can't select a tool of the wrong kind. Exactly one match narrows to it
+ * (`ok: true`). Zero or multiple matches cannot be represented safely —
+ * exposing every tool under `Required` would let the model call a *different*
+ * tool than requested — so we report `ok: false` and let the caller reject.
+ */
+export type NarrowToolsResult =
+  | { ok: true; tools: vscode.LanguageModelChatTool[] }
+  | { ok: false; targetName: string; matchCount: number };
+
+export const narrowToolsForChoice = (
+  toolChoice: ToolChoice | undefined,
+  vsCodeTools: vscode.LanguageModelChatTool[],
+  toolMap: ToolMap,
+): NarrowToolsResult => {
+  if (
+    !toolChoice ||
+    typeof toolChoice !== "object" ||
+    (toolChoice.type !== "function" && toolChoice.type !== "custom") ||
+    !toolChoice.name
+  ) {
+    return { ok: true, tools: vsCodeTools };
+  }
+
+  const targetName = toolChoice.name;
+  const wantCustom = toolChoice.type === "custom";
+  const matches = vsCodeTools.filter((t) => {
+    const info = toolMap.get(t.name);
+    const name = info?.name ?? t.name;
+    const isCustom = info?.isCustom ?? false;
+    return name === targetName && isCustom === wantCustom;
+  });
+
+  if (matches.length === 1) {
+    return { ok: true, tools: matches };
+  }
+
+  return { ok: false, targetName, matchCount: matches.length };
 };
 
 /**
@@ -437,6 +671,7 @@ export const convertToolChoice = (
 export const buildResponseOutput = (
   accumulatedText: string,
   toolCalls: { callId: string; name: string; input: unknown }[],
+  toolMap?: ToolMap,
 ): OutputItem[] => {
   const output: OutputItem[] = [];
 
@@ -453,15 +688,48 @@ export const buildResponseOutput = (
   }
 
   for (const tc of toolCalls) {
-    output.push({
-      type: "function_call",
-      id: generateFunctionCallId(),
-      call_id: tc.callId,
-      name: tc.name,
-      arguments: JSON.stringify(tc.input ?? {}),
-      status: "completed",
-    } as ResponseFunctionToolCall);
+    const info = toolMap?.get(tc.name);
+    const name = info?.name ?? tc.name;
+    if (info?.isCustom) {
+      output.push({
+        type: "custom_tool_call",
+        id: generateCustomToolCallId(),
+        call_id: tc.callId,
+        name,
+        input: customToolCallInput(tc.input),
+        ...(info.namespace ? { namespace: info.namespace } : {}),
+      } as ResponseCustomToolCall);
+    } else {
+      output.push({
+        type: "function_call",
+        id: generateFunctionCallId(),
+        call_id: tc.callId,
+        name,
+        arguments: JSON.stringify(tc.input ?? {}),
+        status: "completed",
+        ...(info?.namespace ? { namespace: info.namespace } : {}),
+      } as ResponseFunctionToolCall);
+    }
   }
 
   return output;
+};
+
+/**
+ * A `custom` tool's input is a raw string. We wrap it as `{ input: <string> }`
+ * when replaying history into VSCode LM, so unwrap that shape on the way out;
+ * fall back to JSON for anything else.
+ */
+export const customToolCallInput = (input: unknown): string => {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (
+    input &&
+    typeof input === "object" &&
+    typeof (input as { input?: unknown }).input === "string"
+  ) {
+    return (input as { input: string }).input;
+  }
+  return input === null || input === undefined ? "" : JSON.stringify(input);
 };

@@ -94,6 +94,16 @@ suite("CopilotWebSearchPatch Test Suite", () => {
     assert.strictEqual(result.backupPath, undefined);
   });
 
+  test("should reject multiple minified injection points", () => {
+    const injectionPoint = `${toolSearchSnippet}${toolMapSnippet}`;
+    fs.writeFileSync(bundlePath, `${injectionPoint}${injectionPoint}`);
+
+    assert.throws(
+      () => patchCopilotWebSearchBundle(bundlePath),
+      /Expected to find a supported Copilot Responses tool injection point/,
+    );
+  });
+
   test("should migrate a legacy unconditional patch", () => {
     const legacyPatchSnippet =
       '((B=>{let Q=/^gpt-(\\d+)/.exec(String(B).toLowerCase().replace(/\\./g,"-"));return!!Q&&Number(Q[1])>=5})(t)||(B=>{let Q=/^gpt-(\\d+)/.exec(String(B).toLowerCase().replace(/\\./g,"-"));return!!Q&&Number(Q[1])>=5})(r.family))&&!y.some(B=>typeof B?.type=="string"&&B.type.startsWith("web_search"))&&y.unshift({type:"web_search_preview"});';
@@ -171,6 +181,18 @@ suite("CopilotWebSearchPatch Test Suite", () => {
     assert.strictEqual(
       patchedContent.indexOf(READABLE_GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET),
       patchedContent.lastIndexOf(READABLE_GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET),
+    );
+  });
+
+  test("should reject multiple readable injection points", () => {
+    const injectionPoint = `    text: verbosity ? { verbosity } : void 0
+  };
+  const contextManagementEnabled =`;
+    fs.writeFileSync(bundlePath, `${injectionPoint}${injectionPoint}`);
+
+    assert.throws(
+      () => patchCopilotWebSearchBundle(bundlePath),
+      /Expected to find a supported Copilot Responses tool injection point/,
     );
   });
 

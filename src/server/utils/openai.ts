@@ -67,6 +67,8 @@ export function extractOpenAIResponsesUsage(chunk: {
       cached_tokens: nonNegativeNumberOrZero(
         usage.prompt_tokens_details?.cached_tokens,
       ),
+      // TODO: Add cache_write_tokens if available to CopilotUsagePayload and extract it here
+      cache_write_tokens: 0,
     },
     output_tokens: usage.completion_tokens,
     output_tokens_details: {

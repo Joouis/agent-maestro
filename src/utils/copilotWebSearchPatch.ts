@@ -162,9 +162,9 @@ export function patchCopilotWebSearchBundle(
 function patchMinifiedResponsesBundle(content: string): string | undefined {
   const targetSnippet = `${TOOL_SEARCH_SNIPPET}${TOOL_MAP_SNIPPET}`;
   const replacement = `${TOOL_SEARCH_SNIPPET}${GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET}${TOOL_MAP_SNIPPET}`;
-  const matchCount = content.split(targetSnippet).length - 1;
+  const firstMatch = content.indexOf(targetSnippet);
 
-  if (matchCount === 1) {
+  if (firstMatch >= 0 && firstMatch === content.lastIndexOf(targetSnippet)) {
     return content.replace(targetSnippet, replacement);
   }
 
@@ -181,9 +181,12 @@ function patchReadableResponsesBundle(content: string): string | undefined {
     "  const contextManagementEnabled =",
     "",
   )}${READABLE_GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET}  const contextManagementEnabled =`;
-  const matchCount = content.split(READABLE_RESPONSES_BODY_SNIPPET).length - 1;
+  const firstMatch = content.indexOf(READABLE_RESPONSES_BODY_SNIPPET);
 
-  if (matchCount === 1) {
+  if (
+    firstMatch >= 0 &&
+    firstMatch === content.lastIndexOf(READABLE_RESPONSES_BODY_SNIPPET)
+  ) {
     return content.replace(READABLE_RESPONSES_BODY_SNIPPET, replacement);
   }
 

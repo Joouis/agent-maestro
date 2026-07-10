@@ -3,6 +3,9 @@ allowBuilds:
   esbuild: true
   keytar: true
 
+minimumReleaseAgeExclude:
+  - openai@6.46.0
+
 packageExtensions:
   "@roo-code/types":
     dependencies:
