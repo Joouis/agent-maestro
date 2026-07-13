@@ -426,33 +426,39 @@ export function registerOpenaiChatRoutes(
         async (error, stream) => {
           if (error instanceof LanguageModelClientDisconnectedError) {
             logger.info("/v1/chat/completions | client disconnected");
-            requestLifecycle?.dispose();
-            await stream.close();
+            try {
+              await stream.close();
+            } finally {
+              requestLifecycle?.dispose();
+            }
             return;
           }
 
           logger.error("✕ /v1/chat/completions (stream) |", error);
-          requestLifecycle?.dispose();
 
           const errorMessage =
             error instanceof Error ? error.message : String(error);
-          await stream.writeSSE({
-            event: "error",
-            data: JSON.stringify({
-              error: {
-                message: errorMessage,
-                type:
-                  error instanceof LanguageModelRequestTimeoutError
-                    ? "timeout_error"
-                    : "server_error",
-                code:
-                  error instanceof LanguageModelRequestTimeoutError
-                    ? "request_timeout"
-                    : "server_error",
-              },
-            }),
-          });
-          await stream.close();
+          try {
+            await stream.writeSSE({
+              event: "error",
+              data: JSON.stringify({
+                error: {
+                  message: errorMessage,
+                  type:
+                    error instanceof LanguageModelRequestTimeoutError
+                      ? "timeout_error"
+                      : "server_error",
+                  code:
+                    error instanceof LanguageModelRequestTimeoutError
+                      ? "request_timeout"
+                      : "server_error",
+                },
+              }),
+            });
+          } finally {
+            requestLifecycle?.dispose();
+            await stream.close();
+          }
         },
       );
     } catch (error) {
@@ -465,6 +471,7 @@ export function registerOpenaiChatRoutes(
             error: {
               message: error.message,
               type: "timeout_error",
+              param: null,
               code: "request_timeout",
             },
           },

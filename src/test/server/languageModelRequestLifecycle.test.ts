@@ -270,10 +270,11 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     });
 
     assert.strictEqual(response.status, 504);
-    assert.strictEqual(
-      ((await response.json()) as any).error.code,
-      "request_timeout",
-    );
+    const responseBody = (await response.json()) as {
+      error: { code: string; param: string | null };
+    };
+    assert.strictEqual(responseBody.error.code, "request_timeout");
+    assert.strictEqual(responseBody.error.param, null);
     assert.strictEqual(cancellationObserved, true);
   });
 
