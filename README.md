@@ -271,6 +271,8 @@ Perfect for Codex and OpenAI model integration:
 - **`POST /api/openai/v1/chat/completions`** - OpenAI Chat Completions API compatibility using VS Code's Language Model API
 - **`POST /api/openai/v1/responses`** - OpenAI Responses API compatibility using VS Code's Language Model API
 
+Anthropic Messages and both OpenAI endpoints cancel the upstream language model request when the client disconnects or when the request remains unfinished for 10 minutes. Non-streaming timeouts return HTTP 504; streaming timeouts use each protocol's error event instead of a successful completion event.
+
 ### Gemini-Compatible Endpoints
 
 Perfect for Gemini CLI integration:

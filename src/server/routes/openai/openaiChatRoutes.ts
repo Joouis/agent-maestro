@@ -12,6 +12,12 @@ import {
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
+import {
+  LanguageModelClientDisconnectedError,
+  LanguageModelRequestLifecycle,
+  LanguageModelRequestTimeoutError,
+  interruptibleLanguageModelStream,
+} from "../../utils/languageModelRequestLifecycle";
 import { extractOpenAIChatUsage } from "../../utils/openai";
 import {
   convertOpenAIChatCompletionToolToVSCode,
@@ -87,17 +93,36 @@ const chatCompletionsRoute = createRoute({
       },
       description: "Internal server error",
     },
+    504: {
+      content: {
+        "application/json": {
+          schema: CommonResponseError,
+        },
+      },
+      description:
+        "Gateway timeout - language model request exceeded 10 minutes",
+    },
   },
 });
 
-export function registerOpenaiChatRoutes(app: OpenAPIHono) {
+export interface OpenaiChatRoutesOptions {
+  requestTimeoutMs?: number;
+  resolveChatModelClient?: typeof getChatModelClient;
+}
+
+export function registerOpenaiChatRoutes(
+  app: OpenAPIHono,
+  options: OpenaiChatRoutesOptions = {},
+) {
+  const resolveChatModelClient =
+    options.resolveChatModelClient ?? getChatModelClient;
   // POST /v1/chat/completions - OpenAI-compatible chat completions endpoint
   app.openapi(chatCompletionsRoute, async (c: Context): Promise<Response> => {
     let rawRequestBody: OpenAI.ChatCompletionCreateParams | undefined;
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let requestedModelId = "";
     let inputTokens = 0;
-    let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
+    let requestLifecycle: LanguageModelRequestLifecycle | undefined;
 
     try {
       // Parse and validate request body
@@ -124,7 +149,8 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
       requestedModelId = modelId;
 
       // 1. Get chat model client
-      const { client, error: clientError } = await getChatModelClient(modelId);
+      const { client, error: clientError } =
+        await resolveChatModelClient(modelId);
 
       if (clientError) {
         return c.json(clientError, 404);
@@ -132,8 +158,11 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
 
       logger.debug("/v1/chat/completions payload:");
       logger.debug(JSON.stringify(requestBody, null, 2));
-      cancellationTokenSource = new vscode.CancellationTokenSource();
-      const cancellationToken = cancellationTokenSource.token;
+      requestLifecycle = new LanguageModelRequestLifecycle(
+        c.req.raw.signal,
+        options.requestTimeoutMs,
+      );
+      const cancellationToken = requestLifecycle.token;
 
       logger.info(
         `→ /v1/chat/completions | model: ${
@@ -160,14 +189,16 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
       };
 
       // 4. Send request to VSCode LM API
-      const response = await client.sendRequest(
-        vsCodeLmMessages,
-        withCopilotConfiguration(
-          client,
-          lmRequestOptions,
-          copilotConfiguration,
+      const response = await requestLifecycle.waitFor(
+        client.sendRequest(
+          vsCodeLmMessages,
+          withCopilotConfiguration(
+            client,
+            lmRequestOptions,
+            copilotConfiguration,
+          ),
+          cancellationToken,
         ),
-        cancellationToken,
       );
 
       // 5. Handle non-streaming response
@@ -176,7 +207,10 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
         let toolCalls: OpenAI.ChatCompletionMessageToolCall[] = [];
         let accumulatedText = "";
         let completionUsage: OpenAI.CompletionUsage | undefined;
-        for await (const chunk of response.stream) {
+        for await (const chunk of interruptibleLanguageModelStream(
+          response.stream,
+          requestLifecycle,
+        )) {
           if (chunk instanceof vscode.LanguageModelTextPart) {
             content += chunk.value;
           } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
@@ -195,10 +229,16 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
         }
 
         if (!completionUsage) {
-          const [promptTokens, completionTokens] = await Promise.all([
-            client.countTokens(JSON.stringify(requestBody), cancellationToken),
-            client.countTokens(accumulatedText, cancellationToken),
-          ]);
+          const [promptTokens, completionTokens] =
+            await requestLifecycle.waitFor(
+              Promise.all([
+                client.countTokens(
+                  JSON.stringify(requestBody),
+                  cancellationToken,
+                ),
+                client.countTokens(accumulatedText, cancellationToken),
+              ]),
+            );
           inputTokens = promptTokens;
           completionUsage = {
             prompt_tokens: promptTokens,
@@ -236,7 +276,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
           `← /v1/chat/completions | input: ${completionUsage.prompt_tokens} | cache_read: ${completionUsage.prompt_tokens_details?.cached_tokens ?? 0} | output: ${completionUsage.completion_tokens}`,
         );
 
-        cancellationTokenSource.dispose();
+        requestLifecycle.dispose();
         return c.json(openaiResponse);
       }
 
@@ -265,15 +305,19 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
               },
             ],
           };
-          await stream.writeSSE({
-            data: JSON.stringify(initialChunk),
-          });
+          const writeSSE = (data: string) =>
+            requestLifecycle!.waitFor(stream.writeSSE({ data }));
+
+          await writeSSE(JSON.stringify(initialChunk));
 
           // Process streaming response
           let accumulatedText = "";
           let toolCalls: vscode.LanguageModelToolCallPart[] = [];
           let completionUsage: OpenAI.CompletionUsage | undefined;
-          for await (const chunk of response.stream) {
+          for await (const chunk of interruptibleLanguageModelStream(
+            response.stream,
+            requestLifecycle!,
+          )) {
             if (chunk instanceof vscode.LanguageModelTextPart) {
               const contentChunk: OpenAI.ChatCompletionChunk = {
                 id: chatCompletionId,
@@ -292,9 +336,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
                   },
                 ],
               };
-              await stream.writeSSE({
-                data: JSON.stringify(contentChunk),
-              });
+              await writeSSE(JSON.stringify(contentChunk));
             } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
               toolCalls.push(chunk);
               const toolCallChunk: OpenAI.ChatCompletionChunk = {
@@ -324,9 +366,7 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
                   },
                 ],
               };
-              await stream.writeSSE({
-                data: JSON.stringify(toolCallChunk),
-              });
+              await writeSSE(JSON.stringify(toolCallChunk));
             } else if (chunk instanceof vscode.LanguageModelDataPart) {
               completionUsage =
                 extractOpenAIChatUsage(chunk) ?? completionUsage;
@@ -335,13 +375,16 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
           }
 
           if (!completionUsage) {
-            const [promptTokens, completionTokens] = await Promise.all([
-              client.countTokens(
-                JSON.stringify(requestBody),
-                cancellationToken,
-              ),
-              client.countTokens(accumulatedText, cancellationToken),
-            ]);
+            const [promptTokens, completionTokens] =
+              await requestLifecycle!.waitFor(
+                Promise.all([
+                  client.countTokens(
+                    JSON.stringify(requestBody),
+                    cancellationToken,
+                  ),
+                  client.countTokens(accumulatedText, cancellationToken),
+                ]),
+              );
             inputTokens = promptTokens;
 
             completionUsage = {
@@ -370,50 +413,77 @@ export function registerOpenaiChatRoutes(app: OpenAPIHono) {
               ? completionUsage
               : undefined,
           };
-          await stream.writeSSE({
-            data: JSON.stringify(finalChunk),
-          });
+          await writeSSE(JSON.stringify(finalChunk));
 
           // Send [DONE] signal
-          await stream.writeSSE({
-            data: "[DONE]",
-          });
+          await writeSSE("[DONE]");
 
           logger.info(
             `← /v1/chat/completions (stream) | input: ${completionUsage.prompt_tokens} | cache_read: ${completionUsage.prompt_tokens_details?.cached_tokens ?? 0} | output: ${completionUsage.completion_tokens}`,
           );
-          cancellationTokenSource?.dispose();
+          requestLifecycle?.dispose();
         },
         async (error, stream) => {
-          logger.error("✕ /v1/chat/completions (stream) |", error);
-          cancellationTokenSource?.dispose();
+          if (error instanceof LanguageModelClientDisconnectedError) {
+            logger.info("/v1/chat/completions | client disconnected");
+            try {
+              await stream.close();
+            } finally {
+              requestLifecycle?.dispose();
+            }
+            return;
+          }
 
-          // Send error chunk to client before closing
+          logger.error("✕ /v1/chat/completions (stream) |", error);
+
           const errorMessage =
             error instanceof Error ? error.message : String(error);
-          const errorChunk: OpenAI.ChatCompletionChunk = {
-            id: `AM-${Date.now()}`,
-            object: "chat.completion.chunk",
-            created: Math.floor(Date.now() / 1000),
-            model: modelId,
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  content: `\n\n[Error: ${errorMessage}]`,
+          try {
+            await stream.writeSSE({
+              event: "error",
+              data: JSON.stringify({
+                error: {
+                  message: errorMessage,
+                  type:
+                    error instanceof LanguageModelRequestTimeoutError
+                      ? "timeout_error"
+                      : "server_error",
+                  code:
+                    error instanceof LanguageModelRequestTimeoutError
+                      ? "request_timeout"
+                      : "server_error",
                 },
-                finish_reason: "stop",
-                logprobs: null,
-              },
-            ],
-          };
-          await stream.writeSSE({
-            data: JSON.stringify(errorChunk),
-          });
+              }),
+            });
+          } finally {
+            requestLifecycle?.dispose();
+            await stream.close();
+          }
         },
       );
     } catch (error) {
-      cancellationTokenSource?.dispose();
+      requestLifecycle?.dispose();
+
+      if (error instanceof LanguageModelRequestTimeoutError) {
+        logger.error("✕ /v1/chat/completions |", error);
+        return c.json(
+          {
+            error: {
+              message: error.message,
+              type: "timeout_error",
+              param: null,
+              code: "request_timeout",
+            },
+          },
+          504,
+        );
+      }
+
+      if (error instanceof LanguageModelClientDisconnectedError) {
+        logger.info("/v1/chat/completions | client disconnected");
+        return new Response(null, { status: 499 });
+      }
+
       logger.error("✕ /v1/chat/completions |", error);
 
       const logFilePath = await handleErrorWithLogging({
