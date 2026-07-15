@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.11.0 - 2026.07.15
+
+- Add experimental commands that patch the currently loaded Copilot Chat bundle to append the OpenAI web search tool declaration for supported GPT-5 Codex requests, and restore backups created by that patch. Tested with `ChatGPT 26.707.72221`: `GPT-5.4` and `GPT-5.5` work; `GPT-5.6` does not yet forward the web search tool declaration to the server.
+- Preserve Codex custom tool source input when proxying OpenAI Responses tool calls.
+- Cancel stalled Anthropic and OpenAI language model requests after ten minutes or when clients disconnect.
+
 ## v2.10.0 - 2026.07.10
 
 - Add support for OpenAI Responses API `additional_tools`, `custom`, and `namespace` tools, enabling GPT-5.6 and Codex tool calling through Agent Maestro. Custom tool calls now preserve raw string input, and named `tool_choice` requests are enforced.
