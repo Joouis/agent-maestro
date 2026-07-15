@@ -805,7 +805,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         {
           callId: "call_2",
           name: "collaboration__raw_helper",
-          input: { input: "raw" },
+          input: { source: "raw" },
         },
       ];
       const toolMap = new Map([
@@ -869,6 +869,12 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
 
     test("should unwrap the { input } wrapper", () => {
       assert.strictEqual(customToolCallInput({ input: "ls -la" }), "ls -la");
+    });
+
+    test("should unwrap the { source } wrapper", () => {
+      const source =
+        'const r = await tools.exec_command({cmd: "git status --short"}); text(r.output);';
+      assert.strictEqual(customToolCallInput({ source }), source);
     });
 
     test("should JSON-stringify other object shapes", () => {

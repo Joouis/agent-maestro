@@ -719,19 +719,25 @@ export const buildResponseOutput = (
 
 /**
  * A `custom` tool's input is a raw string. We wrap it as `{ input: <string> }`
- * when replaying history into VSCode LM, so unwrap that shape on the way out;
- * fall back to JSON for anything else.
+ * when replaying history into VSCode LM, while Copilot may return generated
+ * free-form input as `{ source: <string> }`. Unwrap either shape on the way
+ * out; fall back to JSON for anything else.
  */
 export const customToolCallInput = (input: unknown): string => {
   if (typeof input === "string") {
     return input;
   }
-  if (
-    input &&
-    typeof input === "object" &&
-    typeof (input as { input?: unknown }).input === "string"
-  ) {
-    return (input as { input: string }).input;
+  if (input && typeof input === "object") {
+    const wrappedInput = input as {
+      input?: unknown;
+      source?: unknown;
+    };
+    if (typeof wrappedInput.input === "string") {
+      return wrappedInput.input;
+    }
+    if (typeof wrappedInput.source === "string") {
+      return wrappedInput.source;
+    }
   }
   return input === null || input === undefined ? "" : JSON.stringify(input);
 };
