@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11.1 - 2026.07.17
+
+- Add `Configure Claude Desktop Settings` command to point Claude Desktop at the Agent Maestro proxy.
+
 ## v2.11.0 - 2026.07.15
 
 - Add experimental commands that patch the currently loaded Copilot Chat bundle to append the OpenAI web search tool declaration for supported GPT-5 Codex requests, and restore backups created by that patch. Tested with `ChatGPT 26.707.72221`: `GPT-5.4` and `GPT-5.5` work; `GPT-5.6` does not yet forward the web search tool declaration to the server.
