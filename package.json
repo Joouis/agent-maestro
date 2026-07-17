@@ -145,6 +145,11 @@
         "category": "Agent Maestro"
       },
       {
+        "command": "agent-maestro.configureClaudeDesktop",
+        "title": "Configure Claude Desktop Settings",
+        "category": "Agent Maestro"
+      },
+      {
         "command": "agent-maestro.configureCodex",
         "title": "Configure Codex Settings",
         "category": "Agent Maestro"

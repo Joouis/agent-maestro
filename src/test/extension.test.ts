@@ -70,6 +70,7 @@ suite("Extension Test Suite", () => {
 
       const configuratorCommands = [
         "agent-maestro.configureClaudeCode",
+        "agent-maestro.configureClaudeDesktop",
         "agent-maestro.configureCodex",
         "agent-maestro.configureGeminiCli",
       ];

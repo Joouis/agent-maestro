@@ -49,6 +49,10 @@ This automatically creates or updates `.claude/settings.json` with Agent Maestro
 
 > **1M Context Support**: Agent Maestro supports Claude 1M context models (e.g. `claude-opus-4.7-1m-internal`). To use the extended context window, run `Agent Maestro: Configure Claude Code Settings` and select the desired 1M model. Agent Maestro writes the model in the format Claude Code expects so the 1M path is selected consistently.
 
+### One-Click Setup for Claude Desktop
+
+Configure Claude Desktop to use Agent Maestro's Anthropic-compatible proxy with `Agent Maestro: Configure Claude Desktop Settings` via Command Palette. The command creates or updates the local third-party inference configuration for macOS, Windows, or Linux. Fully quit and reopen Claude Desktop after configuring it.
+
 ### One-Click Setup for Codex
 
 Configure Codex to use VS Code's language models with a single command `Agent Maestro: Configure Codex Settings` via Command Palette.
@@ -128,6 +132,7 @@ See [docs/experimental-gpt5-plus-web-search.md](docs/experimental-gpt5-plus-web-
    **Configuration Commands:**
 
    - `Agent Maestro: Configure Claude Code Settings` - One-click Claude Code setup
+   - `Agent Maestro: Configure Claude Desktop Settings` - One-click Claude Desktop setup
    - `Agent Maestro: Configure Codex Settings` - One-click Codex setup
    - `Agent Maestro: Configure Gemini CLI Settings` - One-click Gemini CLI setup
    - `Agent Maestro: Enable Experimental GPT-5+ Web Search` - Patch the current VS Code Copilot bundle to append web search for GPT major version 5 or newer model requests
