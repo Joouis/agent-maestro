@@ -1,7 +1,7 @@
 import { RooCodeEventName } from "@roo-code/types";
+import { randomUUID } from "crypto";
 import { Semaphore, isEqual } from "es-toolkit";
 import type { Content } from "fastmcp";
-import { v4 as uuidv4 } from "uuid";
 
 import { TaskEvent } from "../server/types";
 import { closeAllEmptyTabGroups } from "../utils/extension";
@@ -211,7 +211,7 @@ export class McpTaskManager {
     } catch (error) {
       logger.error(`Failed to start RooCode task: ${taskQuery}`, error);
 
-      const fallbackId = taskId || uuidv4();
+      const fallbackId = taskId || randomUUID();
       run[fallbackId] = {
         task: taskQuery,
         status: "failed",
