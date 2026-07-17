@@ -193,7 +193,6 @@
     "image-size": "^2.0.2",
     "openai": "^6.46.0",
     "smol-toml": "^1.6.0",
-    "uuid": "^11.1.0",
     "zod": "^4.0.10"
   },
   "devDependencies": {
