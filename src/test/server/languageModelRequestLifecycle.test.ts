@@ -355,6 +355,69 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     assert.strictEqual(cancellationObserved, true);
   });
 
+  test("passes tool-output images to Responses models as DataPart", async () => {
+    let capturedMessages: readonly vscode.LanguageModelChatMessage[] = [];
+    const model = {
+      id: "gpt-5.6-test",
+      name: "GPT 5.6 Test",
+      family: "gpt-5.6",
+      version: "test",
+      vendor: "copilot",
+      maxInputTokens: 200000,
+      capabilities: { supportsImageToText: true, supportsToolCalling: true },
+      sendRequest: async (
+        messages: readonly vscode.LanguageModelChatMessage[],
+      ) => {
+        capturedMessages = messages;
+        return {
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart("ok");
+          })(),
+          text: (async function* () {
+            yield "ok";
+          })(),
+        };
+      },
+      countTokens: async () => 1,
+    } as unknown as vscode.LanguageModelChat;
+    const app = createOpenaiResponsesTestApp(model);
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-5.6-test",
+        input: [
+          {
+            type: "custom_tool_call",
+            id: "ctc_view_image_1",
+            call_id: "call_view_image_1",
+            name: "exec",
+            input: "view_image screenshot.png",
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "call_view_image_1",
+            output: [
+              { type: "input_text", text: "Viewed an image" },
+              {
+                type: "input_image",
+                image_url:
+                  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                detail: "high",
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    assert.strictEqual(response.status, 200);
+    const toolResult = capturedMessages[1].content[0] as any;
+    assert.ok(toolResult.content[0] instanceof vscode.LanguageModelTextPart);
+    assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
+  });
+
   test("emits one response.failed without response.completed", async () => {
     let cancellationObserved = false;
     const app = createOpenaiResponsesTestApp(

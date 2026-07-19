@@ -222,6 +222,38 @@ export const convertInputContentToVSCodePart = (
 };
 
 /**
+ * Convert function/custom tool output without flattening image parts into
+ * base64 text. Codex's view_image tool returns an array containing
+ * input_text/input_image items; JSON.stringify would make the VS Code LM count
+ * the image data URI as ordinary prompt text and can immediately exceed its
+ * message token limit.
+ */
+const convertToolOutputToVSCodeParts = (
+  output: unknown,
+): (vscode.LanguageModelTextPart | vscode.LanguageModelDataPart)[] => {
+  if (typeof output === "string") {
+    return [new vscode.LanguageModelTextPart(output)];
+  }
+
+  if (!Array.isArray(output)) {
+    return [new vscode.LanguageModelTextPart(JSON.stringify(output))];
+  }
+
+  return output.map((part) => {
+    if (
+      part &&
+      typeof part === "object" &&
+      typeof (part as { type?: unknown }).type === "string"
+    ) {
+      return convertInputContentToVSCodePart(
+        part as ResponseInputContent | ResponseOutputText,
+      );
+    }
+    return new vscode.LanguageModelTextPart(JSON.stringify(part));
+  });
+};
+
+/**
  * Check if item is an EasyInputMessage (shorthand format)
  */
 const isEasyInputMessage = (item: unknown): item is EasyInputMessage => {
@@ -320,13 +352,11 @@ export const convertResponsesItemToVSCode = (
   // Handle function_call_output
   if (typedItem.type === "function_call_output") {
     const fco = item as ResponseInputItem.FunctionCallOutput;
-    // fco.output can be string or array of content items
-    const outputText =
-      typeof fco.output === "string" ? fco.output : JSON.stringify(fco.output);
     return vscode.LanguageModelChatMessage.User([
-      new vscode.LanguageModelToolResultPart(fco.call_id, [
-        new vscode.LanguageModelTextPart(outputText),
-      ]),
+      new vscode.LanguageModelToolResultPart(
+        fco.call_id,
+        convertToolOutputToVSCodeParts(fco.output),
+      ),
     ]);
   }
 
@@ -348,14 +378,11 @@ export const convertResponsesItemToVSCode = (
   // Handle custom_tool_call_output (result of a `custom` tool execution).
   if (typedItem.type === "custom_tool_call_output") {
     const ctco = item as unknown as ResponseCustomToolCallOutput;
-    const outputText =
-      typeof ctco.output === "string"
-        ? ctco.output
-        : JSON.stringify(ctco.output);
     return vscode.LanguageModelChatMessage.User([
-      new vscode.LanguageModelToolResultPart(ctco.call_id, [
-        new vscode.LanguageModelTextPart(outputText),
-      ]),
+      new vscode.LanguageModelToolResultPart(
+        ctco.call_id,
+        convertToolOutputToVSCodeParts(ctco.output),
+      ),
     ]);
   }
 

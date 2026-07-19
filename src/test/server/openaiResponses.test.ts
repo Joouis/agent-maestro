@@ -235,6 +235,26 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       );
     });
 
+    test("should preserve function_call_output images as DataPart", () => {
+      const item = {
+        type: "function_call_output" as const,
+        call_id: "call_view_image_1",
+        output: [
+          { type: "input_text" as const, text: "screenshot.png" },
+          {
+            type: "input_image" as const,
+            image_url:
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+            detail: "high" as const,
+          },
+        ],
+      };
+      const result = convertResponsesItemToVSCode(item as any);
+      const toolResult = (result!.content as any[])[0];
+      assert.ok(toolResult.content[0] instanceof vscode.LanguageModelTextPart);
+      assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
+    });
+
     test("should convert custom_tool_call item", () => {
       const item = {
         type: "custom_tool_call" as const,
@@ -300,6 +320,29 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         result!.role,
         vscode.LanguageModelChatMessageRole.User,
       );
+      const toolResult = (result!.content as any[])[0];
+      assert.ok(toolResult.content[0] instanceof vscode.LanguageModelTextPart);
+      assert.strictEqual(toolResult.content[0].value, "done");
+    });
+
+    test("should preserve custom_tool_call_output images as DataPart", () => {
+      const item = {
+        type: "custom_tool_call_output" as const,
+        call_id: "call_view_image_1",
+        output: [
+          { type: "input_text" as const, text: "Viewed an image" },
+          {
+            type: "input_image" as const,
+            image_url:
+              "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+            detail: "high" as const,
+          },
+        ],
+      };
+      const result = convertResponsesItemToVSCode(item as any);
+      const toolResult = (result!.content as any[])[0];
+      assert.ok(toolResult.content[0] instanceof vscode.LanguageModelTextPart);
+      assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
     });
 
     test("should return null for additional_tools item", () => {
