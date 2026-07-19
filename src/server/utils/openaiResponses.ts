@@ -27,6 +27,7 @@ import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
 import { mimeForVscodeLm } from "./imageMime";
+import { resizeImageForVscodeLm } from "./vscodeImageResize";
 
 /**
  * Import types from OpenAI SDK for Responses API
@@ -186,6 +187,75 @@ const convertInputImageToVSCodePart = (
   // URL-based images or file_id are not directly supported by VS Code LM.
   logger.warn("input_image not fully supported, serializing as JSON");
   return new vscode.LanguageModelTextPart(JSON.stringify(content));
+};
+
+const resizeInputImage = async (
+  content: ResponseInputImage,
+): Promise<ResponseInputImage> => {
+  if (!content.image_url) {
+    return content;
+  }
+  const match = content.image_url.match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
+  if (!match) {
+    return content;
+  }
+
+  const resized = await resizeImageForVscodeLm(
+    Buffer.from(match[2], "base64"),
+    match[1],
+  );
+  return {
+    ...content,
+    image_url: `data:${resized.mimeType};base64,${resized.bytes.toString(
+      "base64",
+    )}`,
+  };
+};
+
+const resizeToolOutputImages = async (output: unknown): Promise<unknown> => {
+  if (!Array.isArray(output)) {
+    return output;
+  }
+
+  return Promise.all(
+    output.map(async (part) => {
+      if (
+        part &&
+        typeof part === "object" &&
+        (part as { type?: string }).type === "input_image"
+      ) {
+        return resizeInputImage(part as ResponseInputImage);
+      }
+      return part;
+    }),
+  );
+};
+
+export const resizeResponsesToolOutputImages = async (
+  input: string | ResponseInput | undefined,
+): Promise<string | ResponseInput | undefined> => {
+  if (!Array.isArray(input)) {
+    return input;
+  }
+
+  return (await Promise.all(
+    input.map(async (item) => {
+      if (!item || typeof item !== "object") {
+        return item;
+      }
+      const typedItem = item as unknown as Record<string, unknown>;
+      if (
+        typedItem.type === "function_call_output" ||
+        typedItem.type === "custom_tool_call_output"
+      ) {
+        return {
+          ...item,
+          output: await resizeToolOutputImages(typedItem.output),
+        } as typeof item;
+      }
+      return item;
+    }),
+  )) as ResponseInput;
 };
 
 /**

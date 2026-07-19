@@ -16,6 +16,7 @@ import {
   generateResponseId,
   getResponsesWebSearchTool,
   narrowToolsForChoice,
+  resizeResponsesToolOutputImages,
 } from "../../server/utils/openaiResponses";
 
 const encode = (value: unknown): Uint8Array =>
@@ -481,6 +482,24 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       ];
       const result = convertResponsesInputToVSCode(input);
       assert.strictEqual(result.length, 2);
+    });
+  });
+
+  suite("resizeResponsesToolOutputImages", () => {
+    test("does not change a small tool-output image", async () => {
+      const imageUrl =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const input = [
+        {
+          type: "custom_tool_call_output",
+          call_id: "call_view_image_1",
+          output: [{ type: "input_image", image_url: imageUrl }],
+        },
+      ] as any;
+
+      const result = (await resizeResponsesToolOutputImages(input)) as any[];
+
+      assert.strictEqual(result[0].output[0].image_url, imageUrl);
     });
   });
 
