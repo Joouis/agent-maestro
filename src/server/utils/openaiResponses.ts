@@ -236,7 +236,7 @@ const convertToolOutputToVSCodeParts = (
   }
 
   if (!Array.isArray(output)) {
-    return [new vscode.LanguageModelTextPart(JSON.stringify(output))];
+    return [new vscode.LanguageModelTextPart(JSON.stringify(output) ?? "")];
   }
 
   return output.map((part) => {
@@ -249,7 +249,7 @@ const convertToolOutputToVSCodeParts = (
         part as ResponseInputContent | ResponseOutputText,
       );
     }
-    return new vscode.LanguageModelTextPart(JSON.stringify(part));
+    return new vscode.LanguageModelTextPart(JSON.stringify(part) ?? "");
   });
 };
 

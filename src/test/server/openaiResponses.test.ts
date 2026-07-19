@@ -325,6 +325,28 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(toolResult.content[0].value, "done");
     });
 
+    test("should handle undefined values in tool output", () => {
+      const scalarResult = convertResponsesItemToVSCode({
+        type: "custom_tool_call_output",
+        call_id: "call_exec_1",
+        output: undefined,
+      } as any);
+      const arrayResult = convertResponsesItemToVSCode({
+        type: "custom_tool_call_output",
+        call_id: "call_exec_2",
+        output: [undefined],
+      } as any);
+
+      assert.strictEqual(
+        ((scalarResult!.content as any[])[0].content[0] as any).value,
+        "",
+      );
+      assert.strictEqual(
+        ((arrayResult!.content as any[])[0].content[0] as any).value,
+        "",
+      );
+    });
+
     test("should preserve custom_tool_call_output images as DataPart", () => {
       const item = {
         type: "custom_tool_call_output" as const,

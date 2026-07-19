@@ -413,6 +413,7 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     });
 
     assert.strictEqual(response.status, 200);
+    assert.strictEqual(capturedMessages.length, 2);
     const toolResult = capturedMessages[1].content[0] as any;
     assert.ok(toolResult.content[0] instanceof vscode.LanguageModelTextPart);
     assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
