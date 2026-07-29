@@ -50,7 +50,8 @@ type ProviderName =
   | "xai" // xAI Grok
   | "groq" // Groq
   | "chutes" // Chutes
-  | "litellm"; // LiteLLM proxy
+  | "litellm" // LiteLLM proxy
+  | "minimax"; // MiniMax
 ```
 
 ---

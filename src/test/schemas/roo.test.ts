@@ -26,6 +26,10 @@ suite("Roo Schemas Test Suite", () => {
         ProviderSettingsSchema.safeParse({ apiProvider: "vscode-lm" }).success,
         true,
       );
+      assert.strictEqual(
+        ProviderSettingsSchema.safeParse({ apiProvider: "minimax" }).success,
+        true,
+      );
       assert.strictEqual(ProviderSettingsSchema.safeParse({}).success, true);
 
       // Invalid

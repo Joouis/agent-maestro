@@ -29,6 +29,7 @@ export const ProviderSettingsSchema = z
         "chutes",
         "litellm",
         "kilocode",
+        "minimax",
       ])
       .optional(),
     apiKey: z.string().optional(),
