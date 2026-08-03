@@ -113,6 +113,20 @@ suite("CopilotWebSearchPatch Test Suite", () => {
     );
   });
 
+  test("should reject a non-adjacent minified tool map", () => {
+    const toolMapSnippet =
+      "let v=e.requestOptions?.tools?new Map(e.requestOptions.tools.map(D=>[D.function.name,D])):void 0";
+    fs.writeFileSync(
+      bundlePath,
+      `${toolSearchSnippet}unrelatedCode();${toolMapSnippet}`,
+    );
+
+    assert.throws(
+      () => patchCopilotWebSearchBundle(bundlePath),
+      /Expected to find a supported Copilot Responses tool injection point/,
+    );
+  });
+
   test("should not patch an already patched bundle again", () => {
     fs.writeFileSync(
       bundlePath,

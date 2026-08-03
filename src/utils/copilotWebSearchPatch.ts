@@ -17,7 +17,7 @@ const TOOL_SEARCH_SNIPPET =
   'let y=[...h];g&&y.unshift({type:"tool_search",execution:"client",description:"Search for relevant tools by describing what you need. Returns tool definitions for tools matching your query.",parameters:{type:"object",properties:{query:{type:"string",description:"Natural language description of what tool capability you are looking for."}},required:["query"]}});';
 
 const TOOL_MAP_SNIPPET_PATTERN =
-  /^let v=e\.requestOptions\?\.tools\?new Map\(e\.requestOptions\.tools\.map\(([A-Za-z_$][\w$]*)=>\[\1\.function\.name,\1\]\)\):void 0/;
+  /let v=e\.requestOptions\?\.tools\?new Map\(e\.requestOptions\.tools\.map\(([A-Za-z_$][\w$]*)=>\[\1\.function\.name,\1\]\)\):void 0/;
 
 export const GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET = `(()=>{let B=y.findIndex(ee=>ee?.name==="${AGENT_MAESTRO_WEB_SEARCH_SENTINEL_TOOL_NAME}"),X=B>=0?y[B]:void 0,Q=X?.parameters?.properties?.["${AGENT_MAESTRO_WEB_SEARCH_SENTINEL_PARAMETER}"]?.const;B>=0&&y.splice(B,1);if(Q&&typeof Q.type=="string"&&Q.type.startsWith("web_search")){e.postOptions?.tool_choice?.function?.name==="${AGENT_MAESTRO_WEB_SEARCH_SENTINEL_TOOL_NAME}"&&(e.postOptions.tool_choice="required");((ee=>{let te=/^gpt-(\\d+)/.exec(String(ee).toLowerCase().replace(/\\./g,"-"));return!!te&&Number(te[1])>=5})(t)||(ee=>{let te=/^gpt-(\\d+)/.exec(String(ee).toLowerCase().replace(/\\./g,"-"));return!!te&&Number(te[1])>=5})(r.family))&&!y.some(ee=>typeof ee?.type=="string"&&ee.type.startsWith("web_search"))&&y.unshift(Q)}})();`;
 
@@ -250,7 +250,10 @@ function findMinifiedInjectionPoints(content: string): number[] {
     }
 
     const injectionPoint = toolSearchIndex + TOOL_SEARCH_SNIPPET.length;
-    if (TOOL_MAP_SNIPPET_PATTERN.test(content.slice(injectionPoint))) {
+    const toolMapMatch = TOOL_MAP_SNIPPET_PATTERN.exec(
+      content.slice(injectionPoint),
+    );
+    if (toolMapMatch?.index === 0) {
       injectionPoints.push(injectionPoint);
     }
     searchFrom = injectionPoint;
