@@ -44,6 +44,11 @@ export function buildCodexConfig(
   );
   const supportsStandaloneWebSearch =
     experimentalWebSearchEnabled && !!modelMatch && Number(modelMatch[1]) >= 5;
+  const features = { ...existingConfig.features };
+  delete features.standalone_web_search;
+  if (supportsStandaloneWebSearch) {
+    features.standalone_web_search = true;
+  }
 
   return {
     ...existingConfig,
@@ -52,12 +57,7 @@ export function buildCodexConfig(
     ...(modelContextWindow !== undefined && {
       model_context_window: modelContextWindow,
     }),
-    ...(supportsStandaloneWebSearch && {
-      features: {
-        ...existingConfig.features,
-        standalone_web_search: true,
-      },
-    }),
+    features: Object.keys(features).length > 0 ? features : undefined,
     model_providers: {
       ...existingConfig.model_providers,
       "agent-maestro": {

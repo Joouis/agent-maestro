@@ -24,19 +24,48 @@ import {
 } from "../../utils/languageModelRequestLifecycle";
 import { convertResponsesInputToVSCode } from "../../utils/openaiResponses";
 
-type SearchRequest = {
-  id?: string;
-  model?: string;
-  input?: string | ResponseInput;
-  commands?: Record<string, unknown>;
-  settings?: {
-    search_context_size?: unknown;
-    user_location?: unknown;
-    external_web_access?: unknown;
-  };
-  reasoning?: { effort?: unknown };
-  max_output_tokens?: unknown;
-};
+const SearchSettingsSchema = z
+  .object({
+    search_context_size: z.enum(["low", "medium", "high"]).optional(),
+    user_location: z
+      .object({
+        type: z.literal("approximate"),
+        country: z.string().optional(),
+        region: z.string().optional(),
+        city: z.string().optional(),
+        timezone: z.string().optional(),
+      })
+      .optional(),
+    filters: z
+      .object({
+        allowed_domains: z.array(z.string()).optional(),
+        blocked_domains: z.array(z.string()).optional(),
+      })
+      .optional(),
+    external_web_access: z
+      .union([z.boolean(), z.enum(["cached", "indexed", "live"])])
+      .optional(),
+  })
+  .passthrough();
+
+const SearchRequestSchema = z
+  .object({
+    id: z.string().optional(),
+    model: z.string().min(1),
+    input: z.union([z.string(), z.array(z.unknown())]).optional() as z.ZodType<
+      string | ResponseInput | undefined
+    >,
+    commands: z.record(z.string(), z.unknown()),
+    settings: SearchSettingsSchema.optional(),
+    reasoning: z
+      .object({ effort: z.string().optional() })
+      .passthrough()
+      .optional(),
+    max_output_tokens: z.number().int().positive().optional(),
+  })
+  .passthrough();
+
+type SearchRequest = z.infer<typeof SearchRequestSchema>;
 
 const searchRoute = createRoute({
   method: "post",
@@ -49,9 +78,9 @@ const searchRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: z
-            .object()
-            .describe("Codex standalone web-search request body."),
+          schema: SearchRequestSchema.describe(
+            "Codex standalone web-search request body.",
+          ),
         },
       },
     },
@@ -61,7 +90,7 @@ const searchRoute = createRoute({
       content: {
         "application/json": {
           schema: z
-            .object()
+            .object({ output: z.string() })
             .describe("Codex standalone web-search response body."),
         },
       },
@@ -110,35 +139,41 @@ export function registerOpenaiSearchRoutes(
     let lifecycle: LanguageModelRequestLifecycle | undefined;
 
     try {
-      requestBody = (await c.req.json()) as SearchRequest;
-      requestedModelId = requestBody.model ?? "";
+      let rawRequestBody: unknown;
+      try {
+        rawRequestBody = await c.req.json();
+      } catch {
+        return c.json(
+          {
+            error: {
+              type: "invalid_request_error",
+              message: "Request body must be valid JSON",
+              param: null,
+              code: "invalid_json",
+            },
+          },
+          400,
+        );
+      }
 
-      if (!requestBody.model) {
+      const parsedRequest = SearchRequestSchema.safeParse(rawRequestBody);
+      if (!parsedRequest.success) {
+        const issue = parsedRequest.error.issues[0];
+        const param = issue?.path.join(".") || null;
         return c.json(
           {
             error: {
               type: "invalid_request_error",
-              message: "model is required",
-              param: "model",
-              code: "missing_required_parameter",
+              message: issue?.message ?? "Invalid request body",
+              param,
+              code: "invalid_request",
             },
           },
           400,
         );
       }
-      if (!requestBody.commands) {
-        return c.json(
-          {
-            error: {
-              type: "invalid_request_error",
-              message: "commands is required",
-              param: "commands",
-              code: "missing_required_parameter",
-            },
-          },
-          400,
-        );
-      }
+      requestBody = parsedRequest.data;
+      requestedModelId = requestBody.model;
       if (!isExperimentalWebSearchEnabled()) {
         return c.json(
           {
@@ -153,15 +188,14 @@ export function registerOpenaiSearchRoutes(
           400,
         );
       }
-      if (requestBody.settings?.external_web_access !== true) {
+      if (requestBody.settings?.external_web_access === undefined) {
         return c.json(
           {
             error: {
               type: "invalid_request_error",
-              message:
-                "Agent Maestro standalone search only supports live external web access",
+              message: "settings.external_web_access is required",
               param: "settings.external_web_access",
-              code: "unsupported_web_search_mode",
+              code: "missing_required_parameter",
             },
           },
           400,
@@ -174,7 +208,7 @@ export function registerOpenaiSearchRoutes(
       if (clientError) {
         return c.json(clientError, 404);
       }
-      if (!isGpt5PlusModel(requestBody.model, client)) {
+      if (!isGpt5PlusModel("", client)) {
         return c.json(
           {
             error: {
@@ -198,6 +232,13 @@ export function registerOpenaiSearchRoutes(
 
       const webSearchTool = {
         type: "web_search",
+        external_web_access:
+          requestBody.settings.external_web_access === true ||
+          requestBody.settings.external_web_access === "live" ||
+          requestBody.settings.external_web_access === "indexed",
+        ...(requestBody.settings.external_web_access === "indexed"
+          ? { indexed_web_access: true }
+          : {}),
         ...(requestBody.settings?.search_context_size !== undefined
           ? {
               search_context_size: requestBody.settings.search_context_size,
@@ -205,6 +246,9 @@ export function registerOpenaiSearchRoutes(
           : {}),
         ...(requestBody.settings?.user_location !== undefined
           ? { user_location: requestBody.settings.user_location }
+          : {}),
+        ...(requestBody.settings?.filters !== undefined
+          ? { filters: requestBody.settings.filters }
           : {}),
       };
       const sentinelTool: vscode.LanguageModelChatTool = {

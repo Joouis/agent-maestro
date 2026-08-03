@@ -58,6 +58,16 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
     );
   }
 
+  function postRaw(app: OpenAPIHono, body: string): Promise<Response> {
+    return Promise.resolve(
+      app.request("/v1/alpha/search", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      }),
+    );
+  }
+
   test("converts a Codex search request into hosted Copilot web search", async () => {
     let capturedOptions: vscode.LanguageModelChatRequestOptions | undefined;
     const model = createModel(async (_messages, options) => {
@@ -90,7 +100,7 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
       (sentinel?.inputSchema as any).properties[
         AGENT_MAESTRO_WEB_SEARCH_SENTINEL_PARAMETER
       ].const,
-      { type: "web_search" },
+      { type: "web_search", external_web_access: true },
     );
   });
 
@@ -106,6 +116,9 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
     });
 
     assert.ok(document.paths?.["/v1/alpha/search"]?.post);
+    const operation = document.paths?.["/v1/alpha/search"]?.post;
+    assert.ok(operation && "requestBody" in operation);
+    assert.ok(operation?.responses?.["200"]);
   });
 
   test("rejects standalone search when the experimental patch is disabled", async () => {
@@ -136,10 +149,55 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
     });
 
     assert.strictEqual(response.status, 400);
-    assert.strictEqual(
-      (await response.json()).error.code,
-      "missing_required_parameter",
-    );
+    assert.strictEqual((await response.json()).error.code, "invalid_request");
+  });
+
+  test("returns 400 for malformed JSON", async () => {
+    const model = createModel(async () => {
+      throw new Error("should not send a model request");
+    });
+
+    const response = await postRaw(createApp(model), "{");
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual((await response.json()).error.code, "invalid_json");
+  });
+
+  test("returns 400 for invalid request body shapes", async () => {
+    const model = createModel(async () => {
+      throw new Error("should not send a model request");
+    });
+
+    for (const body of [
+      null,
+      [],
+      { ...searchRequest, model: 5 },
+      { ...searchRequest, input: {} },
+      { ...searchRequest, commands: [] },
+      { ...searchRequest, settings: "live" },
+      {
+        ...searchRequest,
+        settings: { external_web_access: true, search_context_size: "huge" },
+      },
+      {
+        ...searchRequest,
+        settings: { external_web_access: true, user_location: {} },
+      },
+      {
+        ...searchRequest,
+        settings: {
+          external_web_access: true,
+          filters: { allowed_domains: [1] },
+        },
+      },
+      { ...searchRequest, reasoning: { effort: 5 } },
+      { ...searchRequest, max_output_tokens: -1 },
+    ]) {
+      const response = await post(createApp(model), body);
+
+      assert.strictEqual(response.status, 400);
+      assert.strictEqual((await response.json()).error.code, "invalid_request");
+    }
   });
 
   test("accepts an empty commands object", async () => {
@@ -158,21 +216,82 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
     assert.strictEqual(response.status, 200);
   });
 
-  test("rejects non-live external web access modes", async () => {
+  test("requires an explicit external web access mode", async () => {
     const model = createModel(async () => {
       throw new Error("should not send a model request");
     });
 
-    for (const externalWebAccess of [false, "indexed", "cached"]) {
-      const response = await post(createApp(model), {
-        ...searchRequest,
-        settings: { external_web_access: externalWebAccess },
+    const response = await post(createApp(model), {
+      ...searchRequest,
+      settings: {},
+    });
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual(
+      (await response.json()).error.code,
+      "missing_required_parameter",
+    );
+  });
+
+  test("accepts the explicit live external web access mode and forwards filters", async () => {
+    let capturedOptions: vscode.LanguageModelChatRequestOptions | undefined;
+    const model = createModel(async (_messages, options) => {
+      capturedOptions = options;
+      return {
+        stream: (async function* () {})(),
+        text: (async function* () {})(),
+      };
+    });
+
+    const response = await post(createApp(model), {
+      ...searchRequest,
+      settings: {
+        external_web_access: "live",
+        filters: { allowed_domains: ["openai.com"] },
+      },
+    });
+
+    assert.strictEqual(response.status, 200);
+    const sentinel = capturedOptions?.tools?.[0];
+    assert.deepStrictEqual(
+      (sentinel?.inputSchema as any).properties[
+        AGENT_MAESTRO_WEB_SEARCH_SENTINEL_PARAMETER
+      ].const,
+      {
+        type: "web_search",
+        external_web_access: true,
+        filters: { allowed_domains: ["openai.com"] },
+      },
+    );
+  });
+
+  test("maps indexed and cached standalone modes to hosted search options", async () => {
+    for (const [mode, expected] of [
+      ["indexed", { external_web_access: true, indexed_web_access: true }],
+      ["cached", { external_web_access: false }],
+      [false, { external_web_access: false }],
+    ] as const) {
+      let capturedOptions: vscode.LanguageModelChatRequestOptions | undefined;
+      const model = createModel(async (_messages, options) => {
+        capturedOptions = options;
+        return {
+          stream: (async function* () {})(),
+          text: (async function* () {})(),
+        };
       });
 
-      assert.strictEqual(response.status, 400);
-      assert.strictEqual(
-        (await response.json()).error.code,
-        "unsupported_web_search_mode",
+      const response = await post(createApp(model), {
+        ...searchRequest,
+        settings: { external_web_access: mode },
+      });
+
+      assert.strictEqual(response.status, 200);
+      const sentinel = capturedOptions?.tools?.[0];
+      assert.deepStrictEqual(
+        (sentinel?.inputSchema as any).properties[
+          AGENT_MAESTRO_WEB_SEARCH_SENTINEL_PARAMETER
+        ].const,
+        { type: "web_search", ...expected },
       );
     }
   });
@@ -186,6 +305,17 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
       ...searchRequest,
       model: "gpt-4.1",
     });
+
+    assert.strictEqual(response.status, 400);
+    assert.strictEqual((await response.json()).error.code, "unsupported_model");
+  });
+
+  test("rejects a GPT-5 request that resolves to an earlier model", async () => {
+    const model = createModel(async () => {
+      throw new Error("should not send a model request");
+    }, "gpt-4.1");
+
+    const response = await post(createApp(model), searchRequest);
 
     assert.strictEqual(response.status, 400);
     assert.strictEqual((await response.json()).error.code, "unsupported_model");

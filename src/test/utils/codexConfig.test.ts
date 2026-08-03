@@ -39,4 +39,38 @@ suite("Codex Configuration Test Suite", () => {
       undefined,
     );
   });
+
+  test("removes stale standalone search configuration", () => {
+    const config = buildCodexConfig(
+      {
+        features: { standalone_web_search: true, existing_feature: true },
+        model_providers: {
+          "agent-maestro": { supports_standalone_web_search: true },
+        },
+      },
+      "gpt-4.1",
+      100000,
+      23333,
+      true,
+    );
+
+    assert.strictEqual(config.features?.standalone_web_search, undefined);
+    assert.strictEqual(config.features?.existing_feature, true);
+    assert.strictEqual(
+      config.model_providers["agent-maestro"].supports_standalone_web_search,
+      undefined,
+    );
+  });
+
+  test("removes the features table when standalone search was its only entry", () => {
+    const config = buildCodexConfig(
+      { features: { standalone_web_search: true } },
+      "gpt-5.6-sol",
+      100000,
+      23333,
+      false,
+    );
+
+    assert.strictEqual(config.features, undefined);
+  });
 });
