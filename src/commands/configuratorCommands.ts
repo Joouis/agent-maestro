@@ -16,6 +16,7 @@ import {
   getClaudeDesktopConfigDirectory,
   updateClaudeDesktopMetadata,
 } from "../utils/claudeDesktop";
+import { readConfiguration } from "../utils/config";
 import { logger } from "../utils/logger";
 import { updateEnvFile } from "../utils/updateEnvFile";
 import { createCommandHandler } from "./commandHandler";
@@ -36,12 +37,13 @@ export function buildCodexConfig(
   modelId: string,
   modelContextWindow: number | undefined,
   proxyPort: number,
+  experimentalWebSearchEnabled = false,
 ): UpdatedCodexConfig {
   const modelMatch = /^gpt-(\d+)/.exec(
     modelId.toLowerCase().replace(/\./g, "-"),
   );
   const supportsStandaloneWebSearch =
-    !!modelMatch && Number(modelMatch[1]) >= 5;
+    experimentalWebSearchEnabled && !!modelMatch && Number(modelMatch[1]) >= 5;
 
   return {
     ...existingConfig,
@@ -407,6 +409,7 @@ export function registerConfiguratorCommands(
           selectedModel.modelId,
           modelContextWindow,
           proxyPort,
+          readConfiguration().experimentalGpt5PlusWebSearchEnabled,
         );
 
         // Ensure .codex directory exists

@@ -32,8 +32,10 @@ type SearchRequest = {
   settings?: {
     search_context_size?: unknown;
     user_location?: unknown;
+    external_web_access?: unknown;
   };
   reasoning?: { effort?: unknown };
+  max_output_tokens?: unknown;
 };
 
 const searchRoute = createRoute({
@@ -124,10 +126,7 @@ export function registerOpenaiSearchRoutes(
           400,
         );
       }
-      if (
-        !requestBody.commands ||
-        Object.keys(requestBody.commands).length === 0
-      ) {
+      if (!requestBody.commands) {
         return c.json(
           {
             error: {
@@ -149,6 +148,20 @@ export function registerOpenaiSearchRoutes(
                 "Enable the experimental GPT-5+ web search patch before using standalone search",
               param: null,
               code: "web_search_disabled",
+            },
+          },
+          400,
+        );
+      }
+      if (requestBody.settings?.external_web_access !== true) {
+        return c.json(
+          {
+            error: {
+              type: "invalid_request_error",
+              message:
+                "Agent Maestro standalone search only supports live external web access",
+              param: "settings.external_web_access",
+              code: "unsupported_web_search_mode",
             },
           },
           400,
@@ -208,6 +221,10 @@ export function registerOpenaiSearchRoutes(
       };
       const requestOptions: vscode.LanguageModelChatRequestOptions = {
         justification: "Codex standalone web-search endpoint",
+        modelOptions:
+          typeof requestBody.max_output_tokens === "number"
+            ? { maxTokens: requestBody.max_output_tokens }
+            : undefined,
         tools: [sentinelTool],
         toolMode: vscode.LanguageModelChatToolMode.Required,
       };

@@ -9,6 +9,7 @@ suite("Codex Configuration Test Suite", () => {
       "gpt-5.6-sol",
       100000,
       23333,
+      true,
     );
 
     assert.strictEqual(config.features?.existing_feature, true);
@@ -20,7 +21,17 @@ suite("Codex Configuration Test Suite", () => {
   });
 
   test("does not advertise standalone search for earlier models", () => {
-    const config = buildCodexConfig({}, "gpt-4.1", 100000, 23333);
+    const config = buildCodexConfig({}, "gpt-4.1", 100000, 23333, true);
+
+    assert.strictEqual(config.features, undefined);
+    assert.strictEqual(
+      config.model_providers["agent-maestro"].supports_standalone_web_search,
+      undefined,
+    );
+  });
+
+  test("does not advertise standalone search while the patch is disabled", () => {
+    const config = buildCodexConfig({}, "gpt-5.6-sol", 100000, 23333);
 
     assert.strictEqual(config.features, undefined);
     assert.strictEqual(

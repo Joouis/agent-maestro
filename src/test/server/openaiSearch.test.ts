@@ -14,6 +14,8 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
     model: "gpt-5.6-sol",
     input: "Find OpenAI",
     commands: { search_query: [{ q: "OpenAI official site" }] },
+    settings: { external_web_access: true },
+    max_output_tokens: 2500,
   };
 
   function createModel(
@@ -78,6 +80,7 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
       capturedOptions?.toolMode,
       vscode.LanguageModelChatToolMode.Required,
     );
+    assert.deepStrictEqual(capturedOptions?.modelOptions, { maxTokens: 2500 });
     const sentinel = capturedOptions?.tools?.[0];
     assert.strictEqual(
       sentinel?.name,
@@ -137,6 +140,41 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
       (await response.json()).error.code,
       "missing_required_parameter",
     );
+  });
+
+  test("accepts an empty commands object", async () => {
+    const model = createModel(async () => ({
+      stream: (async function* () {
+        yield new vscode.LanguageModelTextPart("No search command supplied");
+      })(),
+      text: (async function* () {})(),
+    }));
+
+    const response = await post(createApp(model), {
+      ...searchRequest,
+      commands: {},
+    });
+
+    assert.strictEqual(response.status, 200);
+  });
+
+  test("rejects non-live external web access modes", async () => {
+    const model = createModel(async () => {
+      throw new Error("should not send a model request");
+    });
+
+    for (const externalWebAccess of [false, "indexed", "cached"]) {
+      const response = await post(createApp(model), {
+        ...searchRequest,
+        settings: { external_web_access: externalWebAccess },
+      });
+
+      assert.strictEqual(response.status, 400);
+      assert.strictEqual(
+        (await response.json()).error.code,
+        "unsupported_web_search_mode",
+      );
+    }
   });
 
   test("rejects non-GPT-5 Copilot models", async () => {
