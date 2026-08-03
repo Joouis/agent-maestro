@@ -44,7 +44,13 @@ export function buildCodexConfig(
   );
   const supportsStandaloneWebSearch =
     experimentalWebSearchEnabled && !!modelMatch && Number(modelMatch[1]) >= 5;
-  const features = { ...existingConfig.features };
+  const existingFeatures =
+    existingConfig.features &&
+    typeof existingConfig.features === "object" &&
+    !Array.isArray(existingConfig.features)
+      ? existingConfig.features
+      : {};
+  const features = { ...existingFeatures };
   delete features.standalone_web_search;
   if (supportsStandaloneWebSearch) {
     features.standalone_web_search = true;

@@ -73,4 +73,18 @@ suite("Codex Configuration Test Suite", () => {
 
     assert.strictEqual(config.features, undefined);
   });
+
+  test("replaces malformed legacy features values", () => {
+    for (const features of [null, "legacy", []]) {
+      const config = buildCodexConfig(
+        { features: features as unknown as Record<string, unknown> },
+        "gpt-5.6-sol",
+        100000,
+        23333,
+        true,
+      );
+
+      assert.deepStrictEqual(config.features, { standalone_web_search: true });
+    }
+  });
 });

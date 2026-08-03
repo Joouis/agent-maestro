@@ -339,4 +339,34 @@ suite("OpenAI Standalone Search Route Test Suite", () => {
     assert.strictEqual((await response.json()).error.code, "request_timeout");
     assert.strictEqual(cancelled, true);
   });
+
+  test("returns 499 with an empty body when the client disconnects", async () => {
+    let cancelled = false;
+    let markRequestStarted: (() => void) | undefined;
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve;
+    });
+    const model = createModel(async (_messages, _options, token) => {
+      token?.onCancellationRequested(() => {
+        cancelled = true;
+      });
+      markRequestStarted?.();
+      return new Promise<vscode.LanguageModelChatResponse>(() => {});
+    });
+    const controller = new AbortController();
+    const responsePromise = createApp(model).request("/v1/alpha/search", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(searchRequest),
+      signal: controller.signal,
+    });
+
+    await requestStarted;
+    controller.abort();
+
+    const response = await responsePromise;
+    assert.strictEqual(response.status, 499);
+    assert.strictEqual(await response.text(), "");
+    assert.strictEqual(cancelled, true);
+  });
 });

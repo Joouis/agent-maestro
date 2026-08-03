@@ -321,17 +321,7 @@ export function registerOpenaiSearchRoutes(
       }
       if (error instanceof LanguageModelClientDisconnectedError) {
         logger.info("/v1/alpha/search | client disconnected");
-        return c.json(
-          {
-            error: {
-              type: "client_disconnected",
-              message: error.message,
-              param: null,
-              code: "client_disconnected",
-            },
-          },
-          500,
-        );
+        return new Response(null, { status: 499 });
       }
 
       logger.error("✕ /v1/alpha/search |", error);
