@@ -44,7 +44,6 @@ import {
   getCurrentTimestamp,
   getResponsesWebSearchTool,
   narrowToolsForChoice,
-  resizeResponsesToolOutputImages,
 } from "../../utils/openaiResponses";
 
 type NonStreamingResponse = Omit<
@@ -284,11 +283,7 @@ export function registerOpenaiResponsesRoutes(
       );
 
       // 6. Convert input to VSCode messages
-      const resizedInput = await resizeResponsesToolOutputImages(input);
-      const vsCodeMessages = convertResponsesInputToVSCode(
-        resizedInput,
-        instructions,
-      );
+      const vsCodeMessages = convertResponsesInputToVSCode(input, instructions);
       lmChatMessages = vsCodeMessages;
 
       // 7. Build request options
