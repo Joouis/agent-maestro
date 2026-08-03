@@ -45,6 +45,12 @@ For `/v1/responses` requests:
 
 Because hosted web search is handled by the model backend, a successful search may not produce a local VS Code tool call.
 
+### Codex Standalone Search
+
+Recent Codex models that use Responses Lite do not attach hosted tools to `/v1/responses`. When Codex enables its `standalone_web_search` feature for an opted-in custom provider, it instead calls `POST /v1/alpha/search`. Agent Maestro exposes that endpoint and adapts the Codex search command to the same patched Copilot hosted web-search path.
+
+The endpoint requires the experimental patch setting and a GPT-5+ Copilot model. It returns the Copilot search text in the Codex `output` field, including source URLs supplied by the backend. Agent Maestro does not synthesize Codex structured `results` metadata. Custom Codex providers must set `supports_standalone_web_search = true` and enable Codex's `standalone_web_search` feature before Codex will call this endpoint.
+
 ## Restore Flow
 
 Run `Agent Maestro: Restore Experimental GPT-5+ Web Search Backup` from the Command Palette.

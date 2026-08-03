@@ -22,6 +22,54 @@ import { createCommandHandler } from "./commandHandler";
 
 const LOOPBACK_HOST = "127.0.0.1";
 
+type CodexConfig = Record<string, unknown> & {
+  features?: Record<string, unknown>;
+  model_providers?: Record<string, Record<string, unknown>>;
+};
+
+type UpdatedCodexConfig = CodexConfig & {
+  model_providers: Record<string, Record<string, unknown>>;
+};
+
+export function buildCodexConfig(
+  existingConfig: CodexConfig,
+  modelId: string,
+  modelContextWindow: number | undefined,
+  proxyPort: number,
+): UpdatedCodexConfig {
+  const modelMatch = /^gpt-(\d+)/.exec(
+    modelId.toLowerCase().replace(/\./g, "-"),
+  );
+  const supportsStandaloneWebSearch =
+    !!modelMatch && Number(modelMatch[1]) >= 5;
+
+  return {
+    ...existingConfig,
+    model: modelId,
+    model_provider: "agent-maestro",
+    ...(modelContextWindow !== undefined && {
+      model_context_window: modelContextWindow,
+    }),
+    ...(supportsStandaloneWebSearch && {
+      features: {
+        ...existingConfig.features,
+        standalone_web_search: true,
+      },
+    }),
+    model_providers: {
+      ...existingConfig.model_providers,
+      "agent-maestro": {
+        name: "Agent Maestro",
+        base_url: `http://${LOOPBACK_HOST}:${proxyPort}/api/openai/v1`,
+        wire_api: "responses",
+        ...(supportsStandaloneWebSearch && {
+          supports_standalone_web_search: true,
+        }),
+      },
+    },
+  };
+}
+
 export function registerConfiguratorCommands(
   proxy: ProxyServer,
   context: vscode.ExtensionContext,
@@ -354,23 +402,12 @@ export function registerConfiguratorCommands(
 
         const modelContextWindow = selectedModel.maxInputTokens ?? undefined;
 
-        // Build updated config by merging with existing config
-        const updatedConfig = {
-          ...existingConfig,
-          model: selectedModel.modelId,
-          model_provider: "agent-maestro",
-          ...(modelContextWindow !== undefined && {
-            model_context_window: modelContextWindow,
-          }),
-          model_providers: {
-            ...existingConfig.model_providers,
-            "agent-maestro": {
-              name: "Agent Maestro",
-              base_url: `http://${LOOPBACK_HOST}:${proxyPort}/api/openai/v1`,
-              wire_api: "responses",
-            },
-          },
-        };
+        const updatedConfig = buildCodexConfig(
+          existingConfig,
+          selectedModel.modelId,
+          modelContextWindow,
+          proxyPort,
+        );
 
         // Ensure .codex directory exists
         const codexDir = path.dirname(codexConfigPath);
