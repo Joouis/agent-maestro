@@ -16,8 +16,8 @@ const COPILOT_BUNDLE_RELATIVE_PATH = path.join(
 const TOOL_SEARCH_SNIPPET =
   'let y=[...h];g&&y.unshift({type:"tool_search",execution:"client",description:"Search for relevant tools by describing what you need. Returns tool definitions for tools matching your query.",parameters:{type:"object",properties:{query:{type:"string",description:"Natural language description of what tool capability you are looking for."}},required:["query"]}});';
 
-const TOOL_MAP_SNIPPET =
-  "let v=e.requestOptions?.tools?new Map(e.requestOptions.tools.map(B=>[B.function.name,B])):void 0";
+const TOOL_MAP_SNIPPET_PATTERN =
+  /^let v=e\.requestOptions\?\.tools\?new Map\(e\.requestOptions\.tools\.map\(([A-Za-z_$][\w$]*)=>\[\1\.function\.name,\1\]\)\):void 0/;
 
 export const GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET = `(()=>{let B=y.findIndex(ee=>ee?.name==="${AGENT_MAESTRO_WEB_SEARCH_SENTINEL_TOOL_NAME}"),X=B>=0?y[B]:void 0,Q=X?.parameters?.properties?.["${AGENT_MAESTRO_WEB_SEARCH_SENTINEL_PARAMETER}"]?.const;B>=0&&y.splice(B,1);if(Q&&typeof Q.type=="string"&&Q.type.startsWith("web_search")){e.postOptions?.tool_choice?.function?.name==="${AGENT_MAESTRO_WEB_SEARCH_SENTINEL_TOOL_NAME}"&&(e.postOptions.tool_choice="required");((ee=>{let te=/^gpt-(\\d+)/.exec(String(ee).toLowerCase().replace(/\\./g,"-"));return!!te&&Number(te[1])>=5})(t)||(ee=>{let te=/^gpt-(\\d+)/.exec(String(ee).toLowerCase().replace(/\\./g,"-"));return!!te&&Number(te[1])>=5})(r.family))&&!y.some(ee=>typeof ee?.type=="string"&&ee.type.startsWith("web_search"))&&y.unshift(Q)}})();`;
 
@@ -160,12 +160,11 @@ export function patchCopilotWebSearchBundle(
 }
 
 function patchMinifiedResponsesBundle(content: string): string | undefined {
-  const targetSnippet = `${TOOL_SEARCH_SNIPPET}${TOOL_MAP_SNIPPET}`;
-  const replacement = `${TOOL_SEARCH_SNIPPET}${GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET}${TOOL_MAP_SNIPPET}`;
-  const firstMatch = content.indexOf(targetSnippet);
+  const injectionPoints = findMinifiedInjectionPoints(content);
 
-  if (firstMatch >= 0 && firstMatch === content.lastIndexOf(targetSnippet)) {
-    return content.replace(targetSnippet, replacement);
+  if (injectionPoints.length === 1) {
+    const injectionPoint = injectionPoints[0];
+    return `${content.slice(0, injectionPoint)}${GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET}${content.slice(injectionPoint)}`;
   }
 
   const legacyPatchResult = replaceLegacyPatch(content);
@@ -224,10 +223,13 @@ function replaceLegacyPatch(content: string): string | undefined {
   }
 
   const legacyPatchStart = toolSearchIndex + TOOL_SEARCH_SNIPPET.length;
-  const toolMapIndex = content.indexOf(TOOL_MAP_SNIPPET, legacyPatchStart);
-  if (toolMapIndex < 0) {
+  const toolMapMatch = TOOL_MAP_SNIPPET_PATTERN.exec(
+    content.slice(legacyPatchStart),
+  );
+  if (!toolMapMatch) {
     return undefined;
   }
+  const toolMapIndex = legacyPatchStart + toolMapMatch.index;
 
   const legacyPatch = content.slice(legacyPatchStart, toolMapIndex);
   if (!isLegacyWebSearchPatch(legacyPatch)) {
@@ -235,6 +237,26 @@ function replaceLegacyPatch(content: string): string | undefined {
   }
 
   return `${content.slice(0, legacyPatchStart)}${GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET}${content.slice(toolMapIndex)}`;
+}
+
+function findMinifiedInjectionPoints(content: string): number[] {
+  const injectionPoints: number[] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < content.length) {
+    const toolSearchIndex = content.indexOf(TOOL_SEARCH_SNIPPET, searchFrom);
+    if (toolSearchIndex < 0) {
+      break;
+    }
+
+    const injectionPoint = toolSearchIndex + TOOL_SEARCH_SNIPPET.length;
+    if (TOOL_MAP_SNIPPET_PATTERN.test(content.slice(injectionPoint))) {
+      injectionPoints.push(injectionPoint);
+    }
+    searchFrom = injectionPoint;
+  }
+
+  return injectionPoints;
 }
 
 function isLegacyWebSearchPatch(snippet: string): boolean {

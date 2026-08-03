@@ -82,6 +82,37 @@ suite("CopilotWebSearchPatch Test Suite", () => {
     assert.ok(!backupContent.includes(GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET));
   });
 
+  test("should patch VS Code 1.131 minified bundle identifiers", () => {
+    const vscode131ToolMapSnippet =
+      "let v=e.requestOptions?.tools?new Map(e.requestOptions.tools.map(D=>[D.function.name,D])):void 0";
+    fs.writeFileSync(
+      bundlePath,
+      `prefix ${toolSearchSnippet}${vscode131ToolMapSnippet} suffix`,
+    );
+
+    const result = patchCopilotWebSearchBundle(bundlePath);
+
+    assert.strictEqual(result.status, "patched");
+    assert.ok(result.backupPath);
+    const patchedContent = fs.readFileSync(bundlePath, "utf8");
+    assert.ok(patchedContent.includes(GPT5_PLUS_WEB_SEARCH_PATCH_SNIPPET));
+    assert.ok(patchedContent.includes(vscode131ToolMapSnippet));
+  });
+
+  test("should reject inconsistent minified map identifiers", () => {
+    const inconsistentToolMapSnippet =
+      "let v=e.requestOptions?.tools?new Map(e.requestOptions.tools.map(D=>[X.function.name,D])):void 0";
+    fs.writeFileSync(
+      bundlePath,
+      `${toolSearchSnippet}${inconsistentToolMapSnippet}`,
+    );
+
+    assert.throws(
+      () => patchCopilotWebSearchBundle(bundlePath),
+      /Expected to find a supported Copilot Responses tool injection point/,
+    );
+  });
+
   test("should not patch an already patched bundle again", () => {
     fs.writeFileSync(
       bundlePath,
