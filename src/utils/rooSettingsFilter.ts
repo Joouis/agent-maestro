@@ -22,6 +22,7 @@ const SECRET_STATE_KEYS = [
   "groqApiKey",
   "chutesApiKey",
   "litellmApiKey",
+  "minimaxApiKey",
 ] as const;
 
 /**
