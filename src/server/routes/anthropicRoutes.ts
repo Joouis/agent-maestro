@@ -33,6 +33,7 @@ import {
   LanguageModelRequestTimeoutError,
   interruptibleLanguageModelStream,
 } from "../utils/languageModelRequestLifecycle";
+import { SSE_HEARTBEAT, withSseHeartbeat } from "../utils/sseHeartbeat";
 
 const prepareAnthropicMessages = async ({
   requestBody,
@@ -273,6 +274,7 @@ const modelRoute = createRoute({
 });
 
 export interface AnthropicRoutesOptions {
+  heartbeatIntervalMs?: number;
   requestTimeoutMs?: number;
   resolveChatModelClient?: typeof getChatModelClient;
 }
@@ -577,10 +579,23 @@ export function registerAnthropicRoutes(
           let stopReason: Anthropic.Messages.StopReason = "end_turn";
 
           try {
-            for await (const chunk of interruptibleLanguageModelStream(
-              response.stream,
-              requestLifecycle!,
+            for await (const chunk of withSseHeartbeat(
+              interruptibleLanguageModelStream(
+                response.stream,
+                requestLifecycle!,
+              ),
+              options.heartbeatIntervalMs,
             )) {
+              if (chunk === SSE_HEARTBEAT) {
+                await requestLifecycle!.waitFor(
+                  stream.writeSSE({
+                    event: "ping",
+                    data: JSON.stringify({ type: "ping" }),
+                  }),
+                );
+                continue;
+              }
+
               const lastBlock = contentBlocks.at(-1);
               if (chunk instanceof vscode.LanguageModelTextPart) {
                 // Stop last non-text block if it exists
