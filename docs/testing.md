@@ -34,6 +34,7 @@ pnpm run watch-tests
 | `server/openaiChat.test.ts`                    | 15    | OpenAI → VS Code message conversion                       |
 | `server/openaiResponses.test.ts`               | 54    | OpenAI Responses → VS Code conversion                     |
 | `server/gemini.test.ts`                        | 27    | Gemini → VS Code message conversion                       |
+| `server/sseHeartbeat.test.ts`                  | 8     | SSE heartbeat scheduling, lifecycle, and protocol frames  |
 
 ## How Tests Prevent Regressions
 

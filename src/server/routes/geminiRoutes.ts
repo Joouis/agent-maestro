@@ -23,6 +23,13 @@ import {
   convertGeminiToolsToVSCode,
   extractGeminiUsage,
 } from "../utils/gemini";
+import {
+  LanguageModelClientDisconnectedError,
+  LanguageModelRequestLifecycle,
+  LanguageModelRequestTimeoutError,
+  interruptibleLanguageModelStream,
+} from "../utils/languageModelRequestLifecycle";
+import { SSE_HEARTBEAT, withSseHeartbeat } from "../utils/sseHeartbeat";
 
 // ============================================================================
 // Shared Helper Functions
@@ -304,7 +311,19 @@ const countTokensRoute = createRoute({
 // Route Handlers
 // ============================================================================
 
-export function registerGeminiRoutes(app: OpenAPIHono) {
+export interface GeminiRoutesOptions {
+  heartbeatIntervalMs?: number;
+  requestTimeoutMs?: number;
+  resolveChatModelClient?: typeof getChatModelClient;
+}
+
+export function registerGeminiRoutes(
+  app: OpenAPIHono,
+  options: GeminiRoutesOptions = {},
+) {
+  const resolveChatModelClient =
+    options.resolveChatModelClient ?? getChatModelClient;
+
   // POST /v1beta/models/{model}:generateContent
   app.openapi(generateContentRoute, async (c: Context) => {
     let rawRequestBody: GenerateContentRequest | undefined;
@@ -321,7 +340,8 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       rawRequestBody = requestBody;
 
       // 1. Get chat model client
-      const { client, error: clientError } = await getChatModelClient(modelId);
+      const { client, error: clientError } =
+        await resolveChatModelClient(modelId);
 
       if (clientError) {
         return c.json(
@@ -450,7 +470,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
       let modelId = "";
       let inputTokens = 0;
-      let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
+      let requestLifecycle: LanguageModelRequestLifecycle | undefined;
 
       try {
         // Parse request
@@ -461,7 +481,7 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
 
         // 1. Get chat model client
         const { client, error: clientError } =
-          await getChatModelClient(modelId);
+          await resolveChatModelClient(modelId);
 
         if (clientError) {
           return c.json(
@@ -477,7 +497,10 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
         }
 
         // 2. Prepare request
-        cancellationTokenSource = new vscode.CancellationTokenSource();
+        requestLifecycle = new LanguageModelRequestLifecycle(
+          c.req.raw.signal,
+          options.requestTimeoutMs,
+        );
         const { vsCodeLmMessages, lmRequestOptions } = prepareGeminiRequest({
           requestBody,
         });
@@ -491,11 +514,13 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
 
         // 3. Send request to VSCode LM API
         // No Gemini request field is currently mapped to Copilot reasoning effort.
-        const cancellationToken = cancellationTokenSource.token;
-        const response = await client.sendRequest(
-          vsCodeLmMessages,
-          withCopilotConfiguration(client, lmRequestOptions),
-          cancellationToken,
+        const cancellationToken = requestLifecycle.token;
+        const response = await requestLifecycle.waitFor(
+          client.sendRequest(
+            vsCodeLmMessages,
+            withCopilotConfiguration(client, lmRequestOptions),
+            cancellationToken,
+          ),
         );
 
         // 4. Always stream the response
@@ -505,7 +530,20 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             let accumulatedText = "";
             let responseUsage: GeminiTokenUsage | undefined;
 
-            for await (const chunk of response.stream) {
+            for await (const chunk of withSseHeartbeat(
+              interruptibleLanguageModelStream(
+                response.stream,
+                requestLifecycle!,
+              ),
+              options.heartbeatIntervalMs,
+            )) {
+              if (chunk === SSE_HEARTBEAT) {
+                await requestLifecycle!.waitFor(
+                  stream.write(": keep-alive\n\n"),
+                );
+                continue;
+              }
+
               if (chunk instanceof vscode.LanguageModelTextPart) {
                 const text = chunk.value;
                 accumulatedText += text;
@@ -523,9 +561,11 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                   ],
                 };
 
-                await stream.writeSSE({
-                  data: JSON.stringify(streamChunk),
-                });
+                await requestLifecycle!.waitFor(
+                  stream.writeSSE({
+                    data: JSON.stringify(streamChunk),
+                  }),
+                );
               } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
                 const functionCallPart: Part = {
                   functionCall: {
@@ -549,9 +589,11 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
                   ],
                 };
 
-                await stream.writeSSE({
-                  data: JSON.stringify(streamChunk),
-                });
+                await requestLifecycle!.waitFor(
+                  stream.writeSSE({
+                    data: JSON.stringify(streamChunk),
+                  }),
+                );
               } else if (chunk instanceof vscode.LanguageModelDataPart) {
                 responseUsage = extractGeminiUsage(chunk) ?? responseUsage;
               }
@@ -560,12 +602,14 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
             // Send final chunk with usage metadata
             const usageMetadata =
               responseUsage ??
-              (await getFallbackGeminiUsage({
-                accumulatedText,
-                cancellationToken,
-                client,
-                requestBody,
-              }));
+              (await requestLifecycle!.waitFor(
+                getFallbackGeminiUsage({
+                  accumulatedText,
+                  cancellationToken,
+                  client,
+                  requestBody,
+                }),
+              ));
             inputTokens = usageMetadata.promptTokenCount;
 
             const finalChunk: GenerateContentResponse = {
@@ -579,21 +623,31 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
               modelVersion: modelId,
             };
 
-            await stream.writeSSE({
-              data: JSON.stringify(finalChunk),
-            });
+            await requestLifecycle!.waitFor(
+              stream.writeSSE({
+                data: JSON.stringify(finalChunk),
+              }),
+            );
 
             logger.info(
               `← /v1beta/models/${modelWithMethod} (stream) | input: ${usageMetadata.promptTokenCount} | cache_read: ${usageMetadata.cachedContentTokenCount} | output: ${usageMetadata.candidatesTokenCount} | thoughts: ${usageMetadata.thoughtsTokenCount}`,
             );
-            cancellationTokenSource?.dispose();
+            requestLifecycle?.dispose();
           },
           async (error, stream) => {
+            if (error instanceof LanguageModelClientDisconnectedError) {
+              logger.info(
+                `/v1beta/models/${modelWithMethod} | client disconnected`,
+              );
+              requestLifecycle?.dispose();
+              await stream.close();
+              return;
+            }
+
             logger.error(
               `✕ /v1beta/models/${modelWithMethod} (stream) |`,
               error,
             );
-            cancellationTokenSource?.dispose();
 
             // Send final chunk with error finish reason
             const errorChunk: GenerateContentResponse = {
@@ -620,13 +674,43 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
               modelVersion: modelId,
             };
 
-            await stream.writeSSE({
-              data: JSON.stringify(errorChunk),
-            });
+            try {
+              await stream.writeSSE({
+                data: JSON.stringify(errorChunk),
+              });
+            } finally {
+              requestLifecycle?.dispose();
+              await stream.close();
+            }
           },
         );
       } catch (error) {
-        cancellationTokenSource?.dispose();
+        requestLifecycle?.dispose();
+
+        if (error instanceof LanguageModelRequestTimeoutError) {
+          logger.error(
+            `✕ /v1beta/models/${modelId}:streamGenerateContent |`,
+            error,
+          );
+          return c.json(
+            {
+              error: {
+                code: 504,
+                message: error.message,
+                status: "DEADLINE_EXCEEDED",
+              },
+            },
+            504,
+          );
+        }
+
+        if (error instanceof LanguageModelClientDisconnectedError) {
+          logger.info(
+            `/v1beta/models/${modelId}:streamGenerateContent | client disconnected`,
+          );
+          return new Response(null, { status: 499 });
+        }
+
         logger.error(
           `✕ /v1beta/models/${modelId}:streamGenerateContent |`,
           error,
@@ -670,7 +754,8 @@ export function registerGeminiRoutes(app: OpenAPIHono) {
       const requestBody = await c.req.json();
 
       // 1. Get chat model client
-      const { client, error: clientError } = await getChatModelClient(modelId);
+      const { client, error: clientError } =
+        await resolveChatModelClient(modelId);
 
       if (clientError) {
         return c.json(

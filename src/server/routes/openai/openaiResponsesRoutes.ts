@@ -45,6 +45,7 @@ import {
   getResponsesWebSearchTool,
   narrowToolsForChoice,
 } from "../../utils/openaiResponses";
+import { SSE_HEARTBEAT, withSseHeartbeat } from "../../utils/sseHeartbeat";
 
 type NonStreamingResponse = Omit<
   OpenAI.Responses.Response,
@@ -142,6 +143,7 @@ Limitations:
 });
 
 export interface OpenaiResponsesRoutesOptions {
+  heartbeatIntervalMs?: number;
   requestTimeoutMs?: number;
   resolveChatModelClient?: typeof getChatModelClient;
 }
@@ -535,10 +537,20 @@ export function registerOpenaiResponsesRoutes(
           let totalOutputText = ""; // Track all output for token counting
           let responseUsage: ResponseUsage | undefined;
 
-          for await (const chunk of interruptibleLanguageModelStream(
-            response.stream,
-            requestLifecycle!,
+          for await (const chunk of withSseHeartbeat(
+            interruptibleLanguageModelStream(
+              response.stream,
+              requestLifecycle!,
+            ),
+            options.heartbeatIntervalMs,
           )) {
+            if (chunk === SSE_HEARTBEAT) {
+              await requestLifecycle!.waitFor(
+                sseStream.write(": keep-alive\n\n"),
+              );
+              continue;
+            }
+
             if (chunk instanceof vscode.LanguageModelTextPart) {
               if (!currentMessageId) {
                 // Start new message output item

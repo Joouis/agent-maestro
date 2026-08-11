@@ -23,6 +23,7 @@ import {
   convertOpenAIChatCompletionToolToVSCode,
   convertOpenAIMessagesToVSCode,
 } from "../../utils/openaiChat";
+import { SSE_HEARTBEAT, withSseHeartbeat } from "../../utils/sseHeartbeat";
 
 // OpenAPI route definition for /v1/chat/completions
 const chatCompletionsRoute = createRoute({
@@ -106,6 +107,7 @@ const chatCompletionsRoute = createRoute({
 });
 
 export interface OpenaiChatRoutesOptions {
+  heartbeatIntervalMs?: number;
   requestTimeoutMs?: number;
   resolveChatModelClient?: typeof getChatModelClient;
 }
@@ -314,10 +316,18 @@ export function registerOpenaiChatRoutes(
           let accumulatedText = "";
           let toolCalls: vscode.LanguageModelToolCallPart[] = [];
           let completionUsage: OpenAI.CompletionUsage | undefined;
-          for await (const chunk of interruptibleLanguageModelStream(
-            response.stream,
-            requestLifecycle!,
+          for await (const chunk of withSseHeartbeat(
+            interruptibleLanguageModelStream(
+              response.stream,
+              requestLifecycle!,
+            ),
+            options.heartbeatIntervalMs,
           )) {
+            if (chunk === SSE_HEARTBEAT) {
+              await requestLifecycle!.waitFor(stream.write(": keep-alive\n\n"));
+              continue;
+            }
+
             if (chunk instanceof vscode.LanguageModelTextPart) {
               const contentChunk: OpenAI.ChatCompletionChunk = {
                 id: chatCompletionId,
