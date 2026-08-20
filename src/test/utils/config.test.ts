@@ -20,6 +20,7 @@ suite("Config Test Suite", () => {
       assert.strictEqual(DEFAULT_CONFIG.proxyServerPort, 23333);
       assert.strictEqual(DEFAULT_CONFIG.mcpServerPort, 23334);
       assert.strictEqual(DEFAULT_CONFIG.allowOutsideWorkspaceAccess, false);
+      assert.strictEqual(DEFAULT_CONFIG.fallbackModelId, "");
     });
   });
 
@@ -44,6 +45,10 @@ suite("Config Test Suite", () => {
       assert.strictEqual(
         CONFIG_KEYS.ALLOW_OUTSIDE_WORKSPACE_ACCESS,
         "agent-maestro.allowOutsideWorkspaceAccess",
+      );
+      assert.strictEqual(
+        CONFIG_KEYS.FALLBACK_MODEL_ID,
+        "agent-maestro.fallbackModelId",
       );
     });
   });
@@ -72,6 +77,10 @@ suite("Config Test Suite", () => {
       assert.ok(
         typeof config.allowOutsideWorkspaceAccess === "boolean",
         "allowOutsideWorkspaceAccess should be a boolean",
+      );
+      assert.ok(
+        typeof config.fallbackModelId === "string",
+        "fallbackModelId should be a string",
       );
     });
 

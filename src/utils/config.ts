@@ -6,6 +6,7 @@ export interface AgentMaestroConfiguration {
   proxyServerPort: number;
   mcpServerPort: number;
   allowOutsideWorkspaceAccess: boolean;
+  fallbackModelId: string;
 }
 
 /**
@@ -17,6 +18,7 @@ export const CONFIG_KEYS = {
   PROXY_SERVER_PORT: "agent-maestro.proxyServerPort",
   MCP_SERVER_PORT: "agent-maestro.mcpServerPort",
   ALLOW_OUTSIDE_WORKSPACE_ACCESS: "agent-maestro.allowOutsideWorkspaceAccess",
+  FALLBACK_MODEL_ID: "agent-maestro.fallbackModelId",
 } as const;
 
 /**
@@ -28,6 +30,7 @@ export const DEFAULT_CONFIG: AgentMaestroConfiguration = {
   proxyServerPort: 23333,
   mcpServerPort: 23334,
   allowOutsideWorkspaceAccess: false,
+  fallbackModelId: "",
 };
 
 /**
@@ -56,6 +59,10 @@ export const readConfiguration = (): AgentMaestroConfiguration => {
     allowOutsideWorkspaceAccess: config.get<boolean>(
       CONFIG_KEYS.ALLOW_OUTSIDE_WORKSPACE_ACCESS,
       DEFAULT_CONFIG.allowOutsideWorkspaceAccess,
+    ),
+    fallbackModelId: config.get<string>(
+      CONFIG_KEYS.FALLBACK_MODEL_ID,
+      DEFAULT_CONFIG.fallbackModelId,
     ),
   };
 };

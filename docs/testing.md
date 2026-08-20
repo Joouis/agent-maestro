@@ -19,7 +19,7 @@ pnpm run watch-tests
 
 | Test File                                      | Tests | What It Covers                                            |
 | ---------------------------------------------- | ----- | --------------------------------------------------------- |
-| `extension.test.ts`                            | 11    | Extension activation, command registration, configuration |
+| `extension.test.ts`                            | 12    | Extension activation, command registration, configuration |
 | `utils/config.test.ts`                         | 5     | Configuration defaults and reading                        |
 | `utils/mimeTypes.test.ts`                      | 12    | MIME type detection for file extensions                   |
 | `utils/rooSettingsFilter.test.ts`              | 5     | API key filtering from settings                           |
@@ -29,7 +29,7 @@ pnpm run watch-tests
 | `schemas/common.test.ts`                       | 7     | Common schemas (file ops, extension info, OS info)        |
 | `server/anthropic.test.ts`                     | 23    | Anthropic → VS Code message conversion                    |
 | `server/languageModelRequestLifecycle.test.ts` | 14    | LM request timeout and disconnect cancellation            |
-| `server/modelResolution.test.ts`               | 16    | Model matching and Copilot model configuration            |
+| `server/modelResolution.test.ts`               | 17    | Model matching and Copilot model configuration            |
 | `server/openaiChat.test.ts`                    | 15    | OpenAI → VS Code message conversion                       |
 | `server/openaiResponses.test.ts`               | 52    | OpenAI Responses → VS Code conversion                     |
 | `server/gemini.test.ts`                        | 27    | Gemini → VS Code message conversion                       |

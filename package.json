@@ -84,6 +84,12 @@
           "default": false,
           "description": "Allow the extension to access files outside of the current workspace",
           "scope": "application"
+        },
+        "agent-maestro.fallbackModelId": {
+          "type": "string",
+          "default": "",
+          "description": "Model ID to use when a requested model is unavailable after exact and fuzzy matching. Leave empty to use VS Code's automatic model fallback.",
+          "scope": "application"
         }
       }
     },
@@ -151,6 +157,11 @@
       {
         "command": "agent-maestro.configureGeminiCli",
         "title": "Configure Gemini CLI Settings",
+        "category": "Agent Maestro"
+      },
+      {
+        "command": "agent-maestro.selectFallbackModel",
+        "title": "Select Fallback Model",
         "category": "Agent Maestro"
       },
       {
