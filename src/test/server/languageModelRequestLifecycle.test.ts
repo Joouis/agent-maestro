@@ -419,6 +419,60 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
   });
 
+  test("handles requests containing only unsupported Responses tools", async () => {
+    let capturedOptions: vscode.LanguageModelChatRequestOptions | undefined;
+    const model = {
+      id: "gpt-5.6-test",
+      name: "GPT 5.6 Test",
+      family: "gpt-5.6",
+      version: "test",
+      vendor: "copilot",
+      maxInputTokens: 200000,
+      capabilities: { supportsImageToText: false, supportsToolCalling: true },
+      sendRequest: async (
+        _messages: readonly vscode.LanguageModelChatMessage[],
+        options?: vscode.LanguageModelChatRequestOptions,
+      ) => {
+        capturedOptions = options;
+        return {
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart("ok");
+          })(),
+          text: (async function* () {
+            yield "ok";
+          })(),
+        };
+      },
+      countTokens: async () => 1,
+    } as unknown as vscode.LanguageModelChat;
+    const app = createOpenaiResponsesTestApp(model);
+    const request = {
+      model: "gpt-5.6-test",
+      input: "Search the web",
+      tools: [{ type: "web_search" }],
+    };
+
+    const autoResponse = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...request, tool_choice: "auto" }),
+    });
+
+    assert.strictEqual(autoResponse.status, 200);
+    assert.strictEqual(capturedOptions?.tools, undefined);
+    assert.strictEqual(capturedOptions?.toolMode, undefined);
+
+    const requiredResponse = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...request, tool_choice: "required" }),
+    });
+    const requiredBody = (await requiredResponse.json()) as any;
+
+    assert.strictEqual(requiredResponse.status, 400);
+    assert.strictEqual(requiredBody.error.code, "tool_not_found");
+  });
+
   test("emits one response.failed without response.completed", async () => {
     let cancellationObserved = false;
     const app = createOpenaiResponsesTestApp(

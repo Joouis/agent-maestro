@@ -2,7 +2,7 @@
   "name": "agent-maestro",
   "displayName": "Agent Maestro",
   "description": "Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code or Codex straight in through an OpenAI/Anthropic-compatible API.",
-  "version": "2.11.1",
+  "version": "2.11.2",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
   "repository": "https://github.com/Joouis/agent-maestro",
@@ -84,12 +84,6 @@
           "default": false,
           "description": "Allow the extension to access files outside of the current workspace",
           "scope": "application"
-        },
-        "agent-maestro.experimentalGpt5PlusWebSearchEnabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable the experimental GPT-5+ web search Copilot bundle patch for OpenAI Responses requests. This is toggled by the Agent Maestro patch/restore commands.",
-          "scope": "application"
         }
       }
     },
@@ -157,16 +151,6 @@
       {
         "command": "agent-maestro.configureGeminiCli",
         "title": "Configure Gemini CLI Settings",
-        "category": "Agent Maestro"
-      },
-      {
-        "command": "agent-maestro.enableExperimentalGpt5PlusWebSearch",
-        "title": "Enable Experimental GPT-5+ Web Search",
-        "category": "Agent Maestro"
-      },
-      {
-        "command": "agent-maestro.restoreExperimentalGpt5PlusWebSearchBackup",
-        "title": "Restore Experimental GPT-5+ Web Search Backup",
         "category": "Agent Maestro"
       },
       {

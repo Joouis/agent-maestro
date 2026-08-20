@@ -20,10 +20,6 @@ suite("Config Test Suite", () => {
       assert.strictEqual(DEFAULT_CONFIG.proxyServerPort, 23333);
       assert.strictEqual(DEFAULT_CONFIG.mcpServerPort, 23334);
       assert.strictEqual(DEFAULT_CONFIG.allowOutsideWorkspaceAccess, false);
-      assert.strictEqual(
-        DEFAULT_CONFIG.experimentalGpt5PlusWebSearchEnabled,
-        false,
-      );
     });
   });
 
@@ -76,10 +72,6 @@ suite("Config Test Suite", () => {
       assert.ok(
         typeof config.allowOutsideWorkspaceAccess === "boolean",
         "allowOutsideWorkspaceAccess should be a boolean",
-      );
-      assert.ok(
-        typeof config.experimentalGpt5PlusWebSearchEnabled === "boolean",
-        "experimentalGpt5PlusWebSearchEnabled should be a boolean",
       );
     });
 

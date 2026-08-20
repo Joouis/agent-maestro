@@ -41,8 +41,6 @@ export type ToolChoice =
   | ToolChoiceApplyPatch
   | ToolChoiceShell;
 
-export type ResponseTool = Tool;
-
 /**
  * Output item types for Responses API (subset we generate)
  */
@@ -546,7 +544,6 @@ export type ConvertedTools = {
 
 export const convertResponsesToolsToVSCode = (
   tools?: Tool[],
-  options: { webSearchHandledByCopilotPatch?: boolean } = {},
 ): ConvertedTools => {
   const vsCodeTools: vscode.LanguageModelChatTool[] = [];
   const toolMap: ToolMap = new Map();
@@ -610,9 +607,7 @@ export const convertResponsesToolsToVSCode = (
           );
         }
       }
-    } else if (
-      !(options.webSearchHandledByCopilotPatch && isWebSearchTool(tool))
-    ) {
+    } else {
       // Known tool types are expected and frequent, so keep the log at debug.
       logger.debug(`Tool type "${tool.type}" not supported, skipping`);
     }
@@ -649,14 +644,6 @@ export const extractAdditionalTools = (
 
   return tools;
 };
-
-export function getResponsesWebSearchTool(tools?: Tool[]): Tool | undefined {
-  return tools?.find((tool) => !!tool && isWebSearchTool(tool));
-}
-
-function isWebSearchTool(tool: Tool): boolean {
-  return typeof tool.type === "string" && tool.type.startsWith("web_search");
-}
 
 /**
  * Convert tool choice to VSCode LM tool mode

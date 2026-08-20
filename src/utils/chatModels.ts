@@ -249,20 +249,6 @@ export function getCopilotModelConfiguration({
   return configuration;
 }
 
-export function isGpt5PlusModel(
-  requestedModelId: string,
-  model: vscode.LanguageModelChat,
-): boolean {
-  return [requestedModelId, model.id, model.family, model.name].some(
-    (value) => {
-      const match = /^gpt-(\d+)/.exec(
-        String(value).toLowerCase().replace(/\./g, "-"),
-      );
-      return !!match && Number(match[1]) >= 5;
-    },
-  );
-}
-
 /**
  * VS Code stores provider-specific model configuration separately from public
  * `modelOptions`. Copilot reads this bag for settings like context size and

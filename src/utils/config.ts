@@ -6,7 +6,6 @@ export interface AgentMaestroConfiguration {
   proxyServerPort: number;
   mcpServerPort: number;
   allowOutsideWorkspaceAccess: boolean;
-  experimentalGpt5PlusWebSearchEnabled: boolean;
 }
 
 /**
@@ -18,8 +17,6 @@ export const CONFIG_KEYS = {
   PROXY_SERVER_PORT: "agent-maestro.proxyServerPort",
   MCP_SERVER_PORT: "agent-maestro.mcpServerPort",
   ALLOW_OUTSIDE_WORKSPACE_ACCESS: "agent-maestro.allowOutsideWorkspaceAccess",
-  EXPERIMENTAL_GPT5_PLUS_WEB_SEARCH_ENABLED:
-    "agent-maestro.experimentalGpt5PlusWebSearchEnabled",
 } as const;
 
 /**
@@ -31,7 +28,6 @@ export const DEFAULT_CONFIG: AgentMaestroConfiguration = {
   proxyServerPort: 23333,
   mcpServerPort: 23334,
   allowOutsideWorkspaceAccess: false,
-  experimentalGpt5PlusWebSearchEnabled: false,
 };
 
 /**
@@ -60,10 +56,6 @@ export const readConfiguration = (): AgentMaestroConfiguration => {
     allowOutsideWorkspaceAccess: config.get<boolean>(
       CONFIG_KEYS.ALLOW_OUTSIDE_WORKSPACE_ACCESS,
       DEFAULT_CONFIG.allowOutsideWorkspaceAccess,
-    ),
-    experimentalGpt5PlusWebSearchEnabled: config.get<boolean>(
-      CONFIG_KEYS.EXPERIMENTAL_GPT5_PLUS_WEB_SEARCH_ENABLED,
-      DEFAULT_CONFIG.experimentalGpt5PlusWebSearchEnabled,
     ),
   };
 };

@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.11.2 - 2026.08.20
+
+- Preserve images nested in OpenAI Responses tool outputs as VS Code language model data parts instead of serializing their base64 payloads as text.
+- Keep Anthropic, OpenAI, and Gemini SSE responses active while waiting for slow language model output.
+- Remove the nonfunctional experimental GPT-5+ web search commands and unstable Copilot bundle patching, which repeatedly broke across VS Code releases.
+
 ## v2.11.1 - 2026.07.17
 
 - Add `Configure Claude Desktop Settings` command to point Claude Desktop at the Agent Maestro proxy.
