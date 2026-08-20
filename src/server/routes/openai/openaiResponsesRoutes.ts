@@ -290,43 +290,54 @@ export function registerOpenaiResponsesRoutes(
 
       const { tools: vsCodeTools, toolMap } =
         convertResponsesToolsToVSCode(effectiveTools);
-      const shouldPassTools =
-        tool_choice !== "none" && effectiveTools.length > 0;
 
-      let narrowedTools = vsCodeTools;
-      if (shouldPassTools) {
-        const narrowed = narrowToolsForChoice(
-          tool_choice as ToolChoice,
-          vsCodeTools,
-          toolMap,
-        );
-        if (!narrowed.ok) {
-          return c.json(
-            {
-              error: {
-                type: "invalid_request_error",
-                message:
-                  `tool_choice named "${narrowed.targetName}" matched ` +
-                  `${narrowed.matchCount} tools. A named tool_choice must ` +
-                  "resolve to exactly one available tool.",
-                param: "tool_choice",
-                code:
-                  narrowed.matchCount === 0
-                    ? "tool_not_found"
-                    : "ambiguous_tool_choice",
-              },
+      const narrowed = narrowToolsForChoice(
+        tool_choice as ToolChoice,
+        vsCodeTools,
+        toolMap,
+      );
+      if (!narrowed.ok) {
+        return c.json(
+          {
+            error: {
+              type: "invalid_request_error",
+              message:
+                `tool_choice named "${narrowed.targetName}" matched ` +
+                `${narrowed.matchCount} tools. A named tool_choice must ` +
+                "resolve to exactly one available tool.",
+              param: "tool_choice",
+              code:
+                narrowed.matchCount === 0
+                  ? "tool_not_found"
+                  : "ambiguous_tool_choice",
             },
-            400,
-          );
-        }
-        narrowedTools = narrowed.tools;
+          },
+          400,
+        );
       }
 
+      if (tool_choice === "required" && narrowed.tools.length === 0) {
+        return c.json(
+          {
+            error: {
+              type: "invalid_request_error",
+              message:
+                'tool_choice is "required", but no supported tools are available.',
+              param: "tool_choice",
+              code: "tool_not_found",
+            },
+          },
+          400,
+        );
+      }
+
+      const shouldPassTools =
+        tool_choice !== "none" && narrowed.tools.length > 0;
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
         justification:
           "OpenAI Responses API endpoint using VS Code Language Model API",
         modelOptions,
-        tools: shouldPassTools ? narrowedTools : undefined,
+        tools: shouldPassTools ? narrowed.tools : undefined,
         toolMode: shouldPassTools
           ? convertToolChoice(tool_choice as ToolChoice)
           : undefined,
