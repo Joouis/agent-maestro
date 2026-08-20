@@ -347,6 +347,26 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       );
     });
 
+    test("should serialize malformed typed tool output parts as JSON", () => {
+      const malformedImage = { type: "input_image", image_url: 42 };
+      const malformedText = { type: "input_text", text: { value: "done" } };
+      const result = convertResponsesItemToVSCode({
+        type: "custom_tool_call_output",
+        call_id: "call_exec_1",
+        output: [malformedImage, malformedText],
+      } as any);
+      const toolResult = (result!.content as any[])[0];
+
+      assert.strictEqual(
+        toolResult.content[0].value,
+        JSON.stringify(malformedImage),
+      );
+      assert.strictEqual(
+        toolResult.content[1].value,
+        JSON.stringify(malformedText),
+      );
+    });
+
     test("should preserve custom_tool_call_output images as DataPart", () => {
       const item = {
         type: "custom_tool_call_output" as const,

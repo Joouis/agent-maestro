@@ -240,17 +240,48 @@ const convertToolOutputToVSCodeParts = (
   }
 
   return output.map((part) => {
-    if (
-      part &&
-      typeof part === "object" &&
-      typeof (part as { type?: unknown }).type === "string"
-    ) {
-      return convertInputContentToVSCodePart(
-        part as ResponseInputContent | ResponseOutputText,
-      );
+    if (isConvertibleToolOutputPart(part)) {
+      return convertInputContentToVSCodePart(part);
     }
     return new vscode.LanguageModelTextPart(JSON.stringify(part) ?? "");
   });
+};
+
+const isConvertibleToolOutputPart = (
+  part: unknown,
+): part is ResponseInputContent | ResponseOutputText => {
+  if (!part || typeof part !== "object") {
+    return false;
+  }
+
+  const content = part as Record<string, unknown>;
+  switch (content.type) {
+    case "input_text":
+    case "output_text":
+      return typeof content.text === "string";
+    case "input_image":
+      return (
+        (content.image_url === null ||
+          content.image_url === undefined ||
+          typeof content.image_url === "string") &&
+        (content.file_id === null ||
+          content.file_id === undefined ||
+          typeof content.file_id === "string")
+      );
+    case "input_file":
+      return (
+        (content.file_data === undefined ||
+          typeof content.file_data === "string") &&
+        (content.file_id === null ||
+          content.file_id === undefined ||
+          typeof content.file_id === "string") &&
+        (content.file_url === undefined ||
+          typeof content.file_url === "string") &&
+        (content.filename === undefined || typeof content.filename === "string")
+      );
+    default:
+      return false;
+  }
 };
 
 /**
