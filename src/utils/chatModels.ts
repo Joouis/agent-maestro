@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
 
+import { readConfiguration } from "./config";
 import { logger } from "./logger";
 
 const SUPPORTED_VENDOR = "copilot";
+const warnedUnavailableFallbackModelIds = new Set<string>();
 
 async function selectSupportedModels(): Promise<vscode.LanguageModelChat[]> {
   const allModels = await vscode.lm.selectChatModels();
@@ -351,7 +353,8 @@ function findBestMatch(
  * This function handles:
  * 1. Exact match lookup
  * 2. Fuzzy matching using Jaccard similarity
- * 3. Fallback to "auto" or first available model
+ * 3. Configured fallback model
+ * 4. Fallback to "auto" or first available model
  *
  * Note: We don't refresh the cache if a model isn't found because vscode.lm.selectChatModels()
  * doesn't update dynamically when network state changes - the VS Code API returns the same
@@ -360,24 +363,38 @@ function findBestMatch(
 export const getChatModelClient = async (modelId: string) => {
   const models = await chatModelsCache.getChatModels();
 
-  // 1. Try exact match
-  let client = models.find((m) => m.id === modelId);
+  let client = models.find((model) => model.id === modelId);
   if (client) {
     return { client };
   }
 
-  // 2. Try fuzzy matching with Jaccard similarity
   const fuzzyMatch = findBestMatch(modelId, models);
   if (fuzzyMatch) {
     return { client: fuzzyMatch };
   }
 
-  // 3. Fallback to "auto" or first model
-  const autoModel = models.find((m) => m.id === "auto");
-  client = models.find((m) => m.version === autoModel?.version);
-  if (client) {
-    logger.info(`Model "${modelId}" not found, using ${client.id} model`);
-    return { client };
+  const fallbackModelId = readConfiguration().fallbackModelId.trim();
+  if (fallbackModelId) {
+    client = models.find((model) => model.id === fallbackModelId);
+    if (client) {
+      warnedUnavailableFallbackModelIds.delete(fallbackModelId);
+      logger.info(
+        `Model "${modelId}" not found, using configured fallback model: ${client.id}`,
+      );
+      return { client };
+    }
+    if (!warnedUnavailableFallbackModelIds.has(fallbackModelId)) {
+      warnedUnavailableFallbackModelIds.add(fallbackModelId);
+      logger.warn(
+        `Configured fallback model "${fallbackModelId}" is unavailable; continuing with automatic fallback`,
+      );
+    }
+  }
+
+  const autoModel = models.find((model) => model.id === "auto");
+  if (autoModel) {
+    logger.info(`Model "${modelId}" not found, using auto model`);
+    return { client: autoModel };
   }
 
   if (models.length > 0) {

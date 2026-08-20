@@ -6,6 +6,7 @@ import { ProxyServer } from "../server/ProxyServer";
 import { registerConfiguratorCommands } from "./configuratorCommands";
 import { registerLlmApiKeyCommands } from "./llmApiKeyCommands";
 import { registerMcpCommands } from "./mcpCommands";
+import { registerModelCommands } from "./modelCommands";
 import { registerProxyCommands } from "./proxyCommands";
 import { registerStatusCommands } from "./statusCommands";
 
@@ -18,6 +19,7 @@ export function registerAllCommands(
   registerProxyCommands(proxy, context);
   registerMcpCommands(mcpServer, context);
   registerConfiguratorCommands(proxy, context);
+  registerModelCommands(context);
   registerStatusCommands(controller, context);
   registerLlmApiKeyCommands(proxy, context);
 }

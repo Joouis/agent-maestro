@@ -87,6 +87,10 @@ Additionally, it creates or updates `settings.json` in the same folder to skip t
 }
 ```
 
+### Fallback Model
+
+Run `Agent Maestro: Select Fallback Model` to choose which available VS Code language model Agent Maestro should use when a client requests an unknown model ID. Exact and fuzzy model matches still take priority. Select the `auto` model to retain VS Code's automatic model selection.
+
 ### Usage
 
 1. **Explore API Capabilities**: Access the complete OpenAPI specification at [`http://localhost:23333/openapi.json`](http://localhost:23333/openapi.json).
@@ -117,6 +121,7 @@ Additionally, it creates or updates `settings.json` in the same folder to skip t
    - `Agent Maestro: Configure Claude Desktop Settings` - One-click Claude Desktop setup
    - `Agent Maestro: Configure Codex Settings` - One-click Codex setup
    - `Agent Maestro: Configure Gemini CLI Settings` - One-click Gemini CLI setup
+   - `Agent Maestro: Select Fallback Model` - Select a global fallback for unknown model IDs
    - `Agent Maestro: Set LLM API Key` - Configure authentication for LLM API endpoints
 
 3. **Development Resources**:
