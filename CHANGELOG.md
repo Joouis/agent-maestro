@@ -2,7 +2,7 @@
 
 ## v2.12.0 - 2026.08.20
 
-- Add a global fallback model setting and selection command for requests whose model ID cannot be matched to an available VS Code language model.
+- Add the global `agent-maestro.fallbackModelId` setting and `Agent Maestro: Select Fallback Model` command for requests whose model ID cannot be matched to an available VS Code language model.
 
 ## v2.11.2 - 2026.08.20
 
