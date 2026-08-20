@@ -15,7 +15,7 @@ export function registerModelCommands(context: vscode.ExtensionContext) {
       const modelOptions = await getChatModelsQuickPickItems();
       if (modelOptions.length === 0) {
         vscode.window.showErrorMessage(
-          "No available chat model provided by VS Code LM API.",
+          "No chat models are currently available from the VS Code Language Model API.",
         );
         return;
       }
