@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12.0 - 2026.08.20
+
+- Add a global fallback model setting and selection command for requests whose model ID cannot be matched to an available VS Code language model.
+
 ## v2.11.2 - 2026.08.20
 
 - Preserve images nested in OpenAI Responses tool outputs as VS Code language model data parts instead of serializing their base64 payloads as text.
