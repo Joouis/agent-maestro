@@ -580,12 +580,84 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         namespace: "collaboration",
         name: "spawn_agent",
         isCustom: false,
+        plaintextArguments: true,
       });
       assert.deepStrictEqual(toolMap.get("collaboration__raw_helper"), {
         namespace: "collaboration",
         name: "raw_helper",
         isCustom: true,
       });
+    });
+
+    test("should expose Codex collaboration messages as plaintext", () => {
+      const parameters = {
+        type: "object",
+        properties: {
+          message: {
+            type: "string",
+            description: "Initial task",
+            encrypted: true,
+          },
+          task_name: { type: "string" },
+        },
+        required: ["task_name", "message"],
+      };
+      const tools = [
+        {
+          type: "namespace",
+          name: "collaboration",
+          description: "Sub-agent tools",
+          tools: [
+            ...["spawn_agent", "send_message", "followup_task"].map((name) => ({
+              type: "function",
+              name,
+              parameters,
+            })),
+          ],
+        },
+      ];
+
+      const { tools: result, toolMap } = convertResponsesToolsToVSCode(
+        tools as any,
+      );
+      assert.strictEqual(result.length, 3);
+      for (const tool of result) {
+        const inputSchema = tool.inputSchema as any;
+        assert.strictEqual(inputSchema.properties.message.encrypted, undefined);
+        assert.strictEqual(inputSchema.properties.message.type, "string");
+        assert.strictEqual(toolMap.get(tool.name)?.plaintextArguments, true);
+      }
+      assert.strictEqual(
+        parameters.properties.message.encrypted,
+        true,
+        "request schema must not be mutated",
+      );
+    });
+
+    test("should preserve encrypted markers on unrelated function tools", () => {
+      const tools = [
+        {
+          type: "function",
+          name: "store_secret",
+          parameters: {
+            type: "object",
+            properties: {
+              message: { type: "string", encrypted: true },
+            },
+          },
+        },
+      ];
+
+      const { tools: result, toolMap } = convertResponsesToolsToVSCode(
+        tools as any,
+      );
+      const inputSchema = result[0].inputSchema as any;
+
+      assert.strictEqual(inputSchema.properties.message.encrypted, true);
+      assert.strictEqual(
+        toolMap.get("store_secret")?.plaintextArguments,
+        undefined,
+      );
     });
 
     test("should keep the first duplicate tool definition", () => {
@@ -860,7 +932,12 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       const toolMap = new Map([
         [
           "collaboration__spawn_agent",
-          { namespace: "collaboration", name: "spawn_agent", isCustom: false },
+          {
+            namespace: "collaboration",
+            name: "spawn_agent",
+            isCustom: false,
+            plaintextArguments: true,
+          },
         ],
         [
           "collaboration__raw_helper",
@@ -872,6 +949,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(fc.type, "function_call");
       assert.strictEqual(fc.name, "spawn_agent");
       assert.strictEqual(fc.namespace, "collaboration");
+      assert.deepStrictEqual(fc.encrypted_function_args, []);
       const ctc = output[1] as any;
       assert.strictEqual(ctc.type, "custom_tool_call");
       assert.strictEqual(ctc.name, "raw_helper");

@@ -44,9 +44,13 @@ export type ToolChoice =
 /**
  * Output item types for Responses API (subset we generate)
  */
+export type PlaintextResponseFunctionToolCall = ResponseFunctionToolCall & {
+  encrypted_function_args?: string[];
+};
+
 export type OutputItem =
   | ResponseOutputMessage
-  | ResponseFunctionToolCall
+  | PlaintextResponseFunctionToolCall
   | ResponseCustomToolCall;
 
 /**
@@ -533,6 +537,7 @@ export type ToolCallInfo = {
   namespace?: string;
   name: string;
   isCustom: boolean;
+  plaintextArguments?: boolean;
 };
 
 export type ToolMap = Map<string, ToolCallInfo>;
@@ -540,6 +545,57 @@ export type ToolMap = Map<string, ToolCallInfo>;
 export type ConvertedTools = {
   tools: vscode.LanguageModelChatTool[];
   toolMap: ToolMap;
+};
+
+const PLAINTEXT_COLLABORATION_TOOLS = new Set([
+  "spawn_agent",
+  "send_message",
+  "followup_task",
+]);
+
+const usesPlaintextCollaborationArguments = (info: ToolCallInfo): boolean =>
+  info.namespace === "collaboration" &&
+  !info.isCustom &&
+  PLAINTEXT_COLLABORATION_TOOLS.has(info.name);
+
+const removeEncryptedMessageMarker = (parameters: unknown): unknown => {
+  if (
+    !parameters ||
+    typeof parameters !== "object" ||
+    Array.isArray(parameters)
+  ) {
+    return parameters;
+  }
+
+  const schema = parameters as Record<string, unknown>;
+  const properties = schema.properties;
+  if (
+    !properties ||
+    typeof properties !== "object" ||
+    Array.isArray(properties)
+  ) {
+    return parameters;
+  }
+
+  const message = (properties as Record<string, unknown>).message;
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return parameters;
+  }
+
+  const messageSchema = message as Record<string, unknown>;
+  if (!Object.hasOwn(messageSchema, "encrypted")) {
+    return parameters;
+  }
+
+  const plaintextMessageSchema = { ...messageSchema };
+  delete plaintextMessageSchema.encrypted;
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      message: plaintextMessageSchema,
+    },
+  };
 };
 
 export const convertResponsesToolsToVSCode = (
@@ -563,14 +619,21 @@ export const convertResponsesToolsToVSCode = (
       );
       return;
     }
+    const plaintextArguments = usesPlaintextCollaborationArguments(info);
+    const mappedInfo = plaintextArguments
+      ? { ...info, plaintextArguments: true }
+      : info;
+    const inputSchema = plaintextArguments
+      ? removeEncryptedMessageMarker(parameters)
+      : parameters;
     vsCodeTools.push({
       name: encodedName,
       description: description ?? "",
       inputSchema: info.isCustom
         ? undefined
-        : ((parameters as object) ?? undefined),
+        : ((inputSchema as object | null | undefined) ?? undefined),
     });
-    toolMap.set(encodedName, info);
+    toolMap.set(encodedName, mappedInfo);
   };
 
   for (const tool of tools) {
@@ -755,12 +818,18 @@ export const buildResponseOutput = (
         arguments: JSON.stringify(tc.input ?? {}),
         status: "completed",
         ...(info?.namespace ? { namespace: info.namespace } : {}),
-      } as ResponseFunctionToolCall);
+        ...plaintextFunctionCallMetadata(info),
+      } as PlaintextResponseFunctionToolCall);
     }
   }
 
   return output;
 };
+
+export const plaintextFunctionCallMetadata = (
+  info?: ToolCallInfo,
+): { encrypted_function_args?: string[] } =>
+  info?.plaintextArguments ? { encrypted_function_args: [] } : {};
 
 /**
  * A `custom` tool's input is a raw string. We wrap it as `{ input: <string> }`
