@@ -419,6 +419,92 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
   });
 
+  test("uses plaintext Codex collaboration arguments in Responses", async () => {
+    let capturedOptions: vscode.LanguageModelChatRequestOptions | undefined;
+    const model = {
+      id: "gpt-5.6-test",
+      name: "GPT 5.6 Test",
+      family: "gpt-5.6",
+      version: "test",
+      vendor: "copilot",
+      maxInputTokens: 200000,
+      capabilities: { supportsImageToText: false, supportsToolCalling: true },
+      sendRequest: async (
+        _messages: readonly vscode.LanguageModelChatMessage[],
+        options?: vscode.LanguageModelChatRequestOptions,
+      ) => {
+        capturedOptions = options;
+        return {
+          stream: (async function* () {
+            yield new vscode.LanguageModelToolCallPart(
+              "call_spawn_1",
+              "collaboration__spawn_agent",
+              {
+                task_name: "reviewer",
+                fork_turns: "none",
+                message: "Review the current diff",
+              },
+            );
+          })(),
+          text: (async function* () {})(),
+        };
+      },
+      countTokens: async () => 1,
+    } as unknown as vscode.LanguageModelChat;
+    const app = createOpenaiResponsesTestApp(model);
+    const request = {
+      model: "gpt-5.6-test",
+      input: "Delegate this review",
+      tools: [
+        {
+          type: "namespace",
+          name: "collaboration",
+          description: "Sub-agent tools",
+          tools: [
+            {
+              type: "function",
+              name: "spawn_agent",
+              description: "Spawn a reviewer",
+              parameters: {
+                type: "object",
+                properties: {
+                  task_name: { type: "string" },
+                  message: { type: "string", encrypted: true },
+                },
+                required: ["task_name", "message"],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    const body = (await response.json()) as any;
+    const inputSchema = capturedOptions?.tools?.[0].inputSchema as any;
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(inputSchema.properties.message.encrypted, undefined);
+    assert.deepStrictEqual(body.output[0].encrypted_function_args, []);
+
+    const streamingResponse = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...request, stream: true }),
+    });
+    const streamingBody = await streamingResponse.text();
+
+    assert.strictEqual(streamingResponse.status, 200);
+    assert.strictEqual(
+      (streamingBody.match(/"encrypted_function_args":\[\]/g) ?? []).length,
+      3,
+    );
+  });
+
   test("handles requests containing only unsupported Responses tools", async () => {
     let capturedOptions: vscode.LanguageModelChatRequestOptions | undefined;
     const model = {

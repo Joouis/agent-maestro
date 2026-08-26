@@ -108,6 +108,15 @@ Agent Maestro is stateless and doesn't persist responses between requests.
 | `namespace`        | Nested `function`/`custom` tools are flattened. Since VSCode LM's tool-call shape has no namespace slot, each nested tool is registered under an encoded name `<namespace>__<name>` and decoded back into a separate `namespace` + bare `name` on output via a mapping table. |
 | `additional_tools` | Developer-injected tools carried on input items; merged with request-level tools before dispatch.                                                                                                                                                                             |
 
+Codex Multi-Agent V2 marks the `message` parameter of
+`collaboration.spawn_agent`, `send_message`, and `followup_task` as encrypted.
+The stable VS Code Language Model API cannot preserve that provider-specific
+encrypted-argument contract. Agent Maestro therefore removes the `encrypted`
+marker for those parameters before model dispatch and adds
+`encrypted_function_args: []` to their returned function-call items. This tells
+Codex to deliver the generated message as plaintext instead of wrapping it in
+an `agent_message.encrypted_content` item.
+
 ### Unsupported Tools
 
 Other tool types are filtered out with a debug log.
@@ -132,6 +141,13 @@ Other tool types are filtered out with a debug log.
 | `input_file`    | Not supported, serialized as JSON text                            |
 | `annotations`   | Always empty (VSCode LM doesn't provide annotations)              |
 | Reasoning items | Never generated (VSCode LM doesn't expose reasoning)              |
+
+### Manual E2E Validation
+
+Follow the
+[Codex Multi-Agent Responses E2E runbook](./codex-multi-agent-e2e.md) when
+changing tool conversion, namespace handling, function-call streaming, or Codex
+collaboration compatibility.
 
 ### Ignored Parameters
 

@@ -36,6 +36,7 @@ import {
   generateResponseId,
   getCurrentTimestamp,
   narrowToolsForChoice,
+  plaintextFunctionCallMetadata,
 } from "../../utils/openaiResponses";
 import { SSE_HEARTBEAT, withSseHeartbeat } from "../../utils/sseHeartbeat";
 
@@ -676,6 +677,7 @@ export function registerOpenaiResponsesRoutes(
                     arguments: "",
                     status: "in_progress",
                     ...(toolNamespace ? { namespace: toolNamespace } : {}),
+                    ...plaintextFunctionCallMetadata(toolInfo),
                   },
                   sequence_number: sequenceNumberRef.value++,
                 }),
@@ -711,6 +713,7 @@ export function registerOpenaiResponsesRoutes(
                 arguments: argsStr,
                 status: "completed",
                 ...(toolNamespace ? { namespace: toolNamespace } : {}),
+                ...plaintextFunctionCallMetadata(toolInfo),
               });
 
               await writeSSE({

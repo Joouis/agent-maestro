@@ -544,6 +544,7 @@ const FunctionToolCall = z.looseObject({
   call_id: z.string(),
   name: z.string(),
   arguments: z.string(),
+  encrypted_function_args: z.array(z.string()).optional(),
   status: z.enum(["in_progress", "completed", "failed"]).optional(),
 });
 
