@@ -8,6 +8,7 @@ import { ExtensionController } from "../core/controller";
 import { DEFAULT_CONFIG } from "../utils/config";
 import {
   ANOTHER_INSTANCE_RUNNING_MESSAGE,
+  EXA_API_KEY_SECRET_KEY,
   LLM_API_KEY_SECRET_KEY,
   PORT_MONITOR_INTERVAL_MS,
 } from "../utils/constant";
@@ -27,6 +28,7 @@ import { registerLmRoutes } from "./routes/lmRoutes";
 import { registerOpenaiRoutes } from "./routes/openai/openaiRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
+import { ExaMcpWebSearchProvider } from "./webSearch/exaMcpWebSearchProvider";
 
 export class ProxyServer {
   private app: OpenAPIHono;
@@ -37,6 +39,7 @@ export class ProxyServer {
   private server?: ServerType;
   private portMonitorInterval?: NodeJS.Timeout;
   private llmApiKey: string | null = null;
+  private readonly webSearchProvider: ExaMcpWebSearchProvider;
 
   constructor(
     controller: ExtensionController,
@@ -46,6 +49,10 @@ export class ProxyServer {
     this.controller = controller;
     this.context = context;
     this.port = port;
+    this.webSearchProvider = new ExaMcpWebSearchProvider({
+      getApiKey: () =>
+        Promise.resolve(this.context.secrets.get(EXA_API_KEY_SECRET_KEY)),
+    });
 
     // Initialize OpenAPIHono app with basic middleware
     this.app = new OpenAPIHono();
@@ -101,7 +108,9 @@ export class ProxyServer {
 
   private getApiAnthropicRoutes(): OpenAPIHono {
     const routes = new OpenAPIHono();
-    registerAnthropicRoutes(routes);
+    registerAnthropicRoutes(routes, {
+      webSearchProvider: this.webSearchProvider,
+    });
     return routes;
   }
 

@@ -6,7 +6,7 @@ const features = [
     icon: Zap,
     title: "Universal API Compatibility",
     description:
-      "Anthropic, OpenAI, and Gemini compatible endpoints. Use Claude Code, Codex, Gemini CLI or any LLM client seamlessly.",
+      "Anthropic, OpenAI, and Gemini compatible endpoints, including transparent Anthropic server web search through Exa.",
   },
   {
     icon: MousePointer,

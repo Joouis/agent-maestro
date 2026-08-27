@@ -19,6 +19,7 @@ export class LanguageModelClientDisconnectedError extends Error {
 export class LanguageModelRequestLifecycle {
   private readonly cancellationTokenSource =
     new vscode.CancellationTokenSource();
+  private readonly abortController = new AbortController();
   private interruption: Error | undefined;
   private readonly interruptionWaiters = new Set<(error: Error) => void>();
   private readonly timeout: NodeJS.Timeout;
@@ -48,6 +49,10 @@ export class LanguageModelRequestLifecycle {
 
   get token(): vscode.CancellationToken {
     return this.cancellationTokenSource.token;
+  }
+
+  get signal(): AbortSignal {
+    return this.abortController.signal;
   }
 
   async waitFor<T>(operation: PromiseLike<T>): Promise<T> {
@@ -90,6 +95,7 @@ export class LanguageModelRequestLifecycle {
     }
 
     this.interruption = error;
+    this.abortController.abort(error);
     this.cancellationTokenSource.cancel();
     for (const reject of this.interruptionWaiters) {
       reject(error);

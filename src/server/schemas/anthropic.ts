@@ -5,6 +5,7 @@ export const AnthropicErrorResponseSchema = z
     error: z.object({
       message: z.string().describe("Error message"),
       type: z.string().describe("Error type"),
+      code: z.string().optional().describe("Machine-readable error code"),
       log_file: z
         .string()
         .optional()
