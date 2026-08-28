@@ -211,14 +211,14 @@ const createVSCodeMessage = (
       );
 
 /**
- * Convert a single Anthropic MessageParam to VS Code LanguageModelChatMessage(s)
+ * Convert a single Anthropic MessageParam to a VS Code LanguageModelChatMessage
  *
  * @param message - Anthropic MessageParam with role and content
- * @returns Single message or array of messages based on content type
+ * @returns VS Code LanguageModelChatMessage
  */
 export const convertAnthropicMessageToVSCode = (
   message: Anthropic.Messages.MessageParam,
-): vscode.LanguageModelChatMessage | vscode.LanguageModelChatMessage[] => {
+): vscode.LanguageModelChatMessage => {
   // Handle string content - always returns single message
   if (typeof message.content === "string") {
     return message.role === "user"
@@ -234,10 +234,9 @@ export const convertAnthropicMessageToVSCode = (
 
 /**
  * Convert an array of Anthropic MessageParams to VS Code LanguageModelChatMessages
- * Flattens any array results from individual message conversions
  *
  * @param messages - Array of Anthropic MessageParam
- * @returns Flat array of VS Code LanguageModelChatMessage
+ * @returns Array of VS Code LanguageModelChatMessage
  */
 export const convertAnthropicMessagesToVSCode = (
   messages: Array<Anthropic.Messages.MessageParam>,
