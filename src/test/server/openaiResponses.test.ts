@@ -16,6 +16,7 @@ import {
   generateResponseId,
   narrowToolsForChoice,
 } from "../../server/utils/openaiResponses";
+import { logger } from "../../utils/logger";
 
 const encode = (value: unknown): Uint8Array =>
   new TextEncoder().encode(JSON.stringify(value));
@@ -500,6 +501,174 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       ];
       const result = convertResponsesInputToVSCode(input);
       assert.strictEqual(result.length, 2);
+    });
+
+    test("should pair parallel function outputs by call ID", () => {
+      const result = convertResponsesInputToVSCode([
+        {
+          type: "function_call",
+          id: "fc_a",
+          call_id: "call_a",
+          name: "first",
+          arguments: "{}",
+        },
+        {
+          type: "function_call",
+          id: "fc_b",
+          call_id: "call_b",
+          name: "second",
+          arguments: "{}",
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_b",
+          output: "second result",
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_a",
+          output: "first result",
+        },
+      ]);
+
+      const toolResults = result
+        .flatMap((message) => message.content)
+        .filter(
+          (part) => part instanceof vscode.LanguageModelToolResultPart,
+        ) as vscode.LanguageModelToolResultPart[];
+      assert.deepStrictEqual(
+        toolResults.map((part) => part.callId),
+        ["call_b", "call_a"],
+      );
+    });
+
+    test("should preserve orphaned outputs as text and drop duplicates", () => {
+      const warnings: string[] = [];
+      const originalWarn = logger.warn;
+      logger.warn = (message: string) => warnings.push(message);
+
+      try {
+        const result = convertResponsesInputToVSCode([
+          {
+            type: "function_call",
+            id: "fc_known",
+            call_id: "call_known",
+            name: "known",
+            arguments: "{}",
+          },
+          {
+            type: "custom_tool_call",
+            id: "ctc_known",
+            call_id: "call_custom",
+            name: "shell",
+            input: "pwd",
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_missing",
+            output: "orphaned output",
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_known",
+            output: "first output",
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_known",
+            output: "duplicate output",
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_missing",
+            output: "duplicate orphaned output",
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "call_custom",
+            output: "custom output",
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "call_custom",
+            output: "duplicate custom output",
+          },
+        ] as any);
+
+        assert.strictEqual(result.length, 5);
+        const orphanedParts = result[2].content;
+        assert.ok(orphanedParts[0] instanceof vscode.LanguageModelTextPart);
+        assert.match(
+          (orphanedParts[0] as vscode.LanguageModelTextPart).value,
+          /call_missing/,
+        );
+        assert.strictEqual(
+          (orphanedParts[1] as vscode.LanguageModelTextPart).value,
+          "orphaned output",
+        );
+        const toolResults = result
+          .flatMap((message) => message.content)
+          .filter(
+            (part) => part instanceof vscode.LanguageModelToolResultPart,
+          ) as vscode.LanguageModelToolResultPart[];
+        assert.deepStrictEqual(
+          toolResults.map((part) => part.callId),
+          ["call_known", "call_custom"],
+        );
+        assert.strictEqual(warnings.length, 1);
+        assert.match(warnings[0], /converted 1 orphaned result/);
+        assert.match(warnings[0], /dropped 3 duplicate result/);
+      } finally {
+        logger.warn = originalWarn;
+      }
+    });
+
+    test("should preserve calls and outputs with invalid IDs as text", () => {
+      const warnings: string[] = [];
+      const originalWarn = logger.warn;
+      logger.warn = (message: string) => warnings.push(message);
+
+      try {
+        const result = convertResponsesInputToVSCode([
+          {
+            type: "function_call",
+            id: "fc_missing",
+            name: "missing",
+            arguments: "{}",
+          },
+          {
+            type: "function_call_output",
+            call_id: null,
+            output: "null output",
+          },
+          {
+            type: "custom_tool_call",
+            id: "ctc_number",
+            call_id: 42,
+            name: "number",
+            input: "pwd",
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: { invalid: true },
+            output: "object output",
+          },
+        ] as any);
+
+        assert.strictEqual(result.length, 4);
+        assert.ok(
+          result
+            .flatMap((message) => message.content)
+            .every((part) => part instanceof vscode.LanguageModelTextPart),
+        );
+        assert.strictEqual(warnings.length, 1);
+        assert.match(
+          warnings[0],
+          /converted 2 call\(s\) and 2 result\(s\) with invalid IDs/,
+        );
+      } finally {
+        logger.warn = originalWarn;
+      }
     });
   });
 

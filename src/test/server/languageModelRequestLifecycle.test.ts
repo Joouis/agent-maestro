@@ -57,6 +57,34 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
       countTokens: async () => 0,
     }) as vscode.LanguageModelChat;
 
+  const createSuccessfulModel = (
+    onRequest: (messages: readonly vscode.LanguageModelChatMessage[]) => void,
+  ): vscode.LanguageModelChat =>
+    ({
+      id: "test-model",
+      name: "Test Model",
+      family: "test",
+      version: "test",
+      vendor: "copilot",
+      maxInputTokens: 200000,
+      capabilities: {
+        supportsImageToText: true,
+        supportsToolCalling: true,
+      },
+      sendRequest: async (messages) => {
+        onRequest(messages);
+        return {
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart("ok");
+          })(),
+          text: (async function* () {
+            yield "ok";
+          })(),
+        };
+      },
+      countTokens: async () => 1,
+    }) as vscode.LanguageModelChat;
+
   const createAnthropicTestApp = (model: vscode.LanguageModelChat) => {
     const app = new OpenAPIHono();
     registerAnthropicRoutes(app, {
@@ -417,6 +445,75 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     const toolResult = capturedMessages[1].content[0] as any;
     assert.ok(toolResult.content[0] instanceof vscode.LanguageModelTextPart);
     assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
+  });
+
+  test("recovers invalid tool IDs before both routes call the model", async () => {
+    const capturedRequests: Array<readonly vscode.LanguageModelChatMessage[]> =
+      [];
+    const model = createSuccessfulModel((messages) => {
+      capturedRequests.push(messages);
+    });
+    const anthropicApp = createAnthropicTestApp(model);
+    const responsesApp = createOpenaiResponsesTestApp(model);
+
+    const anthropicResponse = await anthropicApp.request("/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "test-model",
+        max_tokens: 16,
+        messages: [
+          {
+            role: "assistant",
+            content: [{ type: "tool_use", name: "missing", input: {} }],
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: null,
+                content: "invalid output",
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    const responsesResponse = await responsesApp.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "test-model",
+        input: [
+          {
+            type: "function_call",
+            id: "fc_missing",
+            name: "missing",
+            arguments: "{}",
+          },
+          {
+            type: "function_call_output",
+            call_id: null,
+            output: "invalid output",
+          },
+        ],
+      }),
+    });
+
+    assert.strictEqual(anthropicResponse.status, 200);
+    assert.strictEqual(responsesResponse.status, 200);
+    assert.strictEqual(capturedRequests.length, 2);
+    for (const request of capturedRequests) {
+      const parts = request.flatMap((message) => message.content);
+      assert.ok(
+        parts.every(
+          (part) =>
+            !(part instanceof vscode.LanguageModelToolCallPart) &&
+            !(part instanceof vscode.LanguageModelToolResultPart),
+        ),
+      );
+    }
   });
 
   test("uses plaintext Codex collaboration arguments in Responses", async () => {

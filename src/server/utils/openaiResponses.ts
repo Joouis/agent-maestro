@@ -27,6 +27,10 @@ import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
 import { mimeForVscodeLm } from "./imageMime";
+import {
+  ToolResultPairingTracker,
+  logToolResultRecovery,
+} from "./toolResultPairing";
 
 /**
  * Import types from OpenAI SDK for Responses API
@@ -468,6 +472,69 @@ export const convertResponsesItemToVSCode = (
   return null;
 };
 
+const convertResponsesItemWithPairing = (
+  item: ResponseInputItem,
+  pairing: {
+    customTools: ToolResultPairingTracker;
+    functionTools: ToolResultPairingTracker;
+  },
+): vscode.LanguageModelChatMessage | null => {
+  const type = (item as unknown as { type?: string })?.type;
+  if (type === "function_call") {
+    if (
+      !pairing.functionTools.recordCall(
+        (item as ResponseFunctionToolCall).call_id,
+      )
+    ) {
+      return invalidToolCallToVSCodeMessage(item);
+    }
+  } else if (type === "custom_tool_call") {
+    if (
+      !pairing.customTools.recordCall(
+        (item as unknown as ResponseCustomToolCall).call_id,
+      )
+    ) {
+      return invalidToolCallToVSCodeMessage(item);
+    }
+  } else if (
+    type === "function_call_output" ||
+    type === "custom_tool_call_output"
+  ) {
+    const output = item as unknown as
+      | ResponseInputItem.FunctionCallOutput
+      | ResponseCustomToolCallOutput;
+    const tracker =
+      type === "function_call_output"
+        ? pairing.functionTools
+        : pairing.customTools;
+    const result = tracker.recordResult(output.call_id);
+    if (result === "duplicate") {
+      return null;
+    }
+    if (result === "invalid" || result === "orphaned") {
+      return vscode.LanguageModelChatMessage.User([
+        new vscode.LanguageModelTextPart(
+          result === "invalid"
+            ? `[Tool result with an invalid call ID: ${JSON.stringify(output.call_id) ?? String(output.call_id)}]`
+            : `[Tool result without a matching tool call: ${JSON.stringify(output.call_id)}]`,
+        ),
+        ...convertToolOutputToVSCodeParts(output.output),
+      ]);
+    }
+  }
+
+  return convertResponsesItemToVSCode(item);
+};
+
+const invalidToolCallToVSCodeMessage = (
+  item: ResponseInputItem,
+): vscode.LanguageModelChatMessage =>
+  vscode.LanguageModelChatMessage.Assistant([
+    new vscode.LanguageModelTextPart(
+      `[Tool call with an invalid call ID]\n${JSON.stringify(item)}`,
+    ),
+  ]);
+
 /**
  * Convert Responses API input to VSCode LM messages
  */
@@ -476,6 +543,10 @@ export const convertResponsesInputToVSCode = (
   instruction?: string | ResponseInput | null,
 ): vscode.LanguageModelChatMessage[] => {
   const messages: vscode.LanguageModelChatMessage[] = [];
+  const pairing = {
+    customTools: new ToolResultPairingTracker(),
+    functionTools: new ToolResultPairingTracker(),
+  };
 
   // Add instruction as first user message if present
   if (instruction) {
@@ -483,7 +554,7 @@ export const convertResponsesInputToVSCode = (
       messages.push(vscode.LanguageModelChatMessage.User(instruction));
     } else if (Array.isArray(instruction)) {
       for (const item of instruction) {
-        const converted = convertResponsesItemToVSCode(item);
+        const converted = convertResponsesItemWithPairing(item, pairing);
         if (converted) {
           messages.push(converted);
         }
@@ -494,19 +565,19 @@ export const convertResponsesInputToVSCode = (
   // Handle string input
   if (typeof input === "string") {
     messages.push(vscode.LanguageModelChatMessage.User(input));
-    return messages;
-  }
-
-  // Handle array input
-  if (Array.isArray(input)) {
+  } else if (Array.isArray(input)) {
     for (const item of input) {
-      const converted = convertResponsesItemToVSCode(item);
+      const converted = convertResponsesItemWithPairing(item, pairing);
       if (converted) {
         messages.push(converted);
       }
     }
   }
 
+  logToolResultRecovery("Responses", [
+    pairing.functionTools,
+    pairing.customTools,
+  ]);
   return messages;
 };
 

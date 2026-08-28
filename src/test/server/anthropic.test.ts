@@ -14,6 +14,7 @@ import {
   findAnthropicModelById,
 } from "../../server/utils/anthropicModels";
 import { isResponseTooLongError } from "../../server/utils/languageModelErrors";
+import { logger } from "../../utils/logger";
 import { WEBP_1024x935_BASE64 } from "../utils/imageMime.fixtures";
 
 function createMockModel(
@@ -441,6 +442,226 @@ suite("Anthropic Conversion Utils Test Suite", () => {
     test("should handle empty messages array", () => {
       const result = convertAnthropicMessagesToVSCode([]);
       assert.strictEqual(result.length, 0);
+    });
+
+    test("should pair parallel tool results by ID", () => {
+      const result = convertAnthropicMessagesToVSCode([
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "tool-a",
+              name: "first",
+              input: {},
+            },
+            {
+              type: "tool_use",
+              id: "tool-b",
+              name: "second",
+              input: {},
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tool-b",
+              content: "second result",
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "tool-a",
+              content: "first result",
+            },
+          ],
+        },
+      ]);
+
+      const toolResults = result[1].content.filter(
+        (part) => part instanceof vscode.LanguageModelToolResultPart,
+      ) as vscode.LanguageModelToolResultPart[];
+      assert.deepStrictEqual(
+        toolResults.map((part) => part.callId),
+        ["tool-b", "tool-a"],
+      );
+    });
+
+    test("should keep server tool turns as ordinary assistant content", () => {
+      const result = convertAnthropicMessagesToVSCode([
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "server_tool_use",
+              id: "srvtoolu_123",
+              name: "web_search",
+              input: { query: "current weather" },
+            },
+            {
+              type: "web_search_tool_result",
+              tool_use_id: "srvtoolu_123",
+              content: [
+                {
+                  type: "web_search_result",
+                  url: "https://example.com/weather",
+                  title: "Weather",
+                  encrypted_content: "encrypted",
+                },
+              ],
+            },
+          ],
+        },
+      ] as any);
+
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(
+        result[0].role,
+        vscode.LanguageModelChatMessageRole.Assistant,
+      );
+      assert.ok(
+        result[0].content.every(
+          (part) => part instanceof vscode.LanguageModelTextPart,
+        ),
+      );
+      assert.ok(
+        result[0].content.every(
+          (part) => !(part instanceof vscode.LanguageModelToolCallPart),
+        ),
+      );
+      assert.ok(
+        result[0].content.every(
+          (part) => !(part instanceof vscode.LanguageModelToolResultPart),
+        ),
+      );
+      assert.match(
+        (result[0].content[0] as vscode.LanguageModelTextPart).value,
+        /srvtoolu_123/,
+      );
+      assert.match(
+        (result[0].content[1] as vscode.LanguageModelTextPart).value,
+        /srvtoolu_123/,
+      );
+    });
+
+    test("should preserve orphaned results as text and drop duplicates", () => {
+      const warnings: string[] = [];
+      const originalWarn = logger.warn;
+      logger.warn = (message: string) => warnings.push(message);
+
+      try {
+        const result = convertAnthropicMessagesToVSCode([
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "tool-known",
+                name: "known",
+                input: {},
+              },
+            ],
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "tool-missing",
+                content: "orphaned output",
+              },
+              {
+                type: "tool_result",
+                tool_use_id: "tool-known",
+                content: "first output",
+              },
+              {
+                type: "tool_result",
+                tool_use_id: "tool-known",
+                content: "duplicate output",
+              },
+              {
+                type: "tool_result",
+                tool_use_id: "tool-missing",
+                content: "duplicate orphaned output",
+              },
+            ],
+          },
+        ]);
+
+        assert.strictEqual(result.length, 2);
+        const parts = result[1].content;
+        assert.ok(parts[0] instanceof vscode.LanguageModelTextPart);
+        assert.match(
+          (parts[0] as vscode.LanguageModelTextPart).value,
+          /tool-missing/,
+        );
+        assert.strictEqual(
+          (parts[1] as vscode.LanguageModelTextPart).value,
+          "orphaned output",
+        );
+        const toolResults = parts.filter(
+          (part) => part instanceof vscode.LanguageModelToolResultPart,
+        ) as vscode.LanguageModelToolResultPart[];
+        assert.strictEqual(toolResults.length, 1);
+        assert.strictEqual(toolResults[0].callId, "tool-known");
+        assert.strictEqual(
+          (toolResults[0].content[0] as vscode.LanguageModelTextPart).value,
+          "first output",
+        );
+        assert.strictEqual(warnings.length, 1);
+        assert.match(warnings[0], /converted 1 orphaned result/);
+        assert.match(warnings[0], /dropped 2 duplicate result/);
+      } finally {
+        logger.warn = originalWarn;
+      }
+    });
+
+    test("should preserve calls and results with invalid IDs as text", () => {
+      const warnings: string[] = [];
+      const originalWarn = logger.warn;
+      logger.warn = (message: string) => warnings.push(message);
+
+      try {
+        const result = convertAnthropicMessagesToVSCode([
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                name: "missing-id",
+                input: {},
+              },
+            ],
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: null,
+                content: "invalid output",
+              },
+            ],
+          },
+        ] as any);
+
+        assert.strictEqual(result.length, 2);
+        assert.ok(
+          result
+            .flatMap((message) => message.content)
+            .every((part) => part instanceof vscode.LanguageModelTextPart),
+        );
+        assert.strictEqual(warnings.length, 1);
+        assert.match(
+          warnings[0],
+          /converted 1 call\(s\) and 1 result\(s\) with invalid IDs/,
+        );
+      } finally {
+        logger.warn = originalWarn;
+      }
     });
   });
 

@@ -4,6 +4,10 @@ import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { extractCopilotUsagePayload } from "./copilotUsage";
 import { mimeForVscodeLm } from "./imageMime";
+import {
+  ToolResultPairingTracker,
+  logToolResultRecovery,
+} from "./toolResultPairing";
 
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
@@ -45,44 +49,45 @@ const toolUseBlockParamToVSCodePart = (
 const toolResultBlockParamToVSCodePart = (
   param: Anthropic.Messages.ToolResultBlockParam,
 ) => {
-  if (!param.content) {
-    // If the tool result has no content, return an empty array of parts to indicate no output was produced.
-    return new vscode.LanguageModelToolResultPart(param.tool_use_id, []);
-  }
-
-  const content =
-    typeof param.content === "string"
-      ? [new vscode.LanguageModelTextPart(param.content)]
-      : param.content.map((c) =>
-          c.type === "text"
-            ? textBlockParamToVSCodePart(c)
-            : c.type === "image"
-              ? imageBlockParamToVSCodePart(c, { preserveMimeType: true })
-              : new vscode.LanguageModelTextPart(JSON.stringify(c)),
-        );
-  return new vscode.LanguageModelToolResultPart(param.tool_use_id, content);
-};
-
-const serverToolUseBlockParamToVSCodePart = (
-  param: Anthropic.Messages.ServerToolUseBlockParam,
-) => {
-  return new vscode.LanguageModelToolCallPart(
-    param.id,
-    param.name,
-    param.input as object,
+  return new vscode.LanguageModelToolResultPart(
+    param.tool_use_id,
+    toolResultBlockParamToVSCodeContent(param),
   );
 };
 
+const toolResultBlockParamToVSCodeContent = (
+  param: Anthropic.Messages.ToolResultBlockParam,
+): Array<vscode.LanguageModelTextPart | vscode.LanguageModelDataPart> =>
+  !param.content
+    ? []
+    : typeof param.content === "string"
+      ? [new vscode.LanguageModelTextPart(param.content)]
+      : param.content.map((content) =>
+          content.type === "text"
+            ? textBlockParamToVSCodePart(content)
+            : content.type === "image"
+              ? imageBlockParamToVSCodePart(content, {
+                  preserveMimeType: true,
+                })
+              : new vscode.LanguageModelTextPart(JSON.stringify(content)),
+        );
+
 const webSearchToolResultBlockParamToVSCodePart = (
   param: Anthropic.Messages.WebSearchToolResultBlockParam,
-) => {
-  const content = Array.isArray(param.content)
-    ? param.content.map(
-        (c) => new vscode.LanguageModelTextPart(JSON.stringify(c)),
-      )
-    : [new vscode.LanguageModelTextPart(JSON.stringify(param.content))];
-  return new vscode.LanguageModelToolResultPart(param.tool_use_id, content);
-};
+) => new vscode.LanguageModelTextPart(JSON.stringify(param));
+
+const orphanedToolResultToVSCodeParts = (
+  callId: unknown,
+  content: Array<vscode.LanguageModelTextPart | vscode.LanguageModelDataPart>,
+  invalid = false,
+) => [
+  new vscode.LanguageModelTextPart(
+    invalid
+      ? `[Tool result with an invalid call ID: ${JSON.stringify(callId) ?? String(callId)}]`
+      : `[Tool result without a matching tool call: ${JSON.stringify(callId)}]`,
+  ),
+  ...content,
+];
 
 const searchResultBlockParamToVSCodePart = (
   param: Anthropic.Messages.SearchResultBlockParam,
@@ -98,6 +103,7 @@ const searchResultBlockParamToVSCodePart = (
  */
 const convertContentToVSCodeParts = (
   content: string | Array<Anthropic.Messages.ContentBlockParam>,
+  pairing?: ToolResultPairingTracker,
 ): Array<
   | vscode.LanguageModelTextPart
   | vscode.LanguageModelToolResultPart
@@ -114,6 +120,7 @@ const convertContentToVSCodeParts = (
     | vscode.LanguageModelToolCallPart
     | vscode.LanguageModelDataPart
   > = [];
+  let droppedDuplicate = false;
 
   for (const block of content) {
     switch (block.type) {
@@ -136,13 +143,37 @@ const convertContentToVSCodeParts = (
         parts.push(redactedThinkingBlockParamToVSCodePart(block));
         break;
       case "tool_use":
+        if (pairing && !pairing.recordCall(block.id)) {
+          parts.push(
+            new vscode.LanguageModelTextPart(
+              `[Tool call with an invalid call ID]\n${JSON.stringify(block)}`,
+            ),
+          );
+          break;
+        }
         parts.push(toolUseBlockParamToVSCodePart(block));
         break;
-      case "tool_result":
+      case "tool_result": {
+        const result = pairing?.recordResult(block.tool_use_id);
+        if (result === "duplicate") {
+          droppedDuplicate = true;
+          break;
+        }
+        if (result === "invalid" || result === "orphaned") {
+          parts.push(
+            ...orphanedToolResultToVSCodeParts(
+              block.tool_use_id,
+              toolResultBlockParamToVSCodeContent(block),
+              result === "invalid",
+            ),
+          );
+          break;
+        }
         parts.push(toolResultBlockParamToVSCodePart(block));
         break;
+      }
       case "server_tool_use":
-        parts.push(serverToolUseBlockParamToVSCodePart(block));
+        parts.push(new vscode.LanguageModelTextPart(JSON.stringify(block)));
         break;
       case "web_search_tool_result":
         parts.push(webSearchToolResultBlockParamToVSCodePart(block));
@@ -153,8 +184,31 @@ const convertContentToVSCodeParts = (
     }
   }
 
-  return parts.length > 0 ? parts : [new vscode.LanguageModelTextPart("")];
+  if (parts.length > 0) {
+    return parts;
+  }
+  return droppedDuplicate ? [] : [new vscode.LanguageModelTextPart("")];
 };
+
+const createVSCodeMessage = (
+  role: Anthropic.Messages.MessageParam["role"],
+  contentParts: ReturnType<typeof convertContentToVSCodeParts>,
+): vscode.LanguageModelChatMessage =>
+  role === "user"
+    ? vscode.LanguageModelChatMessage.User(
+        contentParts as Array<
+          | vscode.LanguageModelTextPart
+          | vscode.LanguageModelToolResultPart
+          | vscode.LanguageModelDataPart
+        >,
+      )
+    : vscode.LanguageModelChatMessage.Assistant(
+        contentParts as Array<
+          | vscode.LanguageModelTextPart
+          | vscode.LanguageModelToolCallPart
+          | vscode.LanguageModelDataPart
+        >,
+      );
 
 /**
  * Convert a single Anthropic MessageParam to VS Code LanguageModelChatMessage(s)
@@ -175,25 +229,7 @@ export const convertAnthropicMessageToVSCode = (
   // Handle array content
   const contentParts = convertContentToVSCodeParts(message.content);
 
-  // Create the message
-  const vsCodeMessage =
-    message.role === "user"
-      ? vscode.LanguageModelChatMessage.User(
-          contentParts as Array<
-            | vscode.LanguageModelTextPart
-            | vscode.LanguageModelToolResultPart
-            | vscode.LanguageModelDataPart
-          >,
-        )
-      : vscode.LanguageModelChatMessage.Assistant(
-          contentParts as Array<
-            | vscode.LanguageModelTextPart
-            | vscode.LanguageModelToolCallPart
-            | vscode.LanguageModelDataPart
-          >,
-        );
-
-  return vsCodeMessage;
+  return createVSCodeMessage(message.role, contentParts);
 };
 
 /**
@@ -207,16 +243,16 @@ export const convertAnthropicMessagesToVSCode = (
   messages: Array<Anthropic.Messages.MessageParam>,
 ): vscode.LanguageModelChatMessage[] => {
   const results: vscode.LanguageModelChatMessage[] = [];
+  const pairing = new ToolResultPairingTracker();
 
   for (const message of messages) {
-    const converted = convertAnthropicMessageToVSCode(message);
-    if (Array.isArray(converted)) {
-      results.push(...converted);
-    } else {
-      results.push(converted);
+    const contentParts = convertContentToVSCodeParts(message.content, pairing);
+    if (contentParts.length > 0) {
+      results.push(createVSCodeMessage(message.role, contentParts));
     }
   }
 
+  logToolResultRecovery("Anthropic", [pairing]);
   return results;
 };
 
