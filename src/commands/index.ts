@@ -9,6 +9,7 @@ import { registerMcpCommands } from "./mcpCommands";
 import { registerModelCommands } from "./modelCommands";
 import { registerProxyCommands } from "./proxyCommands";
 import { registerStatusCommands } from "./statusCommands";
+import { registerWebSearchCommands } from "./webSearchCommands";
 
 export function registerAllCommands(
   context: vscode.ExtensionContext,
@@ -22,4 +23,5 @@ export function registerAllCommands(
   registerModelCommands(context);
   registerStatusCommands(controller, context);
   registerLlmApiKeyCommands(proxy, context);
+  registerWebSearchCommands(context);
 }

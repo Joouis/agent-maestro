@@ -7,3 +7,5 @@ export const MCP_TASK_MANAGER_UNAVAILABLE_MESSAGE =
 export const PORT_MONITOR_INTERVAL_MS = 60_000; // 1 minute
 
 export const LLM_API_KEY_SECRET_KEY = "agent-maestro.llmApiKey";
+
+export const EXA_API_KEY_SECRET_KEY = "agent-maestro.exaApiKey";

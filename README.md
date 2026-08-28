@@ -17,6 +17,7 @@ Turn VS Code into your compliant AI playground with powerful API compatibility a
 
 - **Universal API Compatibility**: Anthropic (`/messages`), OpenAI (`/chat/completions`, `/responses`), and Gemini compatible endpoints - use Claude Code, Codex, Gemini CLI or any LLM client seamlessly
   - **Token Usage Reporting**: Reports Copilot-provided Anthropic token usage when available, including prompt cache reads and writes, with estimated token counts as a fallback
+  - **Anthropic Web Search**: Transparently supports the Anthropic `web_search_20250305` server tool through Exa, with hidden execution, source links, and anonymous or optional API-key access
 - **One-Click Setup**: Automated configuration commands for instant Claude Code, Codex, and Gemini CLI integration
 - **Headless AI Agent Control**: Create and manage tasks through REST APIs for Roo Code and Cline extensions
   - **Comprehensive APIs**: Complete task lifecycle management with OpenAPI documentation at `/openapi.json`
@@ -123,6 +124,7 @@ Run `Agent Maestro: Select Fallback Model` to choose which available VS Code lan
    - `Agent Maestro: Configure Gemini CLI Settings` - One-click Gemini CLI setup
    - `Agent Maestro: Select Fallback Model` - Select a global fallback for unknown model IDs
    - `Agent Maestro: Set LLM API Key` - Configure authentication for LLM API endpoints
+   - `Agent Maestro: Set Exa API Key` - Set, replace, or clear the optional Exa web search key
 
 3. **Development Resources**:
    - **API Documentation**: Complete reference in [`docs/roo-code/`](docs/roo-code/README.md)
@@ -232,6 +234,56 @@ Agent Maestro reports real Copilot usage metadata for Anthropic responses when V
 ### Prompt Cache Compatibility
 
 Agent Maestro accepts common prompt cache hints such as Anthropic `cache_control`, OpenAI `prompt_cache_key`, and Gemini `cachedContent` without forwarding unsupported cache controls to VS Code's Language Model API. For Anthropic-compatible responses, Copilot-provided usage metadata is used when available to report `cache_read_input_tokens` and `cache_creation_input_tokens`; fallback estimates report cache usage as `0` rather than synthetic savings.
+
+### Anthropic Web Search
+
+Agent Maestro automatically supports Anthropic's `web_search_20250305` server
+tool for `POST /api/anthropic/v1/messages`. It never injects search into a
+request, and no query leaves your environment unless the client declares the
+tool and the model chooses to call it.
+
+1. Optionally run `Agent Maestro: Set Exa API Key` to use your Exa account.
+   Leaving the key empty uses Exa's anonymous allowance.
+2. Send an Anthropic Messages request that declares the server tool:
+
+```json
+{
+  "model": "claude-sonnet-4.6",
+  "max_tokens": 1024,
+  "messages": [
+    {
+      "role": "user",
+      "content": "What changed in the latest TypeScript release?"
+    }
+  ],
+  "tools": [
+    {
+      "type": "web_search_20250305",
+      "name": "web_search",
+      "max_uses": 1
+    }
+  ]
+}
+```
+
+The model decides whether to search. Agent Maestro executes at most one search,
+keeps the internal call and untrusted result hidden from the client, performs a
+tool-free synthesis round, and adds a deduplicated `Sources` URL list when it
+fits within `max_tokens`. Responses report dispatched searches in
+`usage.server_tool_use.web_search_requests`.
+
+Supported server-tool filters are `allowed_domains`, `blocked_domains`, and
+`user_location.country`. Domain allow/block lists are mutually exclusive and
+accept hostnames only. Searches with filters use Exa advanced search. Client
+tools named `WebSearch` or `web_search` remain ordinary client tools when they
+have an `input_schema`.
+
+Search queries and result URLs are sent to Exa. Results are untrusted and are
+isolated from client tools and additional searches during synthesis. The first
+release returns normal text plus source links, not Anthropic-native search
+result blocks, encrypted content, or citation objects. Streaming requests keep
+the connection alive with heartbeat events while the hidden search loop is
+buffered.
 
 ## API Overview
 

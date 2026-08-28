@@ -168,6 +168,11 @@
         "command": "agent-maestro.setLlmApiKey",
         "title": "Set LLM API Key",
         "category": "Agent Maestro"
+      },
+      {
+        "command": "agent-maestro.setExaApiKey",
+        "title": "Set Exa API Key",
+        "category": "Agent Maestro"
       }
     ]
   },

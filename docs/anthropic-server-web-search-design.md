@@ -364,16 +364,14 @@ Agent Maestro does not claim Anthropic's native web search pricing semantics.
 
 ### Configuration and Security
 
-- `agent-maestro.anthropicWebSearch.enabled` defaults to `false`. Users must
-  explicitly enable it before any query can leave their environment.
-- While disabled, Agent Maestro removes the supported server tool and otherwise
-  preserves current request behavior. It returns `400 invalid_request_error`
-  only when a named choice has no remaining classified match, or when `any`
-  leaves no available tool. A same-named client tool remains selectable.
-- After enablement, no Exa credential is required: search uses Exa's anonymous
-  MCP allowance by default.
+- Server search is available automatically when a request declares the supported
+  tool. Agent Maestro does not inject the tool, and no outbound request occurs
+  unless the model selects it.
+- No Exa credential is required: search uses Exa's anonymous MCP allowance by
+  default.
 - An Exa API key is stored in VS Code SecretStorage and sent in a request
-  header, never in the MCP URL.
+  header, never in the MCP URL. It is optional and uses the user's Exa account
+  limits and billing instead of anonymous access.
 - `Agent Maestro: Set Exa API Key` sets, replaces, or clears the key without
   logging it. Clearing the key returns to anonymous access.
 - Search queries and URLs leave the local environment and are sent to Exa.
@@ -440,10 +438,10 @@ Agent Maestro does not claim Anthropic's native web search pricing semantics.
 11. Valid SDK metadata is handled consistently: `cache_control` is accepted and
     ignored, `strict` is accepted, nullable fields accept `null`, and unsupported
     caller or deferred-loading modes return `400 invalid_request_error`.
-12. Web search performs no outbound request until the user explicitly enables
-    `agent-maestro.anthropicWebSearch.enabled`. While disabled, automatic tool
-    declarations are ignored without failing ordinary requests; an explicitly
-    required unavailable search returns `400 invalid_request_error`.
+12. Web search is available without extra configuration, but performs no
+    outbound request unless the client declares the supported server tool and
+    the model selects it. Exa anonymous access works without a key; configuring
+    a key is optional.
 13. Non-streaming and streaming responses are valid Anthropic Messages API
     responses; streaming retains heartbeat behavior during search.
 14. Usage aggregates all hidden model rounds and reports only dispatched search
