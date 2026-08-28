@@ -231,6 +231,8 @@ Agent Maestro reports real Copilot usage metadata for Anthropic responses when V
 
 - **Codex:** When you run **Agent Maestro: Configure Codex Settings**, Agent Maestro writes `model_context_window` into Codex's `config.toml` using the selected model's reported `maxInputTokens`. This tells Codex the effective context window size upfront so it manages its own conversation history accordingly. To customize it, edit `model_context_window` in `~/.codex/config.toml` directly.
 
+If compaction or replay leaves a tool result without its original call, Agent Maestro preserves the result as ordinary context instead of forwarding an invalid tool transcript. Repeated results for the same call ID are ignored after the first result.
+
 ### Prompt Cache Compatibility
 
 Agent Maestro accepts common prompt cache hints such as Anthropic `cache_control`, OpenAI `prompt_cache_key`, and Gemini `cachedContent` without forwarding unsupported cache controls to VS Code's Language Model API. For Anthropic-compatible responses, Copilot-provided usage metadata is used when available to report `cache_read_input_tokens` and `cache_creation_input_tokens`; fallback estimates report cache usage as `0` rather than synthetic savings.
