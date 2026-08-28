@@ -22,6 +22,7 @@ const SECRET_STATE_KEYS = [
   "groqApiKey",
   "chutesApiKey",
   "litellmApiKey",
+  "minimaxApiKey",
 ] as const;
 
 /**
@@ -33,9 +34,9 @@ const SECRET_STATE_KEYS = [
  * @param settings - The settings object to filter
  * @returns A new settings object with sensitive data removed
  */
-export function filterRooSettings(
-  settings: RooCodeSettings,
-): Partial<RooCodeSettings> {
+export function filterRooSettings<T extends RooCodeSettings>(
+  settings: T,
+): Omit<T, (typeof SECRET_STATE_KEYS)[number] | "taskHistory"> {
   const filtered = { ...settings };
 
   // Remove all secret state keys

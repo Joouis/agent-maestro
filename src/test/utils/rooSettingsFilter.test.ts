@@ -19,6 +19,7 @@ suite("RooSettingsFilter Test Suite", () => {
         requestyApiKey: "requesty-secret",
         chutesApiKey: "chutes-secret",
         litellmApiKey: "litellm-secret",
+        minimaxApiKey: "minimax-secret",
         openAiNativeApiKey: "openai-native-secret",
         awsAccessKey: "aws-access-key",
         awsSecretKey: "aws-secret-key",
@@ -45,6 +46,7 @@ suite("RooSettingsFilter Test Suite", () => {
       assert.strictEqual(filtered.requestyApiKey, undefined);
       assert.strictEqual(filtered.chutesApiKey, undefined);
       assert.strictEqual(filtered.litellmApiKey, undefined);
+      assert.strictEqual((filtered as any).minimaxApiKey, undefined);
       assert.strictEqual(filtered.openAiNativeApiKey, undefined);
       assert.strictEqual(filtered.awsAccessKey, undefined);
       assert.strictEqual(filtered.awsSecretKey, undefined);

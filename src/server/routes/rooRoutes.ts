@@ -1271,7 +1271,7 @@ export function registerRooRoutes(
         {
           id: profileEntry.id,
           name: name,
-          profile: providerSettings,
+          profile: filterRooSettings(providerSettings),
           isActive: name === activeProfileName,
         },
         200,
