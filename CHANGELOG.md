@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.13.0 - 2026.08.28
+
+- Add transparent Exa-powered web search to Anthropic-compatible requests, with streamed source links and support for anonymous or securely authenticated access.
+- Fix Codex Multi-Agent V2 subagents receiving empty tasks through the Responses API.
+- Prevent malformed compaction or replay data from breaking Anthropic and Responses conversations by preserving orphaned tool results and ignoring duplicates.
+- Add MiniMax support to Roo Code without exposing its API key in settings or profile responses.
+
 ## v2.12.0 - 2026.08.20
 
 - Add the global `agent-maestro.fallbackModelId` setting and `Agent Maestro: Select Fallback Model` command for requests whose model ID cannot be matched to an available VS Code language model.
