@@ -133,6 +133,10 @@ Other tool types are filtered out with a debug log.
 | `shell`                | No VSCode LM equivalent                       |
 | `apply_patch`          | No VSCode LM equivalent                       |
 
+Server-side compatibility for the stable `web_search` tool is proposed
+separately in
+[OpenAI Responses Server Web Search Design](./openai-responses-web-search-design.md).
+
 ### Content Limitations
 
 | Content Type    | Limitation                                                        |
