@@ -59,7 +59,7 @@ Configure Claude Desktop to use Agent Maestro's Anthropic-compatible proxy with 
 
 Configure Codex to use VS Code's language models with a single command `Agent Maestro: Configure Codex Settings` via Command Palette.
 
-This automatically creates or updates `~/.codex/config.toml` with the Agent Maestro endpoint, enables standalone Responses web search for the provider, and sets up `GPT-5.5` as the recommended model.
+This automatically creates or updates `~/.codex/config.toml` with the Agent Maestro endpoint and sets up `GPT-5.5` as the recommended model.
 
 ### One-Click Setup for Gemini CLI
 
