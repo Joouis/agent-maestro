@@ -602,7 +602,7 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     );
   });
 
-  test("handles requests containing only unsupported Responses tools", async () => {
+  test("handles an unavailable Responses web search provider", async () => {
     let capturedOptions: vscode.LanguageModelChatRequestOptions | undefined;
     const model = {
       id: "gpt-5.6-test",
@@ -653,7 +653,7 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     const requiredBody = (await requiredResponse.json()) as any;
 
     assert.strictEqual(requiredResponse.status, 400);
-    assert.strictEqual(requiredBody.error.code, "tool_not_found");
+    assert.strictEqual(requiredBody.error.code, "tool_unavailable");
   });
 
   test("emits one response.failed without response.completed", async () => {

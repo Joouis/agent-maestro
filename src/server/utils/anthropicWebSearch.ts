@@ -3,11 +3,16 @@ import * as vscode from "vscode";
 
 import {
   MAX_WEB_SEARCH_RESULTS,
+  WEB_SEARCH_PROVIDER_TIMEOUT_MS,
   WebSearchProvider,
   WebSearchResult,
   formatWebSearchEvidence,
+  isPlainWebSearchHostname,
+  normalizeWebSearchCountryCode,
   normalizeWebSearchResults,
   normalizeWebSearchUrl,
+  runWebSearchProviderWithTimeout,
+  validateWebSearchQueryInput,
 } from "../webSearch/webSearchProvider";
 import { AnthropicTokenUsage, extractAnthropicUsage } from "./anthropic";
 import { isResponseTooLongError } from "./languageModelErrors";
@@ -18,12 +23,6 @@ import {
 
 const INTERNAL_WEB_SEARCH_TOOL_BASE =
   "__agent_maestro_internal_web_search_20250305";
-export const WEB_SEARCH_PROVIDER_TIMEOUT_MS = 60_000;
-const ISO_COUNTRY_CODES = new Set(
-  "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW".split(
-    " ",
-  ),
-);
 
 type RawTool = Record<string, unknown>;
 type RawToolChoice = Record<string, unknown>;
@@ -79,14 +78,8 @@ const validateDomains = (
     return invalidToolDefinition(`${field} must be an array`);
   }
 
-  const hostnamePattern =
-    /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
   const domains = value.map((domain) => {
-    if (
-      typeof domain !== "string" ||
-      !hostnamePattern.test(domain) ||
-      domain.includes("/")
-    ) {
+    if (typeof domain !== "string" || !isPlainWebSearchHostname(domain)) {
       return invalidToolDefinition(
         `${field} entries must be plain hostnames without paths`,
       );
@@ -169,13 +162,12 @@ const validateWebSearchTool = (
     }
     const country =
       typeof location.country === "string"
-        ? location.country.toUpperCase()
-        : "";
+        ? normalizeWebSearchCountryCode(location.country)
+        : undefined;
     if (
       location.type !== "approximate" ||
       typeof location.country !== "string" ||
-      !/^[A-Za-z]{2}$/.test(location.country) ||
-      !ISO_COUNTRY_CODES.has(country)
+      !country
     ) {
       return invalidToolDefinition(
         "user_location requires type 'approximate' and a two-letter country code",
@@ -586,67 +578,6 @@ const collectModelRound = async ({
   return { blocks, parts, stopReason, usage };
 };
 
-const runProviderWithTimeout = async (
-  provider: WebSearchProvider,
-  request: Parameters<WebSearchProvider["search"]>[0],
-  lifecycle: LanguageModelRequestLifecycle,
-  timeoutMs: number,
-): Promise<WebSearchResult[]> => {
-  const controller = new AbortController();
-  const abortForLifecycle = () => controller.abort(lifecycle.signal.reason);
-  if (lifecycle.signal.aborted) {
-    abortForLifecycle();
-  } else {
-    lifecycle.signal.addEventListener("abort", abortForLifecycle, {
-      once: true,
-    });
-  }
-  const timeout = setTimeout(
-    () => controller.abort(new Error("Web search provider timed out")),
-    timeoutMs,
-  );
-  timeout.unref();
-
-  try {
-    return await lifecycle.waitFor(
-      Promise.race([
-        provider.search(request, controller.signal),
-        new Promise<never>((_, reject) => {
-          controller.signal.addEventListener(
-            "abort",
-            () =>
-              reject(
-                controller.signal.reason ??
-                  new Error("Web search provider was cancelled"),
-              ),
-            { once: true },
-          );
-        }),
-      ]),
-    );
-  } finally {
-    clearTimeout(timeout);
-    lifecycle.signal.removeEventListener("abort", abortForLifecycle);
-  }
-};
-
-const validateInternalQuery = (input: unknown): string | undefined => {
-  if (
-    !input ||
-    typeof input !== "object" ||
-    Array.isArray(input) ||
-    Object.keys(input).some((key) => key !== "query")
-  ) {
-    return undefined;
-  }
-  const query = (input as Record<string, unknown>).query;
-  if (typeof query !== "string") {
-    return undefined;
-  }
-  const trimmed = query.trim();
-  return trimmed.length >= 2 && trimmed.length <= 2_000 ? trimmed : undefined;
-};
-
 const appendSourcesWithinBudget = async ({
   content,
   results,
@@ -814,7 +745,7 @@ export async function runAnthropicWebSearchLoop({
   let normalizedResults: WebSearchResult[] = [];
   let webSearchRequests = 0;
   const firstCall = internalCalls[0];
-  const query = validateInternalQuery(firstCall.input);
+  const query = validateWebSearchQueryInput(firstCall.input);
   if (!query) {
     toolResults.push(
       new vscode.LanguageModelToolResultPart(firstCall.callId, [
@@ -827,23 +758,25 @@ export async function runAnthropicWebSearchLoop({
     webSearchRequests = 1;
     try {
       normalizedResults = normalizeWebSearchResults(
-        await runProviderWithTimeout(
-          provider,
-          {
-            query,
-            maxResults: MAX_WEB_SEARCH_RESULTS,
-            ...(preparedTools.webSearch.allowedDomains && {
-              allowedDomains: preparedTools.webSearch.allowedDomains,
-            }),
-            ...(preparedTools.webSearch.blockedDomains && {
-              blockedDomains: preparedTools.webSearch.blockedDomains,
-            }),
-            ...(preparedTools.webSearch.userLocation && {
-              userLocation: preparedTools.webSearch.userLocation,
-            }),
-          },
-          lifecycle,
-          providerTimeoutMs,
+        await lifecycle.waitFor(
+          runWebSearchProviderWithTimeout(
+            provider,
+            {
+              query,
+              maxResults: MAX_WEB_SEARCH_RESULTS,
+              ...(preparedTools.webSearch.allowedDomains && {
+                allowedDomains: preparedTools.webSearch.allowedDomains,
+              }),
+              ...(preparedTools.webSearch.blockedDomains && {
+                blockedDomains: preparedTools.webSearch.blockedDomains,
+              }),
+              ...(preparedTools.webSearch.userLocation && {
+                userLocation: preparedTools.webSearch.userLocation,
+              }),
+            },
+            lifecycle.signal,
+            providerTimeoutMs,
+          ),
         ),
       );
       toolResults.push(

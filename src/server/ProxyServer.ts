@@ -116,7 +116,9 @@ export class ProxyServer {
 
   private getApiOpenAiRoutes(): OpenAPIHono {
     const routes = new OpenAPIHono();
-    registerOpenaiRoutes(routes);
+    registerOpenaiRoutes(routes, {
+      webSearchProvider: this.webSearchProvider,
+    });
     return routes;
   }
 

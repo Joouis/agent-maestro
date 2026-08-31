@@ -24,7 +24,6 @@ import {
 } from "../utils/anthropicModels";
 import {
   AnthropicRequestValidationError,
-  WEB_SEARCH_PROVIDER_TIMEOUT_MS,
   prepareAnthropicTools,
 } from "../utils/anthropicWebSearch";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
@@ -37,7 +36,10 @@ import {
   interruptibleLanguageModelStream,
 } from "../utils/languageModelRequestLifecycle";
 import { SSE_HEARTBEAT, withSseHeartbeat } from "../utils/sseHeartbeat";
-import { WebSearchProvider } from "../webSearch/webSearchProvider";
+import {
+  WEB_SEARCH_PROVIDER_TIMEOUT_MS,
+  WebSearchProvider,
+} from "../webSearch/webSearchProvider";
 import { handleAnthropicWebSearch } from "./anthropicWebSearchHandler";
 
 const prepareAnthropicMessages = async ({

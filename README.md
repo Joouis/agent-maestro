@@ -18,6 +18,7 @@ Turn VS Code into your compliant AI playground with powerful API compatibility a
 - **Universal API Compatibility**: Anthropic (`/messages`), OpenAI (`/chat/completions`, `/responses`), and Gemini compatible endpoints - use Claude Code, Codex, Gemini CLI or any LLM client seamlessly
   - **Token Usage Reporting**: Reports Copilot-provided Anthropic token usage when available, including prompt cache reads and writes, with estimated token counts as a fallback
   - **Anthropic Web Search**: Transparently supports the Anthropic `web_search_20250305` server tool through Exa, with hidden execution, source links, and anonymous or optional API-key access
+  - **OpenAI Responses Web Search**: Executes stable Responses `web_search` tools through Exa for Codex, including hosted-tool events and URL citations
 - **One-Click Setup**: Automated configuration commands for instant Claude Code, Codex, and Gemini CLI integration
 - **Headless AI Agent Control**: Create and manage tasks through REST APIs for Roo Code and Cline extensions
   - **Comprehensive APIs**: Complete task lifecycle management with OpenAPI documentation at `/openapi.json`
@@ -58,7 +59,7 @@ Configure Claude Desktop to use Agent Maestro's Anthropic-compatible proxy with 
 
 Configure Codex to use VS Code's language models with a single command `Agent Maestro: Configure Codex Settings` via Command Palette.
 
-This automatically creates or updates `~/.codex/config.toml` with Agent Maestro endpoint and sets up `GPT-5.5` as the recommended model.
+This automatically creates or updates `~/.codex/config.toml` with the Agent Maestro endpoint and sets up `GPT-5.5` as the recommended model.
 
 ### One-Click Setup for Gemini CLI
 
@@ -286,6 +287,27 @@ release returns normal text plus source links, not Anthropic-native search
 result blocks, encrypted content, or citation objects. Streaming requests keep
 the connection alive with heartbeat events while the hidden search loop is
 buffered.
+
+### OpenAI Responses Web Search
+
+Agent Maestro supports the stable `web_search` and `web_search_2025_08_26`
+server tools on `POST /api/openai/v1/responses`. When Codex or another Responses
+client declares one of these tools, a GPT-5-family model decides whether current
+or verifiable information requires search. Agent Maestro then executes at most
+one Exa request, performs a tool-free synthesis round, and returns a
+`web_search_call`, source URLs, and `url_citation` annotations.
+
+After running **Agent Maestro: Configure Codex Settings**, enable live search
+for a Codex invocation with `codex --search -c 'web_search="live"'`. No Codex
+MCP search tool is required. Codex may send `parallel_tool_calls: false`; Agent
+Maestro accepts and echoes it while independently enforcing the one-server-search
+limit.
+
+`external_web_access: false` is rejected because it requests cached-only search,
+which Exa live retrieval cannot honor. Search results are delimited as untrusted
+evidence, embedded instructions are ignored, and synthesis cannot access server
+or client tools. Search queries and result URLs are sent to Exa; snippets,
+credentials, and full provider responses are not logged.
 
 ## API Overview
 
