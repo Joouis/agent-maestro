@@ -805,5 +805,5 @@ Anthropic or OpenAI request/response types.
 - [OpenAI web search guide](https://developers.openai.com/api/docs/guides/tools-web-search)
 - [OpenAI Responses API reference](https://developers.openai.com/api/reference/resources/responses/methods/create)
 - [VS Code Language Model API](https://code.visualstudio.com/api/extension-guides/ai/language-model)
-- [Anthropic server web search design](./anthropic-server-web-search-design.md)
+- [Anthropic server web search design](./2026-08-26-anthropic-server-web-search-design.md)
 - [OpenAI Responses API design](./openai-responses-api-design.md)

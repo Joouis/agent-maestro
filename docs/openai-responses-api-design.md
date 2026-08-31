@@ -135,7 +135,7 @@ Other tool types are filtered out with a debug log.
 
 Server-side compatibility for the stable `web_search` tool is proposed
 separately in
-[OpenAI Responses Server Web Search Design](./openai-responses-web-search-design.md).
+[OpenAI Responses Server Web Search Design](./2026-08-30-openai-responses-web-search-design.md).
 
 ### Content Limitations
 
