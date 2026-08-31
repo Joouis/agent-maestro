@@ -111,13 +111,13 @@ const asRecord = (value: unknown, field: string): RawRecord | undefined => {
 const rejectUnknownFields = (
   record: RawRecord,
   supported: ReadonlySet<string>,
-  field: string,
+  fieldPrefix: string,
 ): void => {
   const unsupported = Object.keys(record).find((key) => !supported.has(key));
   if (unsupported) {
     invalidRequest(
-      `Unsupported web search option: ${field}${unsupported}`,
-      field === "" ? unsupported : `${field}${unsupported}`,
+      `Unsupported web search option: ${fieldPrefix}${unsupported}`,
+      `${fieldPrefix}${unsupported}`,
       "invalid_tool_definition",
     );
   }
@@ -173,7 +173,7 @@ const validateWebSearchTool = (
       "search_content_types",
       "image_settings",
     ]),
-    "",
+    "tools.",
   );
 
   const contextSize = tool.search_context_size;
@@ -197,7 +197,7 @@ const validateWebSearchTool = (
     rejectUnknownFields(
       filters,
       new Set(["allowed_domains", "blocked_domains"]),
-      "filters.",
+      "tools.filters.",
     );
     allowedDomains = validateDomains(
       filters.allowed_domains,
@@ -215,7 +215,7 @@ const validateWebSearchTool = (
     rejectUnknownFields(
       location,
       new Set(["type", "country", "city", "region", "timezone"]),
-      "user_location.",
+      "tools.user_location.",
     );
     if (location.type !== undefined && location.type !== "approximate") {
       invalidRequest(
@@ -559,10 +559,13 @@ export function prepareOpenAIResponsesTools({
       ...(searchAvailable ? [internalTool] : []),
     ];
     if (selectedTools.length === 0) {
+      const searchUnavailable = !searchAvailable;
       invalidRequest(
-        'tool_choice is "required", but no supported tools are available.',
+        searchUnavailable
+          ? "The required web search tool is unavailable"
+          : 'tool_choice is "required", but no supported tools are available.',
         "tool_choice",
-        "tool_not_found",
+        searchUnavailable ? "tool_unavailable" : "tool_not_found",
       );
     }
     selectedServer = searchAvailable;

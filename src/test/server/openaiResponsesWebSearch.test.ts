@@ -361,6 +361,46 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
       }
     });
 
+    test("reports complete parameter paths for unknown search fields", () => {
+      const cases: Array<{
+        expectedParam: string;
+        tools: unknown[];
+      }> = [
+        {
+          tools: [webSearchTool({ unknown_option: true })],
+          expectedParam: "tools.unknown_option",
+        },
+        {
+          tools: [
+            webSearchTool({
+              filters: { unknown_option: true },
+            }),
+          ],
+          expectedParam: "tools.filters.unknown_option",
+        },
+        {
+          tools: [
+            webSearchTool({
+              user_location: {
+                type: "approximate",
+                unknown_option: true,
+              },
+            }),
+          ],
+          expectedParam: "tools.user_location.unknown_option",
+        },
+      ];
+
+      for (const { tools, expectedParam } of cases) {
+        assert.throws(
+          () => prepareSearch({ tools }),
+          (error: unknown) =>
+            error instanceof OpenAIResponsesRequestValidationError &&
+            error.param === expectedParam,
+        );
+      }
+    });
+
     test("rejects invalid budgets, allowed_tools, and raw results", () => {
       const cases = [
         () => prepareSearch({ maxToolCalls: 0 }),
@@ -466,6 +506,19 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
           prepareSearch({
             available: false,
             toolChoice: { type: "web_search" },
+          }),
+        (error: unknown) =>
+          error instanceof OpenAIResponsesRequestValidationError &&
+          error.code === "tool_unavailable",
+      );
+    });
+
+    test("returns tool_unavailable when required search is the only declared tool", () => {
+      assert.throws(
+        () =>
+          prepareSearch({
+            available: false,
+            toolChoice: "required",
           }),
         (error: unknown) =>
           error instanceof OpenAIResponsesRequestValidationError &&

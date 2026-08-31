@@ -315,7 +315,8 @@ allowed list can never remain available and trigger an outbound Exa request.
 the model may choose any exposed tool. A caller that must force search should
 use a specific search choice, or provide only `web_search` with `required`.
 
-If the selected search tool is unavailable, a specific search choice returns
+If the selected search tool is unavailable, a specific search choice—or
+`required` when no client tool remains available—returns
 `400 invalid_request_error` with `tool_unavailable`. `auto` continues without
 search when the provider is administratively unavailable.
 
