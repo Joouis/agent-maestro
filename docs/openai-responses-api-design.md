@@ -133,14 +133,18 @@ Other tool types are filtered out with a debug log.
 | `shell`                | No VSCode LM equivalent                       |
 | `apply_patch`          | No VSCode LM equivalent                       |
 
+Server-side compatibility for the stable `web_search` tool is proposed
+separately in
+[OpenAI Responses Server Web Search Design](./2026-08-30-openai-responses-web-search-design.md).
+
 ### Content Limitations
 
-| Content Type    | Limitation                                                        |
-| --------------- | ----------------------------------------------------------------- |
-| `input_image`   | Only base64 data URI supported; URL-based images fallback to JSON |
-| `input_file`    | Not supported, serialized as JSON text                            |
-| `annotations`   | Always empty (VSCode LM doesn't provide annotations)              |
-| Reasoning items | Never generated (VSCode LM doesn't expose reasoning)              |
+| Content Type    | Limitation                                                                     |
+| --------------- | ------------------------------------------------------------------------------ |
+| `input_image`   | Only base64 data URI supported; URL-based images fallback to JSON              |
+| `input_file`    | Not supported, serialized as JSON text                                         |
+| `annotations`   | Currently empty; the proposed server web-search path synthesizes URL citations |
+| Reasoning items | Never generated (VSCode LM doesn't expose reasoning)                           |
 
 ### Manual E2E Validation
 
