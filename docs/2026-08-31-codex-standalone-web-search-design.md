@@ -707,7 +707,7 @@ documented limitations and return recoverable tool outputs.
 Log one sanitized completion record per standalone request:
 
 ```text
-method=/v1/alpha/search
+route=/api/openai/v1/alpha/search
 operations=search:2,open:0,find:0
 provider_calls=2
 results=5
