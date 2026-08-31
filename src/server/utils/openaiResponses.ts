@@ -7,12 +7,14 @@ import {
   ResponseCustomToolCall,
   ResponseCustomToolCallOutput,
   ResponseFunctionToolCall,
+  ResponseFunctionWebSearch,
   ResponseInput,
   ResponseInputContent,
   ResponseInputImage,
   ResponseInputItem,
   ResponseOutputMessage,
   ResponseOutputText,
+  ResponseUsage,
   Tool,
   ToolChoiceAllowed,
   ToolChoiceApplyPatch,
@@ -55,7 +57,141 @@ export type PlaintextResponseFunctionToolCall = ResponseFunctionToolCall & {
 export type OutputItem =
   | ResponseOutputMessage
   | PlaintextResponseFunctionToolCall
-  | ResponseCustomToolCall;
+  | ResponseCustomToolCall
+  | ResponseFunctionWebSearch;
+
+export type OpenAIResponsesStatus =
+  | "completed"
+  | "failed"
+  | "in_progress"
+  | "incomplete";
+
+export interface OpenAIResponsesEnvelope {
+  background: false;
+  completed_at: number | null;
+  created_at: number;
+  error: { code: string; message: string } | null;
+  id: string;
+  incomplete_details: { reason: "max_output_tokens" } | null;
+  metadata: unknown;
+  model: string;
+  object: "response";
+  output: OutputItem[];
+  parallel_tool_calls: boolean;
+  reasoning: { effort: "none"; summary: null };
+  status: OpenAIResponsesStatus;
+  tool_choice: unknown;
+  tools: unknown[];
+  usage: ResponseUsage | null;
+}
+
+export interface BuildOpenAIResponsesEnvelopeOptions {
+  completedAt: number | null;
+  createdAt: number;
+  error?: { code: string; message: string } | null;
+  id: string;
+  metadata: unknown;
+  model: string;
+  output: OutputItem[];
+  parallelToolCalls?: boolean | null;
+  status: OpenAIResponsesStatus;
+  toolChoice?: unknown;
+  tools: unknown[];
+  usage: ResponseUsage | null;
+}
+
+export const buildOpenAIResponsesEnvelope = ({
+  completedAt,
+  createdAt,
+  error = null,
+  id,
+  metadata,
+  model,
+  output,
+  parallelToolCalls,
+  status,
+  toolChoice,
+  tools,
+  usage,
+}: BuildOpenAIResponsesEnvelopeOptions): OpenAIResponsesEnvelope => ({
+  id,
+  object: "response",
+  status,
+  created_at: createdAt,
+  completed_at: completedAt,
+  background: false,
+  model,
+  output,
+  error,
+  incomplete_details:
+    status === "incomplete" ? { reason: "max_output_tokens" } : null,
+  metadata,
+  parallel_tool_calls: parallelToolCalls ?? true,
+  reasoning: { effort: "none", summary: null },
+  tool_choice: toolChoice ?? "auto",
+  tools,
+  usage,
+});
+
+type ResponseSSEWriter = (
+  message: Parameters<SSEStreamingApi["writeSSE"]>[0],
+) => Promise<void>;
+
+export const openMessageOutputItem = async (
+  writeSSE: ResponseSSEWriter,
+  messageId: string,
+  outputIndex: number,
+  contentIndex: number,
+  sequenceNumberRef: { value: number },
+): Promise<void> => {
+  await writeSSE({
+    event: "response.output_item.added",
+    data: JSON.stringify({
+      type: "response.output_item.added",
+      output_index: outputIndex,
+      item: {
+        type: "message",
+        id: messageId,
+        role: "assistant",
+        content: [],
+        status: "in_progress",
+      },
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+  await writeSSE({
+    event: "response.content_part.added",
+    data: JSON.stringify({
+      type: "response.content_part.added",
+      item_id: messageId,
+      output_index: outputIndex,
+      content_index: contentIndex,
+      part: { type: "output_text", text: "", annotations: [] },
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+};
+
+export const writeMessageOutputTextDelta = async (
+  writeSSE: ResponseSSEWriter,
+  messageId: string,
+  outputIndex: number,
+  contentIndex: number,
+  delta: string,
+  sequenceNumberRef: { value: number },
+): Promise<void> => {
+  await writeSSE({
+    event: "response.output_text.delta",
+    data: JSON.stringify({
+      type: "response.output_text.delta",
+      item_id: messageId,
+      output_index: outputIndex,
+      content_index: contentIndex,
+      delta,
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+};
 
 /**
  * Generate random string for IDs using crypto
@@ -92,6 +228,9 @@ export const generateFunctionCallId = (): string => `fc_AM-${randomString(12)}`;
 export const generateCustomToolCallId = (): string =>
   `ctc_AM-${randomString(12)}`;
 
+export const generateWebSearchCallId = (): string =>
+  `ws_AM-${randomString(12)}`;
+
 /**
  * Get current Unix timestamp in seconds
  */
@@ -101,17 +240,36 @@ export const getCurrentTimestamp = (): number => Math.floor(Date.now() / 1000);
  * Helper for closing a message output item in streaming responses
  */
 export const closeMessageOutputItem = async (
-  writeSSE: (
-    message: Parameters<SSEStreamingApi["writeSSE"]>[0],
-  ) => Promise<void>,
+  writeSSE: ResponseSSEWriter,
   messageId: string,
   outputIndex: number,
   contentIndex: number,
   accumulatedText: string,
   sequenceNumberRef?: { value: number },
+  options: {
+    annotations?: ResponseOutputText["annotations"];
+    status?: ResponseOutputMessage["status"];
+  } = {},
 ): Promise<OutputItem> => {
   const nextSeq = () =>
     sequenceNumberRef ? sequenceNumberRef.value++ : undefined;
+  const annotations = options.annotations ?? [];
+  const status = options.status ?? "completed";
+
+  for (const [annotationIndex, annotation] of annotations.entries()) {
+    await writeSSE({
+      event: "response.output_text.annotation.added",
+      data: JSON.stringify({
+        type: "response.output_text.annotation.added",
+        item_id: messageId,
+        output_index: outputIndex,
+        content_index: contentIndex,
+        annotation_index: annotationIndex,
+        annotation,
+        sequence_number: nextSeq(),
+      }),
+    });
+  }
 
   await writeSSE({
     event: "response.output_text.done",
@@ -135,7 +293,7 @@ export const closeMessageOutputItem = async (
       part: {
         type: "output_text",
         text: accumulatedText,
-        annotations: [],
+        annotations,
       },
       sequence_number: nextSeq(),
     }),
@@ -149,10 +307,10 @@ export const closeMessageOutputItem = async (
       {
         type: "output_text",
         text: accumulatedText,
-        annotations: [],
+        annotations,
       },
     ],
-    status: "completed",
+    status,
   };
 
   await writeSSE({
@@ -166,6 +324,98 @@ export const closeMessageOutputItem = async (
   });
 
   return outputItem;
+};
+
+export const writeCustomToolCallOutputItem = async (
+  writeSSE: ResponseSSEWriter,
+  item: ResponseCustomToolCall,
+  outputIndex: number,
+  sequenceNumberRef: { value: number },
+): Promise<void> => {
+  await writeSSE({
+    event: "response.output_item.added",
+    data: JSON.stringify({
+      type: "response.output_item.added",
+      output_index: outputIndex,
+      item: { ...item, input: "" },
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+  await writeSSE({
+    event: "response.custom_tool_call_input.delta",
+    data: JSON.stringify({
+      type: "response.custom_tool_call_input.delta",
+      item_id: item.id,
+      output_index: outputIndex,
+      delta: item.input,
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+  await writeSSE({
+    event: "response.custom_tool_call_input.done",
+    data: JSON.stringify({
+      type: "response.custom_tool_call_input.done",
+      item_id: item.id,
+      output_index: outputIndex,
+      input: item.input,
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+  await writeSSE({
+    event: "response.output_item.done",
+    data: JSON.stringify({
+      type: "response.output_item.done",
+      output_index: outputIndex,
+      item,
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+};
+
+export const writeFunctionToolCallOutputItem = async (
+  writeSSE: ResponseSSEWriter,
+  item: PlaintextResponseFunctionToolCall,
+  outputIndex: number,
+  sequenceNumberRef: { value: number },
+): Promise<void> => {
+  await writeSSE({
+    event: "response.output_item.added",
+    data: JSON.stringify({
+      type: "response.output_item.added",
+      output_index: outputIndex,
+      item: { ...item, arguments: "", status: "in_progress" },
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+  await writeSSE({
+    event: "response.function_call_arguments.delta",
+    data: JSON.stringify({
+      type: "response.function_call_arguments.delta",
+      item_id: item.id,
+      output_index: outputIndex,
+      delta: item.arguments,
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+  await writeSSE({
+    event: "response.function_call_arguments.done",
+    data: JSON.stringify({
+      type: "response.function_call_arguments.done",
+      item_id: item.id,
+      output_index: outputIndex,
+      arguments: item.arguments,
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
+  await writeSSE({
+    event: "response.output_item.done",
+    data: JSON.stringify({
+      type: "response.output_item.done",
+      output_index: outputIndex,
+      item,
+      sequence_number: sequenceNumberRef.value++,
+    }),
+  });
 };
 
 /**

@@ -21,6 +21,7 @@ import {
   WebSearchProvider,
   formatWebSearchEvidence,
   normalizeWebSearchResults,
+  runWebSearchProviderWithTimeout,
 } from "../../server/webSearch/webSearchProvider";
 
 const serverTool = (overrides: Record<string, unknown> = {}) => ({
@@ -462,6 +463,32 @@ suite("Anthropic Server Web Search Test Suite", () => {
         formatWebSearchEvidence(results).length <=
           MAX_WEB_SEARCH_CONTEXT_CHARACTERS,
       );
+    });
+  });
+
+  suite("provider lifecycle", () => {
+    test("does not invoke a provider for a pre-aborted request", async () => {
+      const controller = new AbortController();
+      const reason = new Error("request cancelled");
+      controller.abort(reason);
+      let providerCalls = 0;
+      const provider: WebSearchProvider = {
+        search: async () => {
+          providerCalls++;
+          return [];
+        },
+      };
+
+      await assert.rejects(
+        runWebSearchProviderWithTimeout(
+          provider,
+          { query: "current facts", maxResults: 5 },
+          controller.signal,
+          100,
+        ),
+        (error: unknown) => error === reason,
+      );
+      assert.strictEqual(providerCalls, 0);
     });
   });
 

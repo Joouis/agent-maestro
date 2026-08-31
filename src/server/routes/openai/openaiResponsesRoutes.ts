@@ -2,7 +2,11 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import OpenAI from "openai";
-import { ResponseUsage, Responses } from "openai/resources/responses/responses";
+import {
+  ResponseCustomToolCall,
+  ResponseUsage,
+  Responses,
+} from "openai/resources/responses/responses";
 import * as vscode from "vscode";
 
 import {
@@ -21,13 +25,13 @@ import {
 } from "../../utils/languageModelRequestLifecycle";
 import { extractOpenAIResponsesUsage } from "../../utils/openai";
 import {
+  OpenAIResponsesStatus,
   OutputItem,
-  ToolChoice,
+  PlaintextResponseFunctionToolCall,
+  buildOpenAIResponsesEnvelope,
   buildResponseOutput,
   closeMessageOutputItem,
   convertResponsesInputToVSCode,
-  convertResponsesToolsToVSCode,
-  convertToolChoice,
   customToolCallInput,
   extractAdditionalTools,
   generateCustomToolCallId,
@@ -35,10 +39,22 @@ import {
   generateMessageId,
   generateResponseId,
   getCurrentTimestamp,
-  narrowToolsForChoice,
+  openMessageOutputItem,
   plaintextFunctionCallMetadata,
+  writeCustomToolCallOutputItem,
+  writeFunctionToolCallOutputItem,
+  writeMessageOutputTextDelta,
 } from "../../utils/openaiResponses";
+import {
+  OpenAIResponsesRequestValidationError,
+  prepareOpenAIResponsesTools,
+} from "../../utils/openaiResponsesWebSearch";
 import { SSE_HEARTBEAT, withSseHeartbeat } from "../../utils/sseHeartbeat";
+import {
+  WEB_SEARCH_PROVIDER_TIMEOUT_MS,
+  WebSearchProvider,
+} from "../../webSearch/webSearchProvider";
+import { handleOpenAIResponsesWebSearch } from "./openaiResponsesWebSearchHandler";
 
 type NonStreamingResponse = Omit<
   OpenAI.Responses.Response,
@@ -51,6 +67,10 @@ type NonStreamingResponse = Omit<
   | "top_p"
 >;
 
+type OpenAIResponsesCreateParams = Responses.ResponseCreateParams & {
+  max_tool_calls?: number | null;
+};
+
 // OpenAPI route definition for /v1/responses
 const createResponseRoute = createRoute({
   method: "post",
@@ -61,10 +81,10 @@ const createResponseRoute = createRoute({
 
 Limitations:
 - Stateless: previous_response_id, conversation, item_reference not supported (send full history in input array)
-- Tools: function, custom, namespace, and additional_tools are supported; web_search, file_search, code_interpreter, mcp, etc. are ignored
+- Tools: function, custom, namespace, additional_tools, and stable web_search are supported; file_search, code_interpreter, mcp, etc. are ignored
 - Images: only base64 data URI supported (URL-based images fall back to JSON)
 - input_file: not supported (serialized as JSON text)
-- Annotations: always empty (VSCode LM doesn't provide annotations)
+- URL citations are synthesized from normalized web search results; other annotations are empty
 - Reasoning: not generated (VSCode LM doesn't expose reasoning tokens)`,
   request: {
     body: {
@@ -137,8 +157,10 @@ Limitations:
 
 export interface OpenaiResponsesRoutesOptions {
   heartbeatIntervalMs?: number;
+  providerTimeoutMs?: number;
   requestTimeoutMs?: number;
   resolveChatModelClient?: typeof getChatModelClient;
+  webSearchProvider?: WebSearchProvider;
 }
 
 export function registerOpenaiResponsesRoutes(
@@ -147,8 +169,10 @@ export function registerOpenaiResponsesRoutes(
 ) {
   const resolveChatModelClient =
     options.resolveChatModelClient ?? getChatModelClient;
+  const providerTimeoutMs =
+    options.providerTimeoutMs ?? WEB_SEARCH_PROVIDER_TIMEOUT_MS;
   app.openapi(createResponseRoute, async (c: Context): Promise<Response> => {
-    let rawRequestBody: Responses.ResponseCreateParams | undefined;
+    let rawRequestBody: OpenAIResponsesCreateParams | undefined;
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let requestedModelId = "";
     let inputTokens = 0;
@@ -156,8 +180,7 @@ export function registerOpenaiResponsesRoutes(
 
     try {
       // 1. Parse request and extract fields
-      const requestBody =
-        (await c.req.json()) as Responses.ResponseCreateParams;
+      const requestBody = (await c.req.json()) as OpenAIResponsesCreateParams;
       rawRequestBody = requestBody;
 
       const {
@@ -173,7 +196,7 @@ export function registerOpenaiResponsesRoutes(
         conversation,
         // OpenAI infrastructure features not applicable to VSCode LM
         store: _store,
-        include: _include,
+        include,
         background: _background,
         prompt: _prompt,
         // Copilot manages prompt caching internally instead of using prompt_cache_key
@@ -182,17 +205,18 @@ export function registerOpenaiResponsesRoutes(
         user: _user,
         safety_identifier: _safetyId,
         reasoning: responseReasoning,
+        max_output_tokens,
+        max_tool_calls,
+        parallel_tool_calls,
         // Remaining params passed through as modelOptions
         ...otherParams
       } = requestBody;
 
       requestedModelId = model ?? "";
 
-      // Rename max_output_tokens to maxTokens for VSCode LM compatibility
       const modelOptions = otherParams as Record<string, unknown>;
-      if ("max_output_tokens" in modelOptions) {
-        modelOptions.maxTokens = modelOptions.max_output_tokens;
-        delete modelOptions.max_output_tokens;
+      if (max_output_tokens !== null && max_output_tokens !== undefined) {
+        modelOptions.maxTokens = max_output_tokens;
       }
 
       // 2. Validate unsupported stateful parameters
@@ -255,6 +279,29 @@ export function registerOpenaiResponsesRoutes(
         );
       }
 
+      const effectiveTools = [
+        ...(tools ?? []),
+        ...extractAdditionalTools(input),
+      ];
+      const preparedTools = prepareOpenAIResponsesTools({
+        tools: effectiveTools,
+        toolChoice: tool_choice,
+        input,
+        include,
+        maxOutputTokens: max_output_tokens,
+        maxToolCalls: max_tool_calls,
+        parallelToolCalls: parallel_tool_calls,
+        serverWebSearchAvailable: options.webSearchProvider !== undefined,
+      });
+      if (!preparedTools.usesWebSearchLoop) {
+        if (max_tool_calls !== null && max_tool_calls !== undefined) {
+          modelOptions.max_tool_calls = max_tool_calls;
+        }
+        if (parallel_tool_calls !== null && parallel_tool_calls !== undefined) {
+          modelOptions.parallel_tool_calls = parallel_tool_calls;
+        }
+      }
+
       // 4. Get chat model client
       const { client, error: clientError } =
         await resolveChatModelClient(model);
@@ -281,81 +328,51 @@ export function registerOpenaiResponsesRoutes(
       const vsCodeMessages = convertResponsesInputToVSCode(input, instructions);
       lmChatMessages = vsCodeMessages;
 
-      // 7. Build request options
-      // Tools may arrive both at the top level and as `additional_tools`
-      // items injected mid-conversation; merge both sources.
-      const effectiveTools = [
-        ...(tools ?? []),
-        ...extractAdditionalTools(input),
-      ];
-
-      const { tools: vsCodeTools, toolMap } =
-        convertResponsesToolsToVSCode(effectiveTools);
-
-      const narrowed = narrowToolsForChoice(
-        tool_choice as ToolChoice,
-        vsCodeTools,
-        toolMap,
-      );
-      if (!narrowed.ok) {
-        return c.json(
-          {
-            error: {
-              type: "invalid_request_error",
-              message:
-                `tool_choice named "${narrowed.targetName}" matched ` +
-                `${narrowed.matchCount} tools. A named tool_choice must ` +
-                "resolve to exactly one available tool.",
-              param: "tool_choice",
-              code:
-                narrowed.matchCount === 0
-                  ? "tool_not_found"
-                  : "ambiguous_tool_choice",
-            },
-          },
-          400,
-        );
-      }
-
-      if (tool_choice === "required" && narrowed.tools.length === 0) {
-        return c.json(
-          {
-            error: {
-              type: "invalid_request_error",
-              message:
-                'tool_choice is "required", but no supported tools are available.',
-              param: "tool_choice",
-              code: "tool_not_found",
-            },
-          },
-          400,
-        );
-      }
-
-      const shouldPassTools =
-        tool_choice !== "none" && narrowed.tools.length > 0;
       const lmRequestOptions: vscode.LanguageModelChatRequestOptions = {
         justification:
           "OpenAI Responses API endpoint using VS Code Language Model API",
         modelOptions,
-        tools: shouldPassTools ? narrowed.tools : undefined,
-        toolMode: shouldPassTools
-          ? convertToolChoice(tool_choice as ToolChoice)
-          : undefined,
+        tools: preparedTools.tools,
+        toolMode: preparedTools.toolMode,
       };
       const copilotConfiguration = getCopilotModelConfiguration({
         reasoningEffort: responseReasoning?.effort,
       });
+      const configuredRequestOptions = withCopilotConfiguration(
+        client,
+        lmRequestOptions,
+        copilotConfiguration,
+      );
+
+      if (preparedTools.usesWebSearchLoop) {
+        return await handleOpenAIResponsesWebSearch({
+          c,
+          client,
+          heartbeatIntervalMs: options.heartbeatIntervalMs,
+          lifecycle: requestLifecycle,
+          maxOutputTokens:
+            typeof max_output_tokens === "number"
+              ? max_output_tokens
+              : undefined,
+          messages: vsCodeMessages,
+          metadata,
+          model,
+          parallelToolCalls: parallel_tool_calls,
+          preparedTools,
+          provider: options.webSearchProvider!,
+          providerTimeoutMs,
+          publicTools: tools ?? [],
+          requestOptions: configuredRequestOptions,
+          stream,
+          toolChoice: tool_choice,
+        });
+      }
 
       // 8. Send request to VSCode LM
       const response = await requestLifecycle.waitFor(
         client.sendRequest(
           vsCodeMessages,
-          withCopilotConfiguration(
-            client,
-            lmRequestOptions,
-            copilotConfiguration,
-          ),
+          configuredRequestOptions,
           cancellationToken,
         ),
       );
@@ -385,7 +402,11 @@ export function registerOpenaiResponsesRoutes(
         }
 
         // Build output
-        const output = buildResponseOutput(accumulatedText, toolCalls, toolMap);
+        const output = buildResponseOutput(
+          accumulatedText,
+          toolCalls,
+          preparedTools.toolMap,
+        );
 
         if (!responseUsage) {
           const [fallbackInputTokens, outputTokens] =
@@ -446,35 +467,25 @@ export function registerOpenaiResponsesRoutes(
             message: Parameters<typeof sseStream.writeSSE>[0],
           ) => requestLifecycle!.waitFor(sseStream.writeSSE(message));
 
-          // Build base response object
-          const baseResponse = {
-            id: responseId,
-            object: "response" as const,
-            created_at: createdAt,
-            model: model,
-            error: null,
-            incomplete_details: null,
-            metadata,
-          };
-
-          // Build full response envelope (matching upstream format)
           const buildResponseEnvelope = (
-            status: string,
+            status: OpenAIResponsesStatus,
             output: OutputItem[],
-            usage?: ResponseUsage | null,
-            completedAt?: number | null,
-          ) => ({
-            ...baseResponse,
-            status,
-            background: false,
-            completed_at: completedAt ?? null,
-            output,
-            parallel_tool_calls: true,
-            reasoning: { effort: "none", summary: null },
-            tool_choice: tool_choice ?? "auto",
-            tools: tools ?? [],
-            usage: usage ?? null,
-          });
+            usage: ResponseUsage | null = null,
+            completedAt: number | null = null,
+          ) =>
+            buildOpenAIResponsesEnvelope({
+              id: responseId,
+              createdAt,
+              model,
+              metadata,
+              parallelToolCalls: parallel_tool_calls,
+              toolChoice: tool_choice,
+              tools: tools ?? [],
+              status,
+              output,
+              usage,
+              completedAt,
+            });
 
           // Emit response.created
           await writeSSE({
@@ -521,53 +532,27 @@ export function registerOpenaiResponsesRoutes(
 
             if (chunk instanceof vscode.LanguageModelTextPart) {
               if (!currentMessageId) {
-                // Start new message output item
                 currentMessageId = generateMessageId();
                 contentIndex = 0;
-
-                await writeSSE({
-                  event: "response.output_item.added",
-                  data: JSON.stringify({
-                    type: "response.output_item.added",
-                    output_index: outputIndex,
-                    item: {
-                      type: "message",
-                      id: currentMessageId,
-                      role: "assistant",
-                      content: [],
-                      status: "in_progress",
-                    },
-                    sequence_number: sequenceNumberRef.value++,
-                  }),
-                });
-
-                await writeSSE({
-                  event: "response.content_part.added",
-                  data: JSON.stringify({
-                    type: "response.content_part.added",
-                    item_id: currentMessageId,
-                    output_index: outputIndex,
-                    content_index: contentIndex,
-                    part: { type: "output_text", text: "", annotations: [] },
-                    sequence_number: sequenceNumberRef.value++,
-                  }),
-                });
+                await openMessageOutputItem(
+                  writeSSE,
+                  currentMessageId,
+                  outputIndex,
+                  contentIndex,
+                  sequenceNumberRef,
+                );
               }
 
-              // Emit text delta
               accumulatedText += chunk.value;
               totalOutputText += chunk.value;
-              await writeSSE({
-                event: "response.output_text.delta",
-                data: JSON.stringify({
-                  type: "response.output_text.delta",
-                  item_id: currentMessageId,
-                  output_index: outputIndex,
-                  content_index: contentIndex,
-                  delta: chunk.value,
-                  sequence_number: sequenceNumberRef.value++,
-                }),
-              });
+              await writeMessageOutputTextDelta(
+                writeSSE,
+                currentMessageId,
+                outputIndex,
+                contentIndex,
+                chunk.value,
+                sequenceNumberRef,
+              );
             } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
               // Close current message if open
               if (currentMessageId) {
@@ -587,125 +572,37 @@ export function registerOpenaiResponsesRoutes(
 
               totalOutputText += JSON.stringify(chunk);
 
-              const toolInfo = toolMap.get(chunk.name);
+              const toolInfo = preparedTools.toolMap.get(chunk.name);
               const toolName = toolInfo?.name ?? chunk.name;
               const toolNamespace = toolInfo?.namespace;
 
               if (toolInfo?.isCustom) {
-                // Emit custom tool call events (raw string input, no JSON args)
                 const ctcId = generateCustomToolCallId();
                 const callId = chunk.callId;
                 const inputStr = customToolCallInput(chunk.input);
-
-                await writeSSE({
-                  event: "response.output_item.added",
-                  data: JSON.stringify({
-                    type: "response.output_item.added",
-                    output_index: outputIndex,
-                    item: {
-                      type: "custom_tool_call",
-                      id: ctcId,
-                      call_id: callId,
-                      name: toolName,
-                      input: "",
-                      ...(toolNamespace ? { namespace: toolNamespace } : {}),
-                    },
-                    sequence_number: sequenceNumberRef.value++,
-                  }),
-                });
-
-                await writeSSE({
-                  event: "response.custom_tool_call_input.delta",
-                  data: JSON.stringify({
-                    type: "response.custom_tool_call_input.delta",
-                    item_id: ctcId,
-                    output_index: outputIndex,
-                    delta: inputStr,
-                    sequence_number: sequenceNumberRef.value++,
-                  }),
-                });
-
-                await writeSSE({
-                  event: "response.custom_tool_call_input.done",
-                  data: JSON.stringify({
-                    type: "response.custom_tool_call_input.done",
-                    item_id: ctcId,
-                    output_index: outputIndex,
-                    input: inputStr,
-                    sequence_number: sequenceNumberRef.value++,
-                  }),
-                });
-
-                output.push({
+                const customItem: ResponseCustomToolCall = {
                   type: "custom_tool_call",
                   id: ctcId,
                   call_id: callId,
                   name: toolName,
                   input: inputStr,
                   ...(toolNamespace ? { namespace: toolNamespace } : {}),
-                });
-
-                await writeSSE({
-                  event: "response.output_item.done",
-                  data: JSON.stringify({
-                    type: "response.output_item.done",
-                    output_index: outputIndex,
-                    item: output[outputIndex],
-                    sequence_number: sequenceNumberRef.value++,
-                  }),
-                });
-
+                };
+                output.push(customItem);
+                await writeCustomToolCallOutputItem(
+                  writeSSE,
+                  customItem,
+                  outputIndex,
+                  sequenceNumberRef,
+                );
                 outputIndex++;
                 continue;
               }
 
-              // Emit function call events
               const fcId = generateFunctionCallId();
               const callId = chunk.callId;
               const argsStr = JSON.stringify(chunk.input ?? {});
-
-              await writeSSE({
-                event: "response.output_item.added",
-                data: JSON.stringify({
-                  type: "response.output_item.added",
-                  output_index: outputIndex,
-                  item: {
-                    type: "function_call",
-                    id: fcId,
-                    call_id: callId,
-                    name: toolName,
-                    arguments: "",
-                    status: "in_progress",
-                    ...(toolNamespace ? { namespace: toolNamespace } : {}),
-                    ...plaintextFunctionCallMetadata(toolInfo),
-                  },
-                  sequence_number: sequenceNumberRef.value++,
-                }),
-              });
-
-              await writeSSE({
-                event: "response.function_call_arguments.delta",
-                data: JSON.stringify({
-                  type: "response.function_call_arguments.delta",
-                  item_id: fcId,
-                  output_index: outputIndex,
-                  delta: argsStr,
-                  sequence_number: sequenceNumberRef.value++,
-                }),
-              });
-
-              await writeSSE({
-                event: "response.function_call_arguments.done",
-                data: JSON.stringify({
-                  type: "response.function_call_arguments.done",
-                  item_id: fcId,
-                  output_index: outputIndex,
-                  arguments: argsStr,
-                  sequence_number: sequenceNumberRef.value++,
-                }),
-              });
-
-              output.push({
+              const functionItem: PlaintextResponseFunctionToolCall = {
                 type: "function_call",
                 id: fcId,
                 call_id: callId,
@@ -714,18 +611,14 @@ export function registerOpenaiResponsesRoutes(
                 status: "completed",
                 ...(toolNamespace ? { namespace: toolNamespace } : {}),
                 ...plaintextFunctionCallMetadata(toolInfo),
-              });
-
-              await writeSSE({
-                event: "response.output_item.done",
-                data: JSON.stringify({
-                  type: "response.output_item.done",
-                  output_index: outputIndex,
-                  item: output[outputIndex],
-                  sequence_number: sequenceNumberRef.value++,
-                }),
-              });
-
+              };
+              output.push(functionItem);
+              await writeFunctionToolCallOutputItem(
+                writeSSE,
+                functionItem,
+                outputIndex,
+                sequenceNumberRef,
+              );
               outputIndex++;
             } else if (chunk instanceof vscode.LanguageModelDataPart) {
               responseUsage =
@@ -835,6 +728,20 @@ export function registerOpenaiResponsesRoutes(
       );
     } catch (error) {
       requestLifecycle?.dispose();
+
+      if (error instanceof OpenAIResponsesRequestValidationError) {
+        return c.json(
+          {
+            error: {
+              type: "invalid_request_error",
+              message: error.message,
+              param: error.param,
+              code: error.code,
+            },
+          },
+          400,
+        );
+      }
 
       if (error instanceof LanguageModelRequestTimeoutError) {
         logger.error("✕ /v1/responses |", error);

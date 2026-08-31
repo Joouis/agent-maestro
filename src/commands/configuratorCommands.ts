@@ -368,6 +368,7 @@ export function registerConfiguratorCommands(
               name: "Agent Maestro",
               base_url: `http://${LOOPBACK_HOST}:${proxyPort}/api/openai/v1`,
               wire_api: "responses",
+              supports_standalone_web_search: true,
             },
           },
         };
