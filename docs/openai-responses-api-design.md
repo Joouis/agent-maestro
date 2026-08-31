@@ -139,12 +139,12 @@ separately in
 
 ### Content Limitations
 
-| Content Type    | Limitation                                                        |
-| --------------- | ----------------------------------------------------------------- |
-| `input_image`   | Only base64 data URI supported; URL-based images fallback to JSON |
-| `input_file`    | Not supported, serialized as JSON text                            |
-| `annotations`   | Always empty (VSCode LM doesn't provide annotations)              |
-| Reasoning items | Never generated (VSCode LM doesn't expose reasoning)              |
+| Content Type    | Limitation                                                                     |
+| --------------- | ------------------------------------------------------------------------------ |
+| `input_image`   | Only base64 data URI supported; URL-based images fallback to JSON              |
+| `input_file`    | Not supported, serialized as JSON text                                         |
+| `annotations`   | Currently empty; the proposed server web-search path synthesizes URL citations |
+| Reasoning items | Never generated (VSCode LM doesn't expose reasoning)                           |
 
 ### Manual E2E Validation
 
