@@ -2,4 +2,6 @@
 "agent-maestro": minor
 ---
 
-Add OpenAI Responses server web search through Exa, including Codex support, streaming hosted-tool events, source citations, request validation, isolation, and shared output budgeting.
+Add OpenAI Responses web search through Exa with Codex support, streaming events, citations, isolation, and shared output budgeting.
+
+Unsupported or preview web-search declarations now return HTTP 400 instead of being silently ignored; only `web_search` and `web_search_2025_08_26` are supported.
