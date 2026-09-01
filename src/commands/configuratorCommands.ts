@@ -359,15 +359,23 @@ export function registerConfiguratorCommands(
           ...existingConfig,
           model: selectedModel.modelId,
           model_provider: "agent-maestro",
+          web_search:
+            existingConfig.web_search === "disabled" ? "disabled" : "live",
           ...(modelContextWindow !== undefined && {
             model_context_window: modelContextWindow,
           }),
+          features: {
+            ...existingConfig.features,
+            standalone_web_search: true,
+          },
           model_providers: {
             ...existingConfig.model_providers,
             "agent-maestro": {
+              ...existingConfig.model_providers?.["agent-maestro"],
               name: "Agent Maestro",
               base_url: `http://${LOOPBACK_HOST}:${proxyPort}/api/openai/v1`,
               wire_api: "responses",
+              supports_standalone_web_search: true,
             },
           },
         };

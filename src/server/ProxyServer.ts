@@ -28,6 +28,8 @@ import { registerLmRoutes } from "./routes/lmRoutes";
 import { registerOpenaiRoutes } from "./routes/openai/openaiRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
+import { CodexStandaloneWebSearch } from "./webSearch/codexStandaloneWebSearch";
+import { EXA_CODEX_TOOLS, ExaMcpClient } from "./webSearch/exaMcpClient";
 import { ExaMcpWebSearchProvider } from "./webSearch/exaMcpWebSearchProvider";
 
 export class ProxyServer {
@@ -39,6 +41,7 @@ export class ProxyServer {
   private server?: ServerType;
   private portMonitorInterval?: NodeJS.Timeout;
   private llmApiKey: string | null = null;
+  private readonly codexSearch: CodexStandaloneWebSearch;
   private readonly webSearchProvider: ExaMcpWebSearchProvider;
 
   constructor(
@@ -49,9 +52,16 @@ export class ProxyServer {
     this.controller = controller;
     this.context = context;
     this.port = port;
-    this.webSearchProvider = new ExaMcpWebSearchProvider({
+    const exaMcpClient = new ExaMcpClient({
       getApiKey: () =>
         Promise.resolve(this.context.secrets.get(EXA_API_KEY_SECRET_KEY)),
+      tools: EXA_CODEX_TOOLS,
+    });
+    this.webSearchProvider = new ExaMcpWebSearchProvider({
+      client: exaMcpClient,
+    });
+    this.codexSearch = new CodexStandaloneWebSearch({
+      client: exaMcpClient,
     });
 
     // Initialize OpenAPIHono app with basic middleware
@@ -117,6 +127,7 @@ export class ProxyServer {
   private getApiOpenAiRoutes(): OpenAPIHono {
     const routes = new OpenAPIHono();
     registerOpenaiRoutes(routes, {
+      codexSearch: this.codexSearch,
       webSearchProvider: this.webSearchProvider,
     });
     return routes;
@@ -172,6 +183,11 @@ export class ProxyServer {
           name: "OpenAI API",
           description:
             "OpenAI-compatible API endpoints using VSCode Language Models",
+        },
+        {
+          name: "Codex Compatibility",
+          description:
+            "Experimental, versioned compatibility endpoints for Codex clients",
         },
         {
           name: "Google Gemini API",
