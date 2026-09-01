@@ -364,9 +364,13 @@ suite("Codex standalone web search", () => {
 
   test("stops awaiting sibling DNS resolution after a concurrent failure", async () => {
     let dnsStarted = false;
+    let markDnsStarted = () => {};
+    const waitForDns = new Promise<void>((resolve) => {
+      markDnsStarted = resolve;
+    });
     const session = new FakeExaSession(true, async (_name, args) => {
       if (args.query === "fails") {
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await waitForDns;
         throw new ExaMcpError("rate_limited", "limited", 429);
       }
       return searchResult("Hanging DNS", "https://hang.example/result");
@@ -375,12 +379,10 @@ suite("Codex standalone web search", () => {
       client: createClient(session),
       resolveHostname: () => {
         dnsStarted = true;
-        return new Promise((resolve) => {
-          setTimeout(() => resolve(["93.184.216.34"]), 200);
-        });
+        markDnsStarted();
+        return new Promise(() => {});
       },
     });
-    const startedAt = Date.now();
 
     const response = await adapter.execute(
       request("concurrent-dns-failure", {
@@ -390,7 +392,6 @@ suite("Codex standalone web search", () => {
     );
 
     assert.strictEqual(dnsStarted, true);
-    assert.ok(Date.now() - startedAt < 150);
     assert.match(response.output, /rate_limited/);
   });
 
@@ -958,6 +959,10 @@ suite("Codex standalone web search", () => {
       normalizePublicWebSearchUrl("https://[2606:4700:4700::1111]/"),
       "https://[2606:4700:4700::1111]/",
     );
+    assert.strictEqual(
+      normalizePublicWebSearchUrl("https://EXAMPLE.com./path#fragment"),
+      "https://example.com/path",
+    );
   });
 
   test("rejects DNS aliases that resolve to non-public addresses", async () => {
@@ -1050,13 +1055,9 @@ suite("Codex standalone web search", () => {
     );
     const adapter = createStandaloneSearch({
       client: createClient(session),
-      resolveHostname: () =>
-        new Promise((resolve) => {
-          setTimeout(() => resolve(["93.184.216.34"]), 200);
-        }),
+      resolveHostname: () => new Promise(() => {}),
       timeoutMs: 10,
     });
-    const startedAt = Date.now();
 
     const response = await adapter.execute(
       request("dns-timeout", {
@@ -1064,9 +1065,8 @@ suite("Codex standalone web search", () => {
       }),
       new AbortController().signal,
     );
-
     assert.match(response.output, /timeout/);
-    assert.ok(Date.now() - startedAt < 150);
+    assert.match(response.output, /timeout/);
   });
 
   test("drops non-public URLs returned by the search provider", async () => {

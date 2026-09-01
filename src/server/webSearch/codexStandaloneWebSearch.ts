@@ -188,7 +188,10 @@ export const normalizePublicWebSearchUrl = (
   ) {
     return undefined;
   }
-  return normalized;
+  if (url.hostname.endsWith(".")) {
+    url.hostname = hostname;
+  }
+  return url.toString();
 };
 
 const resolveHostnameAddresses = async (
@@ -1729,10 +1732,10 @@ export class CodexStandaloneWebSearch {
       };
     }
     const page = loaded.page;
-    const needle = pattern.toLocaleLowerCase();
+    const needle = pattern.toLowerCase();
     const lineNumbers = new Set<number>();
     page.lines.forEach((line, index) => {
-      if (!line.toLocaleLowerCase().includes(needle)) {
+      if (!line.toLowerCase().includes(needle)) {
         return;
       }
       for (
