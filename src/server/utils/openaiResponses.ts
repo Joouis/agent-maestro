@@ -831,6 +831,66 @@ export const convertResponsesInputToVSCode = (
   return messages;
 };
 
+export function isMissingToolCallOutputError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : JSON.stringify(error);
+  return /No tool call found for function call output with call_id\b/i.test(
+    message ?? "",
+  );
+}
+
+export function downgradeResponsesToolHistory(
+  messages: readonly vscode.LanguageModelChatMessage[],
+): vscode.LanguageModelChatMessage[] | undefined {
+  let changed = false;
+  const downgraded = messages.map((message) => {
+    const content: vscode.LanguageModelInputPart[] = [];
+    for (const part of message.content) {
+      if (part instanceof vscode.LanguageModelToolCallPart) {
+        changed = true;
+        content.push(
+          new vscode.LanguageModelTextPart(
+            `[Historical tool call ${part.name} (${part.callId})]\n${JSON.stringify(part.input)}`,
+          ),
+        );
+        continue;
+      }
+
+      if (part instanceof vscode.LanguageModelToolResultPart) {
+        changed = true;
+        content.push(
+          new vscode.LanguageModelTextPart(
+            `[Historical tool result (${part.callId})]`,
+          ),
+        );
+        for (const resultPart of part.content) {
+          content.push(
+            resultPart instanceof vscode.LanguageModelTextPart ||
+              resultPart instanceof vscode.LanguageModelDataPart
+              ? resultPart
+              : new vscode.LanguageModelTextPart(
+                  JSON.stringify(resultPart) ?? String(resultPart),
+                ),
+          );
+        }
+        continue;
+      }
+
+      content.push(part);
+    }
+    return new vscode.LanguageModelChatMessage(
+      message.role,
+      content,
+      message.name,
+    );
+  });
+  return changed ? downgraded : undefined;
+}
+
 /**
  * Convert Responses API tools to VSCode LM tools.
  *

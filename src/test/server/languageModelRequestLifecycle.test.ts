@@ -383,6 +383,246 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     assert.strictEqual(cancellationObserved, true);
   });
 
+  test("retries Responses once with tool history downgraded after a downstream pairing error", async () => {
+    const capturedRequests: Array<readonly vscode.LanguageModelChatMessage[]> =
+      [];
+    const model = {
+      id: "gpt-5.6-test",
+      name: "GPT 5.6 Test",
+      family: "gpt-5.6",
+      version: "test",
+      vendor: "copilot",
+      maxInputTokens: 200000,
+      capabilities: { supportsImageToText: true, supportsToolCalling: true },
+      sendRequest: async (
+        messages: readonly vscode.LanguageModelChatMessage[],
+      ) => {
+        capturedRequests.push(messages);
+        if (capturedRequests.length === 1) {
+          throw new Error(
+            "Request Failed: 400 No tool call found for function call output with call_id call_exec_1.",
+          );
+        }
+        return {
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart("recovered");
+          })(),
+          text: (async function* () {
+            yield "recovered";
+          })(),
+        };
+      },
+      countTokens: async () => 1,
+    } as unknown as vscode.LanguageModelChat;
+    const app = createOpenaiResponsesTestApp(model);
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-5.6-test",
+        input: [
+          {
+            type: "custom_tool_call",
+            id: "ctc_exec_1",
+            call_id: "call_exec_1",
+            name: "exec",
+            input: "git status",
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "call_exec_1",
+            output: "working tree clean",
+          },
+        ],
+      }),
+    });
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(capturedRequests.length, 2);
+    assert.ok(
+      capturedRequests[0]
+        .flatMap((message) => message.content)
+        .some((part) => part instanceof vscode.LanguageModelToolCallPart),
+    );
+    const recoveredParts = capturedRequests[1].flatMap(
+      (message) => message.content,
+    );
+    assert.ok(
+      recoveredParts.every(
+        (part) =>
+          !(part instanceof vscode.LanguageModelToolCallPart) &&
+          !(part instanceof vscode.LanguageModelToolResultPart),
+      ),
+    );
+    assert.match(
+      recoveredParts
+        .filter((part) => part instanceof vscode.LanguageModelTextPart)
+        .map((part) => part.value)
+        .join("\n"),
+      /git status[\s\S]*working tree clean/,
+    );
+  });
+
+  test("retries Responses when downstream pairing fails before the first stream chunk", async () => {
+    const capturedRequests: Array<readonly vscode.LanguageModelChatMessage[]> =
+      [];
+    const model = {
+      id: "gpt-5.6-test",
+      name: "GPT 5.6 Test",
+      family: "gpt-5.6",
+      version: "test",
+      vendor: "copilot",
+      maxInputTokens: 200000,
+      capabilities: { supportsImageToText: true, supportsToolCalling: true },
+      sendRequest: async (
+        messages: readonly vscode.LanguageModelChatMessage[],
+      ) => {
+        capturedRequests.push(messages);
+        const requestNumber = capturedRequests.length;
+        return {
+          stream: (async function* () {
+            if (requestNumber === 1) {
+              throw new Error(
+                "No tool call found for function call output with call_id call_exec_1.",
+              );
+            }
+            yield new vscode.LanguageModelTextPart("recovered");
+          })(),
+          text: (async function* () {})(),
+        };
+      },
+      countTokens: async () => 1,
+    } as unknown as vscode.LanguageModelChat;
+    const app = createOpenaiResponsesTestApp(model);
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-5.6-test",
+        stream: true,
+        input: [
+          {
+            type: "custom_tool_call",
+            id: "ctc_exec_1",
+            call_id: "call_exec_1",
+            name: "exec",
+            input: "git status",
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "call_exec_1",
+            output: "working tree clean",
+          },
+        ],
+      }),
+    });
+    const body = await response.text();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(capturedRequests.length, 2);
+    assert.ok(body.includes("recovered"));
+    assert.ok(body.includes("response.completed"));
+    assert.ok(!body.includes("response.failed"));
+  });
+
+  test("does not retry a downstream pairing error after model output starts", async () => {
+    let requestCount = 0;
+    const model = {
+      id: "gpt-5.6-test",
+      name: "GPT 5.6 Test",
+      family: "gpt-5.6",
+      version: "test",
+      vendor: "copilot",
+      maxInputTokens: 200000,
+      capabilities: { supportsImageToText: true, supportsToolCalling: true },
+      sendRequest: async () => {
+        requestCount++;
+        return {
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart("partial");
+            throw new Error(
+              "No tool call found for function call output with call_id call_exec_1.",
+            );
+          })(),
+          text: (async function* () {})(),
+        };
+      },
+      countTokens: async () => 1,
+    } as unknown as vscode.LanguageModelChat;
+    const app = createOpenaiResponsesTestApp(model);
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-5.6-test",
+        stream: true,
+        input: [
+          {
+            type: "custom_tool_call",
+            id: "ctc_exec_1",
+            call_id: "call_exec_1",
+            name: "exec",
+            input: "git status",
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "call_exec_1",
+            output: "working tree clean",
+          },
+        ],
+      }),
+    });
+    const body = await response.text();
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(requestCount, 1);
+    assert.ok(body.includes("partial"));
+    assert.ok(body.includes("response.failed"));
+    assert.ok(!body.includes("response.completed"));
+  });
+
+  test("attempts downstream tool-history recovery only once", async () => {
+    let requestCount = 0;
+    const model = {
+      ...createSuccessfulModel(() => {}),
+      sendRequest: async () => {
+        requestCount++;
+        throw new Error(
+          "No tool call found for function call output with call_id call_exec_1.",
+        );
+      },
+    } as unknown as vscode.LanguageModelChat;
+    const app = createOpenaiResponsesTestApp(model);
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "test-model",
+        input: [
+          {
+            type: "function_call",
+            id: "fc_exec_1",
+            call_id: "call_exec_1",
+            name: "exec",
+            arguments: "{}",
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_exec_1",
+            output: "done",
+          },
+        ],
+      }),
+    });
+
+    assert.strictEqual(response.status, 500);
+    assert.strictEqual(requestCount, 2);
+  });
+
   test("passes tool-output images to Responses models as DataPart", async () => {
     let capturedMessages: readonly vscode.LanguageModelChatMessage[] = [];
     const model = {

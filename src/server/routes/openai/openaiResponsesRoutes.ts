@@ -33,12 +33,14 @@ import {
   closeMessageOutputItem,
   convertResponsesInputToVSCode,
   customToolCallInput,
+  downgradeResponsesToolHistory,
   extractAdditionalTools,
   generateCustomToolCallId,
   generateFunctionCallId,
   generateMessageId,
   generateResponseId,
   getCurrentTimestamp,
+  isMissingToolCallOutputError,
   openMessageOutputItem,
   plaintextFunctionCallMetadata,
   writeCustomToolCallOutputItem,
@@ -369,13 +371,76 @@ export function registerOpenaiResponsesRoutes(
       }
 
       // 8. Send request to VSCode LM
-      const response = await requestLifecycle.waitFor(
-        client.sendRequest(
-          vsCodeMessages,
-          configuredRequestOptions,
-          cancellationToken,
-        ),
-      );
+      let recoveryUsed = false;
+      let activeMessages = vsCodeMessages;
+      const recoverToolHistory = async (
+        error: unknown,
+      ): Promise<vscode.LanguageModelChatResponse | undefined> => {
+        const recoveredMessages =
+          !recoveryUsed && isMissingToolCallOutputError(error)
+            ? downgradeResponsesToolHistory(activeMessages)
+            : undefined;
+        if (!recoveredMessages) {
+          return undefined;
+        }
+
+        recoveryUsed = true;
+        activeMessages = recoveredMessages;
+        lmChatMessages = recoveredMessages;
+        logger.warn(
+          "Responses downstream tool pairing failed; retrying once with historical tool calls and results converted to ordinary context",
+        );
+        return requestLifecycle!.waitFor(
+          client.sendRequest(
+            recoveredMessages,
+            configuredRequestOptions,
+            cancellationToken,
+          ),
+        );
+      };
+
+      let response: vscode.LanguageModelChatResponse;
+      try {
+        response = await requestLifecycle.waitFor(
+          client.sendRequest(
+            vsCodeMessages,
+            configuredRequestOptions,
+            cancellationToken,
+          ),
+        );
+      } catch (error) {
+        const recoveredResponse = await recoverToolHistory(error);
+        if (!recoveredResponse) {
+          throw error;
+        }
+        response = recoveredResponse;
+      }
+
+      const responseStream = async function* () {
+        let emittedModelPart = false;
+        try {
+          for await (const chunk of interruptibleLanguageModelStream(
+            response.stream,
+            requestLifecycle!,
+          )) {
+            emittedModelPart = true;
+            yield chunk;
+          }
+        } catch (error) {
+          const recoveredResponse = !emittedModelPart
+            ? await recoverToolHistory(error)
+            : undefined;
+          if (!recoveredResponse) {
+            throw error;
+          }
+          for await (const chunk of interruptibleLanguageModelStream(
+            recoveredResponse.stream,
+            requestLifecycle!,
+          )) {
+            yield chunk;
+          }
+        }
+      };
 
       // 9. Handle non-streaming response
       if (!stream) {
@@ -384,10 +449,7 @@ export function registerOpenaiResponsesRoutes(
           [];
         let responseUsage: ResponseUsage | undefined;
 
-        for await (const chunk of interruptibleLanguageModelStream(
-          response.stream,
-          requestLifecycle,
-        )) {
+        for await (const chunk of responseStream()) {
           if (chunk instanceof vscode.LanguageModelTextPart) {
             accumulatedText += chunk.value;
           } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
@@ -517,10 +579,7 @@ export function registerOpenaiResponsesRoutes(
           let responseUsage: ResponseUsage | undefined;
 
           for await (const chunk of withSseHeartbeat(
-            interruptibleLanguageModelStream(
-              response.stream,
-              requestLifecycle!,
-            ),
+            responseStream(),
             options.heartbeatIntervalMs,
           )) {
             if (chunk === SSE_HEARTBEAT) {
