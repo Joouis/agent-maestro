@@ -17,9 +17,11 @@ POST /api/openai/v1/alpha/search
 ```
 
 The endpoint will translate supported Codex `web.run` commands into calls to
-the hosted Exa MCP server. It will return the plain-text search output expected
-by Codex and optional structured result DTOs for Codex clients that display
-search activity.
+the hosted Exa MCP server. Advanced search settings use Exa's authenticated
+Search API because the pinned MCP advanced-search tool cannot disable full-page
+text retrieval. It will return the plain-text search output expected by Codex
+and optional structured result DTOs for Codex clients that display search
+activity.
 
 The first implementation will be opt-in. `Configure Codex Settings` must not
 write `supports_standalone_web_search = true` until reference-based `open` and
@@ -30,7 +32,8 @@ The standalone endpoint is separate from the OpenAI Responses hosted
 
 - Codex itself exposes `web.run` to the model and sends the selected commands
   to `/alpha/search`.
-- Agent Maestro executes those commands directly through Exa MCP.
+- Agent Maestro executes those commands through Exa MCP or the authenticated
+  Exa Search API.
 - The standalone endpoint does not invoke a VS Code language model or run a
   hidden model loop.
 - The two features share the low-level Exa transport, normalization, timeout,
@@ -242,6 +245,13 @@ During design validation, the anonymous hosted endpoint:
 - listed all three explicitly requested tools; and
 - completed an anonymous `web_search_exa` call.
 
+The pinned `web_search_advanced_exa` implementation always requests
+`contents.text`, even when highlights are enabled. Agent Maestro therefore does
+not call that tool for standalone search. Requests needing domain, recency,
+country, or cache-only policy use the Exa Search API with a highlights-only
+`contents` object when an API key is configured. Without a key, they return a
+recoverable `advanced_search_requires_api_key` result.
+
 ### Authentication and Rate Limiting
 
 An Exa API key is optional. The existing VS Code SecretStorage key remains the
@@ -328,6 +338,9 @@ valid but cannot be completed, including:
 - an `open` target that Exa cannot fetch, including rejection or timeout; and
 - no usable results after applying required filters.
 
+Provider HTTP 408 and 504 responses are classified as recoverable timeouts,
+while malformed JSON-RPC envelopes are recoverable protocol failures.
+
 Example:
 
 ```json
@@ -355,18 +368,20 @@ response.
 
 ### Choosing the Exa Tool
 
-Use `web_search_exa` only when all of the following are true:
+Use `web_search_exa` independently for each query when all of the following are
+true:
 
-- exactly one query is present;
 - there is no recency constraint;
 - there are no domain filters;
 - there is no location constraint; and
 - no explicit cache-only policy must be enforced.
 
-Otherwise use `web_search_advanced_exa`.
+Otherwise use the authenticated Exa Search API. If no API key is configured,
+return a recoverable unavailable result without dispatching the unsafe advanced
+MCP tool.
 
-The advanced request enables highlights and applies a bounded highlight
-character limit. Raw full-page text is not requested during the search phase.
+The advanced request includes only highlights with a bounded character limit.
+It omits `text`, so raw full-page text is not requested during the search phase.
 
 ### Domain Filters
 
@@ -383,12 +398,18 @@ For each query:
    broader search.
 
 Domains are deduplicated. Each list is limited to 100 entries.
+An empty allowlist is treated as absent; only two non-empty, non-overlapping
+allowlists suppress a query.
 
 ### Recency
 
 Map `recency: N` to `startPublishedDate` using the current UTC date minus `N`
 calendar days. A missing publication date does not satisfy a recency-filtered
 query unless Exa itself includes it under the requested filter.
+
+`recency` is limited to 36,525 days (100 years). Larger values are malformed
+requests rather than useful recency filters and must be rejected before date
+arithmetic.
 
 ### Location
 
@@ -420,6 +441,11 @@ shared requirement for no live page crawl.
 Agent Maestro must not use `maxAgeHours: 0` by default because it forces a live
 crawl for every result and unnecessarily increases latency and provider cost.
 
+For `open` and `find`, process-local cached page content may be reused under a
+cache-only policy. An uncached page returns
+`cache_only_page_not_cached`; `web_fetch_exa` is not called because it cannot
+guarantee cache-only retrieval.
+
 ### Multiple Queries
 
 Codex permits up to four search queries in one call. Agent Maestro will:
@@ -427,6 +453,8 @@ Codex permits up to four search queries in one call. Agent Maestro will:
 - reuse one MCP session for the complete HTTP request;
 - process anonymous requests sequentially;
 - use bounded concurrency only when a user API key is present;
+- cancel sibling calls on the first concurrent failure and wait for all workers
+  to settle before completing the HTTP request;
 - apply one total result and output budget across all queries;
 - deduplicate by normalized URL; and
 - merge results round-robin so the first query cannot consume the entire
@@ -463,9 +491,19 @@ short budget, and does not turn a model instruction violation into HTTP 400.
 
 `max_output_tokens` is an additional ceiling. The standalone route has no
 resolved VS Code model whose tokenizer can be used safely. The implementation
-must therefore use a tested, conservative UTF-8 output budget helper and
-truncate only at complete result or line boundaries. It must never split a URL,
-reference ID, UTF-8 sequence, or JSON structure.
+must therefore use a tested, conservative UTF-8 output budget helper. It budgets
+at most one UTF-8 byte per requested token: every tokenizer token represents at
+least one source byte, so this may underfill but cannot exceed the requested
+token count. Truncation occurs only at complete result or line boundaries. It
+must never split a URL, reference ID, UTF-8 sequence, or JSON structure.
+
+Final packing prioritizes explicit unavailable or unsupported status output,
+followed by successful `open` and `find` content, then optional search evidence.
+Structured result DTOs and references are emitted only for sections selected by
+that final global packing pass. If a full status explanation does not fit, the
+packer falls back to `Web search unavailable.` before suppressing lower-priority
+content. Empty output is allowed only when even that compact message exceeds the
+requested budget.
 
 ## Output Format
 
@@ -496,6 +534,8 @@ references appear in the optional `results` DTOs:
 
 Only normalized HTTP(S) URLs may appear. URLs with credentials are rejected,
 fragments are removed, and duplicate URLs share one result.
+References are committed to session state only after their complete output
+block fits the active budget; invisible results cannot evict usable references.
 
 The route does not create OpenAI `web_search_call` items or URL citation
 annotations. Codex owns the surrounding tool lifecycle and final answer.
@@ -513,6 +553,10 @@ Use `request.id` as the session key. Each session stores:
 - fetch reference to normalized URL mappings;
 - bounded normalized page line arrays; and
 - last-access time.
+
+Requests sharing one session key are serialized for the complete state
+transaction. A cancelled waiter remains in the queue until its predecessor
+settles so later requests cannot bypass an active transaction.
 
 Initial limits:
 
@@ -532,11 +576,13 @@ configuration reload invalidates references.
 
 For each `open` operation:
 
-1. Accept a normalized HTTP(S) URL or resolve a known reference.
+1. Accept a normalized public HTTP(S) URL or resolve a known reference. Reject
+   loopback, private, link-local, and local-only host targets.
 2. Call `web_fetch_exa` with
    `{ "urls": ["<resolved-url>"], "maxCharacters": <limit> }`.
 3. Normalize the returned markdown into a deterministic line array and cache
-   that array for the session.
+   that array for the session. Split oversized source lines into deterministic
+   UTF-8-safe bounded lines so one paragraph cannot hide all later content.
 4. Assign a fetch reference.
 5. Return bounded line-numbered content, honoring `lineno` when present.
 
@@ -577,7 +623,12 @@ src/server/webSearch/exaMcpClient.ts
 Responsibilities:
 
 - configurable hosted endpoint and enabled tool list;
+- authenticated highlights-only Exa Search API calls;
 - MCP initialize and protocol negotiation;
+- lazy MCP initialization so authenticated Search API calls do not depend on
+  MCP availability;
+- MCP tool discovery only when a simple search or uncached page fetch will
+  actually call an MCP tool;
 - session ID propagation;
 - JSON and SSE JSON-RPC response parsing;
 - tool discovery;
@@ -586,7 +637,10 @@ Responsibilities:
 - API-key transport through `x-api-key` only, never `exaApiKey` or another URL
   query parameter;
 - cancellation and timeout propagation;
-- typed, sanitized provider errors; and
+- cancellation while reading the Exa API key from SecretStorage;
+- typed, sanitized provider errors;
+- one bounded retry for HTTP or JSON-RPC rate limits when retry metadata is
+  available; and
 - no logging of credentials, queries, result snippets, or full responses.
 
 The client must preserve provider status, JSON-RPC error category, and retry
@@ -656,6 +710,21 @@ The standalone adapter must:
 - cancel provider work when the client disconnects.
 
 This is both the data-egress boundary and the prompt-injection boundary.
+
+Public-URL validation rejects literal non-public addresses and resolves
+hostnames locally before output or fetch. A URL is rejected if any observed
+A/AAAA address is outside globally routable IPv4 or IPv6 space, including
+transition, translation, documentation, protocol-assignment, loopback, private,
+link-local, reserved, or otherwise non-public ranges. DNS resolution is raced
+against request cancellation so an uncancellable operating-system lookup cannot
+extend the HTTP request lifetime.
+Within one request, validation promises are cached by normalized hostname and
+reused across preflight, repeated operations, search results, and fetch.
+This is defense in depth, not a complete DNS-rebinding guarantee: Exa performs
+the HTTP fetch with its own resolver, so answers can differ or change after
+local validation. Exa remains responsible for enforcing its own network
+boundary; Agent Maestro must not claim that local DNS validation alone prevents
+provider-side SSRF.
 
 The optional Exa key remains in VS Code SecretStorage. It is sent only through
 the `x-api-key` request header and never in the MCP URL, response, OpenAPI

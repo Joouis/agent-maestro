@@ -309,6 +309,48 @@ evidence, embedded instructions are ignored, and synthesis cannot access server
 or client tools. Search queries and result URLs are sent to Exa; snippets,
 credentials, and full provider responses are not logged.
 
+### Codex Standalone Web Search Compatibility
+
+Agent Maestro supports the experimental standalone web-search protocol used by
+Codex `0.151.0-alpha.7.1` at
+`POST /api/openai/v1/alpha/search`. This Codex-specific compatibility endpoint
+is backed by Exa; it is not a public OpenAI Search API and does not claim OpenAI
+ranking, freshness, citations, or billing compatibility.
+
+Run **Agent Maestro: Configure Codex Settings** to enable the
+`standalone_web_search` feature and provider capability. An existing explicit
+`web_search = "disabled"` setting is preserved. For manual configuration:
+
+```toml
+web_search = "live"
+
+[features]
+standalone_web_search = true
+
+[model_providers.agent-maestro]
+name = "Agent Maestro"
+base_url = "http://127.0.0.1:23333/api/openai/v1"
+wire_api = "responses"
+supports_standalone_web_search = true
+```
+
+The endpoint supports up to four searches and uses anonymous Exa MCP access for
+unconstrained searches. Domain, recency, country, and cache-only search settings
+require an Exa API key so Agent Maestro can use Exa's Search API with highlights
+only instead of requesting full-page text. It also supports direct or
+reference-based `open` and literal `find`; cache-only requests can open only
+pages already cached by the current extension process. Direct page targets must
+be public HTTP(S) URLs. Agent Maestro rejects literal and locally resolved
+non-public addresses as defense in depth; because Exa performs remote fetching
+with its own resolver, this is not a complete DNS-rebinding or provider-side
+SSRF guarantee.
+
+Search and page content are labeled as untrusted, bounded, and kept in
+process-local reference state for 30 minutes. `click`, image search, screenshots,
+finance, weather, sports, and time commands return recoverable
+unsupported-operation results. Configure an optional key with **Agent Maestro:
+Set Exa API Key** for advanced settings and to avoid anonymous service limits.
+
 ## API Overview
 
 > 💡 **Always refer to [`/openapi.json`](http://localhost:23333/openapi.json) for the latest API documentation.**
