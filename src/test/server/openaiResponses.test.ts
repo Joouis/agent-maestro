@@ -857,6 +857,39 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         vscode.LanguageModelChatMessageRole.User,
       );
     });
+
+    test("should not group tool calls across instruction and input", () => {
+      const instruction = [
+        {
+          type: "custom_tool_call" as const,
+          id: "ctc_instruction",
+          call_id: "call_instruction",
+          name: "exec",
+          input: "first",
+        },
+      ];
+      const input = [
+        {
+          type: "custom_tool_call" as const,
+          id: "ctc_input",
+          call_id: "call_input",
+          name: "exec",
+          input: "second",
+        },
+      ];
+
+      const result = convertResponsesInputToVSCode(input, instruction);
+
+      assert.strictEqual(result.length, 2);
+      assert.deepStrictEqual(
+        toolCallParts(result[0]).map((part) => part.callId),
+        ["call_instruction"],
+      );
+      assert.deepStrictEqual(
+        toolCallParts(result[1]).map((part) => part.callId),
+        ["call_input"],
+      );
+    });
   });
 
   suite("convertResponsesToolsToVSCode", () => {

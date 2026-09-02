@@ -814,9 +814,11 @@ const isToolResultMessage = (
 const appendResponsesMessage = (
   messages: vscode.LanguageModelChatMessage[],
   message: vscode.LanguageModelChatMessage,
+  mergeStartIndex = 0,
 ): void => {
   const previous = messages.at(-1);
   if (
+    messages.length > mergeStartIndex &&
     previous &&
     ((isToolCallMessage(previous) && isToolCallMessage(message)) ||
       (isToolResultMessage(previous) && isToolResultMessage(message)))
@@ -854,6 +856,8 @@ export const convertResponsesInputToVSCode = (
     }
   }
 
+  const inputMessageStart = messages.length;
+
   // Handle string input
   if (typeof input === "string") {
     messages.push(vscode.LanguageModelChatMessage.User(input));
@@ -861,7 +865,7 @@ export const convertResponsesInputToVSCode = (
     for (const item of input) {
       const converted = convertResponsesItemWithPairing(item, pairing);
       if (converted) {
-        appendResponsesMessage(messages, converted);
+        appendResponsesMessage(messages, converted, inputMessageStart);
       }
     }
   }
