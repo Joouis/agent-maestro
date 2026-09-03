@@ -785,6 +785,50 @@ const invalidToolCallToVSCodeMessage = (
     ),
   ]);
 
+type ToolCallMessage = vscode.LanguageModelChatMessage & {
+  content: vscode.LanguageModelToolCallPart[];
+};
+
+type ToolResultMessage = vscode.LanguageModelChatMessage & {
+  content: vscode.LanguageModelToolResultPart[];
+};
+
+const isToolCallMessage = (
+  message: vscode.LanguageModelChatMessage,
+): message is ToolCallMessage =>
+  message.role === vscode.LanguageModelChatMessageRole.Assistant &&
+  message.content.length > 0 &&
+  message.content.every(
+    (part) => part instanceof vscode.LanguageModelToolCallPart,
+  );
+
+const isToolResultMessage = (
+  message: vscode.LanguageModelChatMessage,
+): message is ToolResultMessage =>
+  message.role === vscode.LanguageModelChatMessageRole.User &&
+  message.content.length > 0 &&
+  message.content.every(
+    (part) => part instanceof vscode.LanguageModelToolResultPart,
+  );
+
+const appendResponsesMessage = (
+  messages: vscode.LanguageModelChatMessage[],
+  message: vscode.LanguageModelChatMessage,
+  mergeStartIndex = 0,
+): void => {
+  const previous = messages.at(-1);
+  if (
+    messages.length > mergeStartIndex &&
+    previous &&
+    ((isToolCallMessage(previous) && isToolCallMessage(message)) ||
+      (isToolResultMessage(previous) && isToolResultMessage(message)))
+  ) {
+    previous.content.push(...message.content);
+    return;
+  }
+  messages.push(message);
+};
+
 /**
  * Convert Responses API input to VSCode LM messages
  */
@@ -806,11 +850,13 @@ export const convertResponsesInputToVSCode = (
       for (const item of instruction) {
         const converted = convertResponsesItemWithPairing(item, pairing);
         if (converted) {
-          messages.push(converted);
+          appendResponsesMessage(messages, converted);
         }
       }
     }
   }
+
+  const inputMessageStart = messages.length;
 
   // Handle string input
   if (typeof input === "string") {
@@ -819,7 +865,7 @@ export const convertResponsesInputToVSCode = (
     for (const item of input) {
       const converted = convertResponsesItemWithPairing(item, pairing);
       if (converted) {
-        messages.push(converted);
+        appendResponsesMessage(messages, converted, inputMessageStart);
       }
     }
   }

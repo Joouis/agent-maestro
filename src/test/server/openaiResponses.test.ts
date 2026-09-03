@@ -446,6 +446,16 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
   });
 
   suite("convertResponsesInputToVSCode", () => {
+    const toolCallParts = (
+      message: vscode.LanguageModelChatMessage,
+    ): vscode.LanguageModelToolCallPart[] =>
+      message.content as vscode.LanguageModelToolCallPart[];
+
+    const toolResultParts = (
+      message: vscode.LanguageModelChatMessage,
+    ): vscode.LanguageModelToolResultPart[] =>
+      message.content as vscode.LanguageModelToolResultPart[];
+
     test("should handle string input", () => {
       const result = convertResponsesInputToVSCode("Hello world");
       assert.strictEqual(result.length, 1);
@@ -595,8 +605,12 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
           },
         ] as any);
 
-        assert.strictEqual(result.length, 5);
-        const orphanedParts = result[2].content;
+        assert.strictEqual(result.length, 3);
+        assert.deepStrictEqual(
+          toolCallParts(result[0]).map((part) => part.callId),
+          ["call_known", "call_custom"],
+        );
+        const orphanedParts = result[1].content;
         assert.ok(orphanedParts[0] instanceof vscode.LanguageModelTextPart);
         assert.match(
           (orphanedParts[0] as vscode.LanguageModelTextPart).value,
@@ -669,6 +683,212 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       } finally {
         logger.warn = originalWarn;
       }
+    });
+
+    test("should preserve a single custom tool call and output as paired turns", () => {
+      const input = [
+        {
+          type: "custom_tool_call" as const,
+          id: "ctc_1",
+          call_id: "call_1",
+          name: "exec",
+          input: "pwd",
+        },
+        {
+          type: "custom_tool_call_output" as const,
+          call_id: "call_1",
+          output: "/workspace",
+        },
+      ];
+
+      const result = convertResponsesInputToVSCode(input);
+
+      assert.strictEqual(result.length, 2);
+      assert.deepStrictEqual(
+        toolCallParts(result[0]).map((part) => part.callId),
+        ["call_1"],
+      );
+      assert.deepStrictEqual(
+        toolResultParts(result[1]).map((part) => part.callId),
+        ["call_1"],
+      );
+    });
+
+    test("should group parallel custom tool calls and outputs into paired turns", () => {
+      const calls = Array.from({ length: 4 }, (_, index) => ({
+        type: "custom_tool_call" as const,
+        id: `ctc_${index}`,
+        call_id: `call_${index}`,
+        name: "exec",
+        input: `command ${index}`,
+      }));
+      const outputs = Array.from({ length: 4 }, (_, index) => ({
+        type: "custom_tool_call_output" as const,
+        call_id: `call_${index}`,
+        output: `result ${index}`,
+      }));
+
+      const result = convertResponsesInputToVSCode([...calls, ...outputs]);
+
+      assert.strictEqual(result.length, 2);
+      assert.strictEqual(
+        result[0].role,
+        vscode.LanguageModelChatMessageRole.Assistant,
+      );
+      assert.deepStrictEqual(
+        toolCallParts(result[0]).map((part) => part.callId),
+        ["call_0", "call_1", "call_2", "call_3"],
+      );
+      assert.strictEqual(
+        result[1].role,
+        vscode.LanguageModelChatMessageRole.User,
+      );
+      assert.deepStrictEqual(
+        toolResultParts(result[1]).map((part) => part.callId),
+        ["call_0", "call_1", "call_2", "call_3"],
+      );
+    });
+
+    test("should group parallel function calls and outputs into paired turns", () => {
+      const input = [
+        {
+          type: "function_call" as const,
+          id: "fc_1",
+          call_id: "call_weather",
+          name: "get_weather",
+          arguments: '{"city":"Seattle"}',
+          status: "completed" as const,
+        },
+        {
+          type: "function_call" as const,
+          id: "fc_2",
+          call_id: "call_time",
+          name: "get_time",
+          arguments: '{"timezone":"UTC"}',
+          status: "completed" as const,
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_weather",
+          output: "rainy",
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_time",
+          output: "12:00",
+        },
+      ];
+
+      const result = convertResponsesInputToVSCode(input);
+
+      assert.strictEqual(result.length, 2);
+      assert.deepStrictEqual(
+        toolCallParts(result[0]).map((part) => part.callId),
+        ["call_weather", "call_time"],
+      );
+      assert.deepStrictEqual(
+        toolResultParts(result[1]).map((part) => part.callId),
+        ["call_weather", "call_time"],
+      );
+    });
+
+    test("should only group compatible tool turns across mixed input boundaries", () => {
+      const input = [
+        { role: "user" as const, content: "Run both tools" },
+        {
+          type: "function_call" as const,
+          id: "fc_1",
+          call_id: "call_function",
+          namespace: "utilities",
+          name: "lookup",
+          arguments: "{}",
+          status: "completed" as const,
+        },
+        {
+          type: "additional_tools" as const,
+          role: "developer" as const,
+          tools: [{ type: "custom" as const, name: "exec" }],
+        },
+        {
+          type: "custom_tool_call" as const,
+          id: "ctc_1",
+          call_id: "call_custom",
+          name: "exec",
+          input: "pwd",
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_function",
+          output: "found",
+        },
+        {
+          type: "custom_tool_call_output" as const,
+          call_id: "call_custom",
+          output: "/workspace",
+        },
+        { role: "assistant" as const, content: "Both tools completed" },
+        { role: "user" as const, content: "Thanks" },
+      ];
+
+      const result = convertResponsesInputToVSCode(input as any);
+
+      assert.strictEqual(result.length, 5);
+      assert.strictEqual(
+        result[0].role,
+        vscode.LanguageModelChatMessageRole.User,
+      );
+      assert.deepStrictEqual(
+        toolCallParts(result[1]).map((part) => [part.callId, part.name]),
+        [
+          ["call_function", "utilities__lookup"],
+          ["call_custom", "exec"],
+        ],
+      );
+      assert.deepStrictEqual(
+        toolResultParts(result[2]).map((part) => part.callId),
+        ["call_function", "call_custom"],
+      );
+      assert.strictEqual(
+        result[3].role,
+        vscode.LanguageModelChatMessageRole.Assistant,
+      );
+      assert.strictEqual(
+        result[4].role,
+        vscode.LanguageModelChatMessageRole.User,
+      );
+    });
+
+    test("should not group tool calls across instruction and input", () => {
+      const instruction = [
+        {
+          type: "custom_tool_call" as const,
+          id: "ctc_instruction",
+          call_id: "call_instruction",
+          name: "exec",
+          input: "first",
+        },
+      ];
+      const input = [
+        {
+          type: "custom_tool_call" as const,
+          id: "ctc_input",
+          call_id: "call_input",
+          name: "exec",
+          input: "second",
+        },
+      ];
+
+      const result = convertResponsesInputToVSCode(input, instruction);
+
+      assert.strictEqual(result.length, 2);
+      assert.deepStrictEqual(
+        toolCallParts(result[0]).map((part) => part.callId),
+        ["call_instruction"],
+      );
+      assert.deepStrictEqual(
+        toolCallParts(result[1]).map((part) => part.callId),
+        ["call_input"],
+      );
     });
   });
 
