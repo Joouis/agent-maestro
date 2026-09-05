@@ -381,6 +381,12 @@ Perfect for Codex and OpenAI model integration:
 
 Anthropic Messages and both OpenAI endpoints cancel the upstream language model request when the client disconnects or when the request remains unfinished for 10 minutes. Non-streaming timeouts return HTTP 504; streaming timeouts use each protocol's error event instead of a successful completion event.
 
+Responses streams send JSON `keepalive` events every 10 seconds
+without downstream events, including while waiting for the model, web search,
+or final token counts. These events reset Codex's SSE idle timer without replacing
+the OpenAI SDK's accumulated response; SSE comments alone do not reset the timer.
+Heartbeats do not extend the 10-minute request limit.
+
 ### Gemini-Compatible Endpoints
 
 Perfect for Gemini CLI integration:

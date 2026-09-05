@@ -1,5 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import * as assert from "assert";
+import OpenAI from "openai";
 import * as vscode from "vscode";
 
 import { registerOpenaiResponsesRoutes } from "../../server/routes/openai/openaiResponsesRoutes";
@@ -1503,6 +1504,94 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
       assert.doesNotMatch(body, /response\.web_search_call/);
       assert.match(body, /No search needed/);
       assert.match(body, /response\.completed/);
+    });
+
+    test("preserves OpenAI SDK search items across provider-wait heartbeats", async () => {
+      let releaseSearch!: () => void;
+      const searchReleased = new Promise<void>((resolve) => {
+        releaseSearch = resolve;
+      });
+      const app = createTestApp({
+        rounds: [
+          {
+            chunks: [
+              new vscode.LanguageModelToolCallPart(
+                "search-1",
+                "agent_maestro_web_search",
+                { query: "latest result" },
+              ),
+              usagePart(),
+            ],
+          },
+          {
+            chunks: [new vscode.LanguageModelTextPart("Done."), usagePart()],
+          },
+        ],
+        provider: createProvider(async () => {
+          await searchReleased;
+          return [];
+        }),
+      });
+      const client = new OpenAI({
+        apiKey: "test",
+        baseURL: "http://localhost/v1",
+        maxRetries: 0,
+        fetch: async (input, init) => app.request(new Request(input, init)),
+      });
+      const stream = client.responses.stream({
+        model: "gpt-5.6-test",
+        input: "Search",
+        tools: [{ type: "web_search" }],
+      });
+      const events: Record<string, any>[] = [];
+      let searchPending = false;
+      stream.on("event", (event) => {
+        events.push(event);
+        if (event.type === "response.web_search_call.searching") {
+          searchPending = true;
+        }
+        if (searchPending && (event as { type: string }).type === "keepalive") {
+          releaseSearch();
+        }
+      });
+      try {
+        const response = await stream.finalResponse();
+        assert.strictEqual(response.output_text, "Done.");
+        assert.strictEqual(response.output.length, 2);
+        assert.strictEqual(response.output[0].type, "web_search_call");
+        assert.strictEqual(response.output[0].status, "completed");
+      } finally {
+        releaseSearch();
+        stream.abort();
+      }
+      const searching = events.findIndex(
+        ({ type }) => type === "response.web_search_call.searching",
+      );
+      const searchCompleted = events.findIndex(
+        ({ type }) => type === "response.web_search_call.completed",
+      );
+      assert.ok(searching > 0);
+      assert.ok(searchCompleted > searching);
+      assert.ok(
+        events
+          .slice(searching + 1, searchCompleted)
+          .some(({ type }) => type === "keepalive"),
+      );
+      assert.deepStrictEqual(
+        events.map(({ sequence_number }) => sequence_number),
+        events.map((_, index) => index),
+      );
+      assert.ok(
+        events
+          .filter(({ response }) => response)
+          .every(({ response }) => response.id === events[0].response.id),
+      );
+      assert.strictEqual(events.at(-1)?.type, "response.completed");
+      assert.ok(
+        events
+          .filter(({ type }) => type === "keepalive")
+          .every((event) => !("response" in event)),
+      );
     });
 
     test("echoes parallel_tool_calls false on the disabled-search fallback stream", async () => {
