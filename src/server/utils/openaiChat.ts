@@ -3,6 +3,11 @@ import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
 import { mimeForVscodeLm } from "./imageMime";
+import {
+  type ToolHistoryMessage,
+  type ToolHistoryPart,
+  toolHistoryToVSCode,
+} from "./toolResultPairing";
 
 const convertOpenAIChatCompletionContentPartToUserContent = (
   part: OpenAI.ChatCompletionContentPart,
@@ -48,7 +53,11 @@ const convertOpenAIChatCompletionContentPartToUserContent = (
 export const convertOpenAIMessagesToVSCode = (
   messages: OpenAI.ChatCompletionMessageParam[],
 ): vscode.LanguageModelChatMessage[] => {
-  return messages.map((msg) => {
+  const sourceCalls = new Map<
+    vscode.LanguageModelToolCallPart,
+    OpenAI.ChatCompletionMessageToolCall
+  >();
+  const converted = messages.map((msg) => {
     // Handle different content formats
     let content;
 
@@ -103,27 +112,23 @@ export const convertOpenAIMessagesToVSCode = (
             } catch (e) {
               logger.error("Failed to parse function tool call input", e);
             }
-            content.push(
-              new vscode.LanguageModelToolCallPart(
-                toolCall.id,
-                toolCall.function.name,
-                input,
-              ),
+            const part = new vscode.LanguageModelToolCallPart(
+              toolCall.id,
+              toolCall.function.name,
+              input,
             );
+            sourceCalls.set(part, toolCall);
+            content.push(part);
           } else if (toolCall.type === "custom") {
-            // ChatCompletionMessageCustomToolCall
-            try {
-              input = JSON.parse(toolCall.custom.input);
-            } catch (e) {
-              logger.error("Failed to parse custom tool call input", e);
-            }
-            content.push(
-              new vscode.LanguageModelToolCallPart(
-                toolCall.id,
-                toolCall.custom.name,
-                input,
-              ),
+            // Custom tools carry free-form input, not JSON arguments.
+            input = { input: toolCall.custom.input };
+            const part = new vscode.LanguageModelToolCallPart(
+              toolCall.id,
+              toolCall.custom.name,
+              input,
             );
+            sourceCalls.set(part, toolCall);
+            content.push(part);
           }
         });
         return vscode.LanguageModelChatMessage.Assistant(content);
@@ -133,7 +138,9 @@ export const convertOpenAIMessagesToVSCode = (
         content =
           typeof msg.content === "string"
             ? [new vscode.LanguageModelTextPart(msg.content)]
-            : msg.content;
+            : msg.content.map(
+                (part) => new vscode.LanguageModelTextPart(part.text),
+              );
         return vscode.LanguageModelChatMessage.User([
           new vscode.LanguageModelToolResultPart(msg.tool_call_id, content),
         ]);
@@ -144,6 +151,63 @@ export const convertOpenAIMessagesToVSCode = (
         );
     }
   });
+  const history = converted.map((message, index): ToolHistoryMessage => {
+    const raw = messages[index];
+    return {
+      role:
+        message.role === vscode.LanguageModelChatMessageRole.Assistant
+          ? "assistant"
+          : "user",
+      boundary: raw.role === "system" || raw.role === "developer",
+      parts: message.content.map((part): ToolHistoryPart => {
+        if (
+          part instanceof vscode.LanguageModelToolCallPart &&
+          raw.role === "assistant"
+        ) {
+          // Skipped tool types make raw array positions differ from emitted parts.
+          const call = sourceCalls.get(part)!;
+          let value: unknown;
+          if (call.type === "function") {
+            try {
+              value = JSON.parse(call.function.arguments);
+            } catch {
+              value = call.function.arguments;
+            }
+          } else {
+            value = call.custom.input;
+          }
+          return {
+            kind: "call",
+            id: call.id,
+            name: part.name,
+            toolType: call.type,
+            input: part.input,
+            value,
+          };
+        }
+        if (
+          part instanceof vscode.LanguageModelToolResultPart &&
+          raw.role === "tool"
+        ) {
+          return {
+            kind: "result",
+            id: raw.tool_call_id,
+            parts: part.content as Array<
+              vscode.LanguageModelTextPart | vscode.LanguageModelDataPart
+            >,
+            value: raw.content,
+          };
+        }
+        return {
+          kind: "content",
+          parts: [
+            part as vscode.LanguageModelTextPart | vscode.LanguageModelDataPart,
+          ],
+        };
+      }),
+    };
+  });
+  return toolHistoryToVSCode(history, "Chat Completions");
 };
 
 export const convertOpenAIChatCompletionToolToVSCode = (

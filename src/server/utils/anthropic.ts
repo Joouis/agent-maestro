@@ -4,10 +4,7 @@ import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { extractCopilotUsagePayload } from "./copilotUsage";
 import { mimeForVscodeLm } from "./imageMime";
-import {
-  ToolResultPairingTracker,
-  logToolResultRecovery,
-} from "./toolResultPairing";
+import { type ToolHistoryPart, toolHistoryToVSCode } from "./toolResultPairing";
 
 const textBlockParamToVSCodePart = (param: Anthropic.Messages.TextBlockParam) =>
   new vscode.LanguageModelTextPart(param.text);
@@ -76,19 +73,6 @@ const webSearchToolResultBlockParamToVSCodePart = (
   param: Anthropic.Messages.WebSearchToolResultBlockParam,
 ) => new vscode.LanguageModelTextPart(JSON.stringify(param));
 
-const orphanedToolResultToVSCodeParts = (
-  callId: unknown,
-  content: Array<vscode.LanguageModelTextPart | vscode.LanguageModelDataPart>,
-  invalid = false,
-) => [
-  new vscode.LanguageModelTextPart(
-    invalid
-      ? `[Tool result with an invalid call ID: ${JSON.stringify(callId) ?? String(callId)}]`
-      : `[Tool result without a matching tool call: ${JSON.stringify(callId)}]`,
-  ),
-  ...content,
-];
-
 const searchResultBlockParamToVSCodePart = (
   param: Anthropic.Messages.SearchResultBlockParam,
 ) => {
@@ -103,7 +87,6 @@ const searchResultBlockParamToVSCodePart = (
  */
 const convertContentToVSCodeParts = (
   content: string | Array<Anthropic.Messages.ContentBlockParam>,
-  pairing?: ToolResultPairingTracker,
 ): Array<
   | vscode.LanguageModelTextPart
   | vscode.LanguageModelToolResultPart
@@ -120,7 +103,6 @@ const convertContentToVSCodeParts = (
     | vscode.LanguageModelToolCallPart
     | vscode.LanguageModelDataPart
   > = [];
-  let droppedDuplicate = false;
 
   for (const block of content) {
     switch (block.type) {
@@ -143,35 +125,11 @@ const convertContentToVSCodeParts = (
         parts.push(redactedThinkingBlockParamToVSCodePart(block));
         break;
       case "tool_use":
-        if (pairing && !pairing.recordCall(block.id)) {
-          parts.push(
-            new vscode.LanguageModelTextPart(
-              `[Tool call with an invalid call ID]\n${JSON.stringify(block)}`,
-            ),
-          );
-          break;
-        }
         parts.push(toolUseBlockParamToVSCodePart(block));
         break;
-      case "tool_result": {
-        const result = pairing?.recordResult(block.tool_use_id);
-        if (result === "duplicate") {
-          droppedDuplicate = true;
-          break;
-        }
-        if (result === "invalid" || result === "orphaned") {
-          parts.push(
-            ...orphanedToolResultToVSCodeParts(
-              block.tool_use_id,
-              toolResultBlockParamToVSCodeContent(block),
-              result === "invalid",
-            ),
-          );
-          break;
-        }
+      case "tool_result":
         parts.push(toolResultBlockParamToVSCodePart(block));
         break;
-      }
       case "server_tool_use":
         parts.push(new vscode.LanguageModelTextPart(JSON.stringify(block)));
         break;
@@ -187,7 +145,7 @@ const convertContentToVSCodeParts = (
   if (parts.length > 0) {
     return parts;
   }
-  return droppedDuplicate ? [] : [new vscode.LanguageModelTextPart("")];
+  return [new vscode.LanguageModelTextPart("")];
 };
 
 const createVSCodeMessage = (
@@ -241,18 +199,88 @@ export const convertAnthropicMessageToVSCode = (
 export const convertAnthropicMessagesToVSCode = (
   messages: Array<Anthropic.Messages.MessageParam>,
 ): vscode.LanguageModelChatMessage[] => {
-  const results: vscode.LanguageModelChatMessage[] = [];
-  const pairing = new ToolResultPairingTracker();
-
-  for (const message of messages) {
-    const contentParts = convertContentToVSCodeParts(message.content, pairing);
-    if (contentParts.length > 0) {
-      results.push(createVSCodeMessage(message.role, contentParts));
-    }
-  }
-
-  logToolResultRecovery("Anthropic", [pairing]);
-  return results;
+  return toolHistoryToVSCode(
+    messages.map((message) => ({
+      role: message.role,
+      parts:
+        typeof message.content === "string"
+          ? [
+              {
+                kind: "content",
+                parts: [new vscode.LanguageModelTextPart(message.content)],
+              },
+            ]
+          : message.content.map((block): ToolHistoryPart => {
+              if (block.type === "tool_use" && message.role === "assistant") {
+                return {
+                  kind: "call",
+                  id: block.id,
+                  name: block.name,
+                  toolType: "function",
+                  input: block.input as object,
+                  value: block.input,
+                };
+              }
+              if (block.type === "tool_result" && message.role === "user") {
+                return {
+                  kind: "result",
+                  id: block.tool_use_id,
+                  toolType: "function",
+                  parts: toolResultBlockParamToVSCodeContent(block),
+                  value: {
+                    content: block.content,
+                    isError: block.is_error ?? false,
+                  },
+                  isError: block.is_error,
+                };
+              }
+              if (block.type === "tool_use" || block.type === "tool_result") {
+                // A misplaced block is historical context, never a pairing candidate.
+                const reference = JSON.stringify(
+                  block.type === "tool_use"
+                    ? { name: block.name, id: block.id }
+                    : { id: block.tool_use_id },
+                ).slice(0, 200);
+                return {
+                  kind: "content",
+                  parts:
+                    block.type === "tool_use"
+                      ? [
+                          new vscode.LanguageModelTextPart(
+                            `[Tool call in user message: ${reference}. Arguments omitted. Execution status is unknown; verify before retrying.]`,
+                          ),
+                        ]
+                      : [
+                          new vscode.LanguageModelTextPart(
+                            `[Tool result in assistant message: ${reference}; pairing is uncertain.]`,
+                          ),
+                          ...(block.is_error
+                            ? [
+                                new vscode.LanguageModelTextPart(
+                                  "[Tool reported an error]",
+                                ),
+                              ]
+                            : []),
+                          ...toolResultBlockParamToVSCodeContent(block),
+                        ],
+                };
+              }
+              return {
+                kind: "content",
+                parts: convertContentToVSCodeParts([block]).filter(
+                  (
+                    part,
+                  ): part is
+                    | vscode.LanguageModelTextPart
+                    | vscode.LanguageModelDataPart =>
+                    part instanceof vscode.LanguageModelTextPart ||
+                    part instanceof vscode.LanguageModelDataPart,
+                ),
+              };
+            }),
+    })),
+    "Anthropic",
+  );
 };
 
 /**

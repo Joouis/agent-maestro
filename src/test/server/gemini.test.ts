@@ -355,12 +355,12 @@ suite("Gemini Conversion Utils Test Suite", () => {
           ...(separateMessages
             ? [
                 { role: "user", parts: [response("x")] },
-                { role: "user", parts: [response("x", "replayed")] },
+                { role: "user", parts: [response("x")] },
               ]
             : [
                 {
                   role: "user",
-                  parts: [response("x"), response("x", "replayed")],
+                  parts: [response("x"), response("x")],
                 },
               ]),
           { role: "model", parts: [{ text: "Done" }] },
@@ -398,14 +398,13 @@ suite("Gemini Conversion Utils Test Suite", () => {
         ]);
 
         assert.strictEqual(converted.length, 4);
-        assert.deepStrictEqual(
-          toolCalls(converted).map((part) => part.callId),
-          ["x", "x"],
-        );
+        const ids = toolCalls(converted).map((part) => part.callId);
+        assert.strictEqual(ids[0], "x");
+        assert.strictEqual(new Set(ids).size, 2);
         const results = toolResults(converted);
         assert.deepStrictEqual(
           results.map((part) => part.callId),
-          ["x", "x"],
+          ids,
         );
         assert.deepStrictEqual(
           results.map(
@@ -460,14 +459,14 @@ suite("Gemini Conversion Utils Test Suite", () => {
           ],
         },
       ]);
-      assert.strictEqual(converted.length, 3);
+      assert.strictEqual(converted.length, 2);
       assert.strictEqual(toolResults(converted).length, 1);
-      assert.strictEqual(converted[2].content.length, 2);
+      assert.strictEqual(converted[1].content.length, 3);
       assert.deepStrictEqual(
-        converted[2].content[0],
+        converted[1].content[1],
         new vscode.LanguageModelTextPart("Keep context"),
       );
-      const data = converted[2].content[1];
+      const data = converted[1].content[2];
       assert.ok(data instanceof vscode.LanguageModelDataPart);
       assert.strictEqual(data.mimeType, image.mimeType);
       assert.deepStrictEqual(
@@ -529,7 +528,7 @@ suite("Gemini Conversion Utils Test Suite", () => {
       );
     });
 
-    test("leaves unmatched results unchanged without poisoning a later pair", () => {
+    test("preserves unmatched results as context without poisoning a later pair", () => {
       const converted = convertGeminiContentsToVSCode([
         {
           role: "user",
@@ -544,7 +543,7 @@ suite("Gemini Conversion Utils Test Suite", () => {
       assert.strictEqual(converted[0].content.length, 2);
       assert.ok(
         converted[0].content.every(
-          (part) => part instanceof vscode.LanguageModelToolResultPart,
+          (part) => part instanceof vscode.LanguageModelTextPart,
         ),
       );
       assert.strictEqual(converted[2].content.length, 1);
@@ -564,16 +563,16 @@ suite("Gemini Conversion Utils Test Suite", () => {
         { role: "user", parts: [response("x"), response("x")] },
       ]);
       assert.strictEqual(converted[3].content.length, 2);
-      assert.strictEqual(toolResults(converted).length, 3);
+      assert.strictEqual(toolResults(converted).length, 1);
     });
 
-    test("does not deduplicate results when the call ID is ambiguous within one turn", () => {
+    test("deduplicates identical complete pairs within one turn", () => {
       const converted = convertGeminiContentsToVSCode([
         { role: "model", parts: [call("x"), call("x")] },
         { role: "user", parts: [response("x"), response("x")] },
       ]);
-      assert.strictEqual(toolCalls(converted).length, 2);
-      assert.strictEqual(toolResults(converted).length, 2);
+      assert.strictEqual(toolCalls(converted).length, 1);
+      assert.strictEqual(toolResults(converted).length, 1);
     });
   });
 

@@ -11,6 +11,7 @@ import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { extractCopilotUsagePayload } from "./copilotUsage";
 import { mimeForVscodeLm } from "./imageMime";
+import { type ToolHistoryPart, toolHistoryToVSCode } from "./toolResultPairing";
 
 /**
  * Map of uppercase/mixed-case type values to lowercase JSON Schema types.
@@ -222,157 +223,55 @@ export const convertGeminiContentToVSCode = (
   );
 };
 
-/**
- * Convert Gemini Contents array to VSCode LanguageModelChatMessages.
- *
- * Why this isn't just `contents.map(convertGeminiContentToVSCode)`: Gemini's
- * API allows clients to send `functionCall`/`functionResponse` parts WITHOUT
- * an explicit `id`, relying on positional pairing within the `contents` array
- * (langchain-google-genai 4.x does this). VSCode's LanguageModel API on the
- * other hand REQUIRES a callId on every tool result and matches it against
- * the preceding tool-call. Without pairing here, every tool-using Gemini
- * conversation through this proxy fails with
- *   "Please ensure that the number of function response parts is equal to
- *    the number of function call parts of the function call turn."
- *
- * Strategy: walk all parts in document order, assigning a stable callId to
- * each functionCall (using its `id` when present, else a synthetic id), and
- * push that callId onto a per-name FIFO queue. When we then encounter a
- * functionResponse without an `id`, we drain the queue for that name to
- * recover the matching callId.
- */
+/** Normalize complete inbound Gemini history before producing VS Code parts. */
 export const convertGeminiContentsToVSCode = (
   contents: Content[],
-): vscode.LanguageModelChatMessage[] => {
-  // Pre-walk: assign a callId to every functionCall and remember it on the
-  // part itself (via WeakMap), and build a per-name FIFO queue we'll drain
-  // during the conversion pass.
-  const callIdByPart = new WeakMap<object, string>();
-  const pendingByName = new Map<string, string[]>();
-  let synthCounter = 0;
-  for (const content of contents) {
-    for (const part of content.parts || []) {
-      if (part.functionCall?.name) {
-        const callId =
-          part.functionCall.id ||
-          `function_call_synth_${synthCounter++}_${part.functionCall.name}`;
-        callIdByPart.set(part as unknown as object, callId);
-        const queue = pendingByName.get(part.functionCall.name) || [];
-        queue.push(callId);
-        pendingByName.set(part.functionCall.name, queue);
-      }
-    }
-  }
-
-  const turnCallCounts = new Map<string, number>();
-  const turnResultIds = new Set<string>();
-  let previousWasModel = false;
-  let duplicateResultCount = 0;
-  const messages = contents.flatMap((content) => {
-    const isModel = content.role === "model";
-    if (isModel) {
-      if (!previousWasModel) {
-        turnCallCounts.clear();
-        turnResultIds.clear();
-      }
-      for (const part of content.parts || []) {
-        const call = part.functionCall;
-        if (call?.name && typeof call.id === "string" && call.id.length > 0) {
-          turnCallCounts.set(call.id, (turnCallCounts.get(call.id) || 0) + 1);
+): vscode.LanguageModelChatMessage[] =>
+  toolHistoryToVSCode(
+    contents.map((content) => ({
+      role: content.role === "model" ? "assistant" : "user",
+      parts: (content.parts || []).map((part): ToolHistoryPart => {
+        if (part.functionCall && content.role === "model") {
+          const call = part.functionCall;
+          return {
+            kind: "call",
+            id: call.id,
+            name: call.name || "",
+            toolType: "function",
+            input: (call.args || {}) as object,
+            value: call.args || {},
+            allowMissingId: true,
+          };
         }
-      }
-    }
-    previousWasModel = isModel;
-
-    let droppedDuplicate = false;
-    const parts = (content.parts || []).flatMap((part) => {
-      // CLI restore can repeat results within a turn. A later call with the
-      // same ID needs its own result, and id-less results are not identifiable.
-      const resultId = part.functionResponse?.id;
-      if (
-        !isModel &&
-        typeof resultId === "string" &&
-        turnCallCounts.get(resultId) === 1
-      ) {
-        if (turnResultIds.has(resultId)) {
-          droppedDuplicate = true;
-          duplicateResultCount++;
-          return [];
+        if (part.functionResponse && content.role !== "model") {
+          const result = part.functionResponse;
+          return {
+            kind: "result",
+            id: result.id,
+            name: result.name,
+            toolType: "function",
+            parts: [
+              new vscode.LanguageModelTextPart(
+                JSON.stringify(result.response ?? {}) ?? "",
+              ),
+            ],
+            value: result.response ?? {},
+            allowMissingId: true,
+          };
         }
-        turnResultIds.add(resultId);
-      }
-      // For functionCall: use the pre-assigned callId so the tool-result side
-      // has something to match against.
-      if (part.functionCall?.name) {
-        const callId = callIdByPart.get(part as unknown as object);
-        if (callId) {
-          return new vscode.LanguageModelToolCallPart(
-            callId,
-            part.functionCall.name,
-            (part.functionCall.args || {}) as object,
-          );
-        }
-      }
-      // For functionResponse: keep the per-name pending queue in sync.
-      // If an explicit id is present, remove that matched callId so it cannot
-      // later be reused by an id-less response for the same function name.
-      // Otherwise, drain the FIFO queue for the matching name and pass that
-      // callId into the part converter so it produces a properly-paired
-      // LanguageModelToolResultPart.
-      let resolvedCallId: string | undefined;
-      if (part.functionResponse?.name) {
-        const queue = pendingByName.get(part.functionResponse.name);
-        if (queue && queue.length > 0) {
-          if (part.functionResponse.id) {
-            const matchedIndex = queue.indexOf(part.functionResponse.id);
-            if (matchedIndex !== -1) {
-              queue.splice(matchedIndex, 1);
-            }
-          } else {
-            resolvedCallId = queue.shift();
-          }
-        }
-      }
-      return convertGeminiPartToVSCodePart(part, resolvedCallId);
-    });
-
-    if (parts.length === 0) {
-      if (droppedDuplicate) {
-        return [];
-      }
-      parts.push(new vscode.LanguageModelTextPart(""));
-    }
-
-    const role = content.role || "user";
-    if (role === "model") {
-      return vscode.LanguageModelChatMessage.Assistant(
-        parts.filter(
-          (p) => !(p instanceof vscode.LanguageModelToolResultPart),
-        ) as Array<
-          | vscode.LanguageModelTextPart
-          | vscode.LanguageModelToolCallPart
-          | vscode.LanguageModelDataPart
-        >,
-      );
-    }
-    return vscode.LanguageModelChatMessage.User(
-      parts.filter(
-        (p) => !(p instanceof vscode.LanguageModelToolCallPart),
-      ) as Array<
-        | vscode.LanguageModelTextPart
-        | vscode.LanguageModelToolResultPart
-        | vscode.LanguageModelDataPart
-      >,
-    );
-  });
-
-  if (duplicateResultCount > 0) {
-    logger.warn(
-      `Gemini tool result recovery: dropped ${duplicateResultCount} duplicate result(s) within tool-call turns`,
-    );
-  }
-  return messages;
-};
+        const converted = convertGeminiPartToVSCodePart(part);
+        return {
+          kind: "content",
+          parts:
+            converted instanceof vscode.LanguageModelTextPart ||
+            converted instanceof vscode.LanguageModelDataPart
+              ? [converted]
+              : [],
+        };
+      }),
+    })),
+    "Gemini",
+  );
 
 /**
  * Convert Gemini systemInstruction to VSCode LanguageModelChatMessages

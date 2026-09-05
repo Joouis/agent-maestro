@@ -34,6 +34,8 @@ pnpm run watch-tests
 | `server/openaiResponses.test.ts`               | 52    | OpenAI Responses → VS Code conversion                                                                   |
 | `server/gemini.test.ts`                        | 27    | Gemini → VS Code message conversion                                                                     |
 | `server/sseHeartbeat.test.ts`                  | 16    | Startup/token-counting heartbeats, SDK snapshots, lifecycle cleanup, and frame order under backpressure |
+| `server/toolHistory.test.ts`                   | 65    | Shared normalization, replay, IDs, media, skipped tool types, and wrong-role Anthropic tool blocks      |
+| `server/toolHistoryRoutes.test.ts`             | 1     | Official SDK requests and streaming responses preserve new IDs after historical remapping               |
 
 ## How Tests Prevent Regressions
 

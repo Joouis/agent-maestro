@@ -232,7 +232,9 @@ Agent Maestro reports real Copilot usage metadata for Anthropic responses when V
 
 - **Codex:** When you run **Agent Maestro: Configure Codex Settings**, Agent Maestro writes `model_context_window` into Codex's `config.toml` using the selected model's reported `maxInputTokens`. This tells Codex the effective context window size upfront so it manages its own conversation history accordingly. To customize it, edit `model_context_window` in `~/.codex/config.toml` directly.
 
-If compaction or replay leaves a tool result without its original call, Agent Maestro preserves the result as ordinary context instead of forwarding an invalid tool transcript. Repeated results for the same call ID are ignored after the first result.
+Agent Maestro normalizes inbound tool history across Anthropic, OpenAI Chat Completions/Responses, and Gemini. Calls with no recorded result become short execution-status-unknown notes; results without a matching call remain ordinary context. Within a call turn, identical duplicates are merged and conflicting calls/results are preserved as conflict context. Complete pairs in later turns are retained with unique upstream IDs when needed. Normalization does not execute tools, summarize result bodies, or change client session files and newly generated response IDs.
+
+Anthropic tool blocks supplied under the wrong message role remain ordinary context: calls retain an execution-status-unknown note, and results retain their content, error status, and supported media.
 
 ### Prompt Cache Compatibility
 
@@ -397,7 +399,7 @@ Perfect for Gemini CLI integration:
 
 Streaming responses send blank-line heartbeats while waiting for the model, keeping long-running requests alive without interrupting Gemini CLI or Google Gen AI SDK stream parsing. These heartbeats do not produce extra response chunks or affect generated content and token usage.
 
-Gemini CLI session restoration can repeat results for a single tool-call turn. For a call with an explicit ID that appears once in that turn, Agent Maestro keeps its first explicitly identified result and ignores repeats in the following user messages. A later model turn starts a new scope, so replaying a complete call/result pair does not leave a call without its result.
+Gemini results without IDs are paired with unmatched calls to the same tool within the current turn, after explicit IDs have been matched. Excess or ambiguous results remain context instead of being matched to future calls. Restored results with different bodies, including masked versus full output, remain visible as conflict context; only structurally equal results with the same explicit identity are deduplicated.
 
 > **Thinking levels**: Not forwarded for Gemini. Copilot's Gemini path does not read the `thinkingConfig.thinkingLevel` parameter from the model configuration; it only applies a hardcoded `low` effort behind an internal experiment flag, so any forwarded value would be ignored.
 
