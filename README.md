@@ -1,502 +1,198 @@
 # Agent Maestro
 
-<!-- [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
-[![Downloads](https://img.shields.io/visual-studio-marketplace/d/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
-[![Rating](https://img.shields.io/visual-studio-marketplace/r/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
-[![License](https://img.shields.io/github/license/Joouis/agent-maestro)](./LICENSE) -->
+[![Visual Studio Marketplace installs](https://badgen.net/vs-marketplace/i/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
+[![Visual Studio Marketplace downloads](https://badgen.net/vs-marketplace/d/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
+[![Visual Studio Marketplace rating](https://badgen.net/vs-marketplace/rating/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
 
-Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code, Codex, or Gemini CLI straight in through an OpenAI/Anthropic/Gemini-compatible API.
+Use your preferred coding client with the GitHub Copilot models available in VS Code. Agent Maestro provides a local API bridge for Claude Code, Claude Desktop, Codex, Gemini CLI, and other compatible clients. Model requests use VS Code's Copilot connection and remain subject to your account's model access and usage limits.
 
-![Claude Code Support](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/configure-claude-code-demo.gif)
+For automation, Agent Maestro also exposes Roo Code tasks through REST and MCP: start work, follow progress, and respond to tool approvals from another application. Cline integration currently supports basic task creation.
 
-![Agent Maestro Demo](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/agent-maestro-demo.gif)
+![Claude Code setup](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/configure-claude-code-demo.gif)
 
-## Key Features
+## Features
 
-Turn VS Code into your compliant AI playground with powerful API compatibility and one-click setup:
+- **Choose your client and model.** Connect through Anthropic Messages, OpenAI Chat Completions/Responses, or Gemini-compatible endpoints, with setup commands for four clients and a picker of available Copilot models.
+- **Work with tools and images.** Supported tool histories and image inputs are converted to VS Code messages. Ordinary client tools still execute in the client; AM does not run them on its behalf.
+- **Search for current information.** Exa-backed search supports declared Anthropic/Responses web-search tools and experimental Codex standalone search, with source links and protocol-specific limits.
+- **Configure longer conversations.** Claude Code and Codex setup uses the selected model's advertised context window. Streaming heartbeats keep supported clients connected while a response is pending.
+- **Automate Roo tasks.** Use HTTP/SSE for task progress and interaction, or the MCP task tool for up to 20 concurrent tasks.
 
-- **Universal API Compatibility**: Anthropic (`/messages`), OpenAI (`/chat/completions`, `/responses`), and Gemini compatible endpoints - use Claude Code, Codex, Gemini CLI or any LLM client seamlessly
-  - **Token Usage Reporting**: Reports Copilot-provided Anthropic token usage when available, including prompt cache reads and writes, with estimated token counts as a fallback
-  - **Anthropic Web Search**: Transparently supports the Anthropic `web_search_20250305` server tool through Exa, with hidden execution, source links, and anonymous or optional API-key access
-  - **OpenAI Responses Web Search**: Executes stable Responses `web_search` tools through Exa for Codex, including hosted-tool events and URL citations
-- **One-Click Setup**: Automated configuration commands for instant Claude Code, Codex, and Gemini CLI integration
-- **Headless AI Agent Control**: Create and manage tasks through REST APIs for Roo Code and Cline extensions
-  - **Comprehensive APIs**: Complete task lifecycle management with OpenAPI documentation at `/openapi.json`
-  - **Parallel Execution**: Run up to 20 concurrent RooCode (and its variants like Kilo Code) tasks with built-in MCP server integration
-  - **Real-time Streaming**: Server-Sent Events (SSE) for live task monitoring and message updates
-  - **Flexible Configuration**: Workspace-level settings, environment variables, and extension auto-discovery
+This README and the [documentation index](docs/README.md) describe this checkout. Features in pending `.changeset/` entries may not yet be available in the installed Marketplace release; check the [changelog](CHANGELOG.md) for released versions.
 
 ## Quick Start
 
 ### Prerequisites
 
-Agent Maestro assumes you already installed one of the supported AI coding extensions:
+- VS Code **1.120.0 or newer**, with GitHub Copilot signed in and eligible models available. The LLM proxy currently selects models from the `copilot` vendor.
+- Install the client you want to use: Claude Code, Claude Desktop, Codex, or Gemini CLI. Installing a client alone does not provide proxy models.
+- Install Roo Code or a compatible variant such as Kilo Code only if you need task orchestration. Cline is optional and currently supports task creation only.
 
-- [Roo Code](https://marketplace.visualstudio.com/items?itemName=RooVeterinaryInc.roo-cline) or its variants for comprehensive API control
-- [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) for personal development routines
-- [Codex](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt) for personal development routines
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) for personal development routines
+For source development, use Node.js 22 or newer and the pnpm version specified in [package.json](package.json).
 
-### Installation
+### 1. Install and Start the Proxy
 
-Install the [Agent Maestro extension](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro) from the VS Code Marketplace. Once activated, Agent Maestro automatically starts its API server on startup.
+Install [Agent Maestro from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro) or [Open VSX](https://open-vsx.org/extension/Joouis/agent-maestro).
 
-### One-Click Setup for Claude Code
+Open your project in VS Code and keep that window running while using the client. The API server starts when Agent Maestro activates, normally at `http://127.0.0.1:23333`.
 
-Configure Claude Code to use VS Code's language models with a single command `Agent Maestro: Configure Claude Code Settings` via Command Palette.
+Run **Agent Maestro: Get API Server Status** from the Command Palette to confirm the server and active port. If it is stopped, run **Agent Maestro: Start API Server**. You do not need the separate MCP server for LLM proxy requests.
 
-This automatically creates or updates `.claude/settings.json` with Agent Maestro endpoint and fills in available LLM models from VS Code.
+### 2. Configure Your Client
 
-**That's it!** You can now use Claude Code with VS Code's built-in language models.
+Open the Command Palette and run the relevant command:
 
-> **1M Context Support**: Agent Maestro supports Claude 1M context models (e.g. `claude-opus-4.7-1m-internal`). To use the extended context window, run `Agent Maestro: Configure Claude Code Settings` and select the desired 1M model. Agent Maestro writes the model in the format Claude Code expects so the 1M path is selected consistently.
+| Client         | Command                                              | Configuration written                                                                             |
+| -------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Claude Code    | **Agent Maestro: Configure Claude Code Settings**    | Choose `~/.claude/settings.json` or `<workspace>/.claude/settings.json`                           |
+| Claude Desktop | **Agent Maestro: Configure Claude Desktop Settings** | Platform-specific `Claude-3p/configLibrary` gateway configuration                                 |
+| Codex          | **Agent Maestro: Configure Codex Settings**          | `~/.codex/config.toml`                                                                            |
+| Gemini CLI     | **Agent Maestro: Configure Gemini CLI Settings**     | Choose `~/.gemini/.env` or `<workspace>/.gemini/.env`, plus `settings.json` in the same directory |
 
-### One-Click Setup for Claude Desktop
+For Claude Code, Codex, or Gemini CLI, choose a model from the picker. If the list is empty, check Copilot sign-in and model availability in VS Code before continuing. Claude Code and Gemini CLI also offer project settings when you want the configuration limited to this workspace.
 
-Configure Claude Desktop to use Agent Maestro's Anthropic-compatible proxy with `Agent Maestro: Configure Claude Desktop Settings` via Command Palette. The command creates or updates the local third-party inference configuration for macOS, Windows, or Linux. Fully quit and reopen Claude Desktop after configuring it.
+If you have enabled AM's optional LLM API key, apply the [client authentication settings](#access-and-authentication) before the first request. Otherwise, the generated placeholder credentials are sufficient for the default local setup.
 
-### One-Click Setup for Codex
+### 3. Get Your First Response
 
-Configure Codex to use VS Code's language models with a single command `Agent Maestro: Configure Codex Settings` via Command Palette.
+Start a fresh client session so it loads the new configuration. For CLI clients, use a terminal in the configured project directory:
 
-This automatically creates or updates `~/.codex/config.toml` with the Agent Maestro endpoint and sets up `GPT-5.5` as the recommended model.
+| Client          | Start after configuration                            |
+| --------------- | ---------------------------------------------------- |
+| Claude Code CLI | Run `claude`                                         |
+| Codex CLI       | Run `codex`                                          |
+| Gemini CLI      | Run `gemini`                                         |
+| Claude Desktop  | Fully quit and reopen the app, then start a new chat |
 
-### One-Click Setup for Gemini CLI
+Send this small connectivity check:
 
-Configure Gemini CLI to use VS Code's language models with a single command `Agent Maestro: Configure Gemini CLI Settings` via Command Palette.
-
-You can choose between:
-
-- **User Settings** (`~/.env`): Personal global settings for all projects
-- **Project Settings** (`.env` in workspace): Team-shared project settings in source control
-
-This automatically creates or updates the `.env` file with:
-
-- `GOOGLE_GEMINI_BASE_URL`: Agent Maestro Gemini endpoint
-- `GEMINI_API_KEY`: Default authentication token (preserved if already set)
-- `GEMINI_MODEL`: Your selected model from available VS Code language models
-- `GEMINI_TELEMETRY_ENABLED`: Disable telemetry by default
-
-Additionally, it creates or updates `settings.json` in the same folder to skip the authentication method selection on first launch:
-
-```json
-{
-  "security": {
-    "auth": {
-      "selectedType": "gemini-api-key"
-    }
-  }
-}
+```text
+Reply with exactly AM_CONNECTED. Do not read files or use tools.
 ```
 
-### Fallback Model
+Look for the reply **and** the matching request in VS Code's **Output → Agent Maestro** channel. AM logs an incoming request with its resolved model and a completion with token usage; this confirms the client used the proxy rather than another configured provider. The prompt is a smoke check, not a guarantee of exact model output.
 
-Run `Agent Maestro: Select Fallback Model` to choose which available VS Code language model Agent Maestro should use when a client requests an unknown model ID. Exact and fuzzy model matches still take priority. Select the `auto` model to retain VS Code's automatic model selection.
+Once connected, try a normal task such as explaining a function in your project. Requests consume model quota, and any tool approvals remain part of the client workflow. If the check fails, see [troubleshooting](#troubleshooting-and-diagnostics). Direct API users can use the [complete request examples](docs/llm-compatibility.md#request-examples).
 
-### Usage
+## Web Search
 
-1. **Explore API Capabilities**: Access the complete OpenAPI specification at [`http://localhost:23333/openapi.json`](http://localhost:23333/openapi.json).
+Search is available when a supported client requests it. AM does not add search to every prompt.
 
-2. **VS Code Commands**: Access functionality through the Command Palette:
+| Client/API path    | How it is enabled                                                                        | What to expect                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Anthropic Messages | Client declares `web_search_20250305` and the model selects it                           | At most one search per request; final text with source links           |
+| OpenAI Responses   | Client declares stable `web_search` and the model selects it                             | At most one search per request; hosted-search events and URL citations |
+| Codex standalone   | **Configure Codex Settings** enables the experimental feature for supported CLI versions | Up to four search queries plus page `open` and `find` operations       |
 
-   **Server Management:**
+After configuring a supported Codex release, try asking it to find a recent release announcement and cite its sources. An existing `web_search = "disabled"` setting is preserved; change it to `"live"` if you want to enable search.
 
-   - `Agent Maestro: Start API Server` - Start the proxy API server
-   - `Agent Maestro: Stop API Server` - Stop the proxy API server
-   - `Agent Maestro: Restart API Server` - Restart the proxy API server
-   - `Agent Maestro: Get API Server Status` - Check current server status
+Basic searches can use Exa's anonymous allowance. Run **Agent Maestro: Set Exa API Key** to use your Exa account; domain, recency, country, or cache-only constraints on standalone search require a key. Queries and retrieved page URLs are sent to Exa, whose usage limits and billing are separate from Copilot.
 
-   **MCP Server Management:**
+These paths have different contracts: Gemini has no hosted-search integration here, and not every native search option or Codex web command is supported. See [search compatibility and supported Codex versions](docs/llm-compatibility.md#web-search).
 
-   - `Agent Maestro: Start MCP Server` - Start the Model Context Protocol server
-   - `Agent Maestro: Stop MCP Server` - Stop the MCP server
-   - `Agent Maestro: Get MCP Server Status` - Check current MCP server status
-   - `Agent Maestro: Install MCP Configuration` - Install MCP configuration for supported extensions
+## Models and Context Windows
 
-   **Extension Management:**
+- **Claude Code:** Setup writes the selected model's compaction window and defaults the compaction threshold to 85% unless you already set one. For the supported 1M tier, it adds the client-side `[1m]` marker.
+- **Codex:** Setup writes `model_context_window` from the selected model's advertised `maxInputTokens`.
 
-   - `Agent Maestro: Get Extensions Status` - Check the status of supported AI extensions
+AM prefers Copilot-provided usage metadata when available and estimates token counts otherwise. A local estimate can differ from provider usage; see [context-window handling](docs/claude-code-context-window.md) for the exact configuration and limits.
 
-   **Configuration Commands:**
+Run **Agent Maestro: Select Fallback Model** to choose a model for requests whose model ID cannot be matched. Exact and fuzzy matches take priority. Selecting `auto` leaves automatic model selection in effect; unavailable models can fall back to another available Copilot model.
 
-   - `Agent Maestro: Configure Claude Code Settings` - One-click Claude Code setup
-   - `Agent Maestro: Configure Claude Desktop Settings` - One-click Claude Desktop setup
-   - `Agent Maestro: Configure Codex Settings` - One-click Codex setup
-   - `Agent Maestro: Configure Gemini CLI Settings` - One-click Gemini CLI setup
-   - `Agent Maestro: Select Fallback Model` - Select a global fallback for unknown model IDs
-   - `Agent Maestro: Set LLM API Key` - Configure authentication for LLM API endpoints
-   - `Agent Maestro: Set Exa API Key` - Set, replace, or clear the optional Exa web search key
-
-3. **Development Resources**:
-   - **API Documentation**: Complete reference in [`docs/roo-code/`](docs/roo-code/README.md)
-   - **Type Definitions**: [`@roo-code/types`](https://www.npmjs.com/package/@roo-code/types) package
-   - **Examples**: Reference implementation in `examples/demo-site` (testing purposes)
-
-## LLM API Authentication
-
-Agent Maestro supports optional API key authentication to secure access to the LLM API endpoints (Anthropic, OpenAI, and Gemini). When enabled, all requests to these endpoints must include a valid API key.
-
-### Setting Up Authentication
-
-1. Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
-2. Run `Agent Maestro: Set LLM API Key`
-3. Enter your desired API key (or leave empty to disable authentication)
-
-The API key is stored securely using VS Code's built-in secrets storage and persists across sessions.
-
-### Authenticating Requests
-
-Once authentication is enabled, include your API key in requests using the standard header format for each provider:
-
-**Anthropic API** (`/api/anthropic/*`):
-
-```bash
-curl -H "x-api-key: YOUR_LLM_API_KEY" \
-  http://localhost:23333/api/anthropic/v1/messages
-```
-
-**OpenAI API** (`/api/openai/*`):
-
-```bash
-curl -H "Authorization: Bearer YOUR_LLM_API_KEY" \
-  http://localhost:23333/api/openai/v1/chat/completions
-```
-
-**Gemini API** (`/api/gemini/*`):
-
-```bash
-curl -H "x-goog-api-key: YOUR_LLM_API_KEY" \
-  http://localhost:23333/api/gemini/v1beta/models/gemini-3-pro:generateContent
-```
-
-### Security Notes
-
-- Authentication is **disabled by default** for ease of local development
-- When authentication is disabled, the proxy accepts all requests without validation
-- API keys are compared using constant-time comparison to prevent timing attacks
-- Failed authentication attempts are logged for security monitoring
+`GET /api/v1/lm/chatModels` lists models discovered by VS Code, including vendors that may not be proxy-eligible. The Output channel distinguishes eligible Copilot models.
 
 ## Configuration
 
-### Environment Variables
+Use VS Code settings for the following options. Port and default-Roo settings can be set per workspace; the other settings have application scope.
 
-You can customize Agent Maestro's server ports using environment variables:
+| Setting                                     | Default                      | Purpose                                             |
+| ------------------------------------------- | ---------------------------- | --------------------------------------------------- |
+| `agent-maestro.proxyServerPort`             | `23333`                      | Proxy HTTP port                                     |
+| `agent-maestro.mcpServerPort`               | `23334`                      | MCP port                                            |
+| `agent-maestro.defaultRooIdentifier`        | `rooveterinaryinc.roo-cline` | Default Roo-compatible extension                    |
+| `agent-maestro.rooVariantIdentifiers`       | `["kilocode.kilo-code"]`     | Additional Roo variants to discover                 |
+| `agent-maestro.fallbackModelId`             | `""`                         | Fallback model; configure through the command above |
+| `agent-maestro.allowOutsideWorkspaceAccess` | `false`                      | Permit filesystem access outside the workspace      |
 
-| Variable                   | Description       | Default |
-| -------------------------- | ----------------- | ------- |
-| `AGENT_MAESTRO_PROXY_PORT` | Proxy server port | 23333   |
-| `AGENT_MAESTRO_MCP_PORT`   | MCP server port   | 23334   |
+`AGENT_MAESTRO_PROXY_PORT` and `AGENT_MAESTRO_MCP_PORT` environment variables override the corresponding settings. Restart the extension host after changing ports or extension identifiers.
 
-**Usage:**
+### Roo/Kilo and MCP Setup
 
-```bash
-# Set custom ports
-export AGENT_MAESTRO_PROXY_PORT=8080
-export AGENT_MAESTRO_MCP_PORT=8081
+The MCP server normally uses port `23334` and requires the configured default Roo extension to provide a task manager. If only Kilo Code is installed, set `agent-maestro.defaultRooIdentifier` to `kilocode.kilo-code` and reload VS Code before starting MCP. HTTP task requests can also select an installed variant explicitly with `extensionId`.
 
-# Launch VS Code
-code .
-```
+**Install MCP Configuration** currently writes `http://localhost:23334/mcp` regardless of the configured port. If you use a custom MCP port, update that URL in the generated client configuration manually after installation.
 
-> **Note:** Environment variables take precedence over extension settings.
+### Gemini Settings and Existing Overrides
 
-### Workspace-Level Configuration
+The configurator writes `GOOGLE_GEMINI_BASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, and `GEMINI_TELEMETRY_ENABLED=false` to the chosen `.gemini/.env`, preserving an existing API key. It also sets `security.auth.selectedType` to `gemini-api-key` in the adjacent `settings.json`.
 
-You can configure Agent Maestro settings per workspace by adding them to your project's `.vscode/settings.json` file:
-
-```json
-{
-  "agent-maestro.defaultRooIdentifier": "rooveterinaryinc.roo-cline",
-  "agent-maestro.proxyServerPort": 23333,
-  "agent-maestro.mcpServerPort": 23334
-}
-```
-
-**Available Settings:**
+The configurator warns about a workspace-root `.env` that can override user settings. If Gemini still connects to an old endpoint, check that file and the launching environment as well as `.gemini/.env`.
 
-| Setting                              | Description                  | Default                        |
-| ------------------------------------ | ---------------------------- | ------------------------------ |
-| `agent-maestro.defaultRooIdentifier` | Default Roo extension to use | `"rooveterinaryinc.roo-cline"` |
-| `agent-maestro.proxyServerPort`      | Proxy server port            | `23333`                        |
-| `agent-maestro.mcpServerPort`        | MCP server port              | `23334`                        |
-
-This allows different projects to use different configurations without affecting your global VS Code settings.
-
-### Context Window Management
-
-Agent Maestro proxies requests through VS Code's Language Model API, which uses a different tokenizer (OpenAI's tiktoken / O200K) than the actual model providers. This mismatch means the token counts reported locally can be lower than the real usage, potentially causing requests to exceed the model's context window and fail unexpectedly.
-
-Agent Maestro reports real Copilot usage metadata for Anthropic responses when VS Code provides it. When that metadata is unavailable, Agent Maestro falls back to local token counting and reports those counts unscaled. Different coding agent clients manage their context windows differently:
-
-- **Claude Code (and other Anthropic API clients):** Fallback token estimates and `/v1/messages/count_tokens` responses report the raw VS Code token count. To make Claude Code compact context earlier and avoid edge cases near the model's full window, configure its `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` environment variables — Agent Maestro writes these for you when you run **Agent Maestro: Configure Claude Code Settings** (default compaction at 85% of the model's reported window).
+## Access and Authentication
 
-- **Codex:** When you run **Agent Maestro: Configure Codex Settings**, Agent Maestro writes `model_context_window` into Codex's `config.toml` using the selected model's reported `maxInputTokens`. This tells Codex the effective context window size upfront so it manages its own conversation history accordingly. To customize it, edit `model_context_window` in `~/.codex/config.toml` directly.
-
-Agent Maestro normalizes inbound tool history across Anthropic, OpenAI Chat Completions/Responses, and Gemini. Calls with no recorded result become short execution-status-unknown notes; results without a matching call remain ordinary context. Within a call turn, identical duplicates are merged and conflicting calls/results are preserved as conflict context. Complete pairs in later turns are retained with unique upstream IDs when needed. Normalization does not execute tools, summarize result bodies, or change client session files and newly generated response IDs.
-
-Anthropic tool blocks supplied under the wrong message role remain ordinary context: calls retain an execution-status-unknown note, and results retain their content, error status, and supported media.
-
-### Prompt Cache Compatibility
-
-Agent Maestro accepts common prompt cache hints such as Anthropic `cache_control`, OpenAI `prompt_cache_key`, and Gemini `cachedContent` without forwarding unsupported cache controls to VS Code's Language Model API. For Anthropic-compatible responses, Copilot-provided usage metadata is used when available to report `cache_read_input_tokens` and `cache_creation_input_tokens`; fallback estimates report cache usage as `0` rather than synthetic savings.
-
-### Anthropic Web Search
-
-Agent Maestro automatically supports Anthropic's `web_search_20250305` server
-tool for `POST /api/anthropic/v1/messages`. It never injects search into a
-request, and no query leaves your environment unless the client declares the
-tool and the model chooses to call it.
-
-1. Optionally run `Agent Maestro: Set Exa API Key` to use your Exa account.
-   Leaving the key empty uses Exa's anonymous allowance.
-2. Send an Anthropic Messages request that declares the server tool:
-
-```json
-{
-  "model": "claude-sonnet-4.6",
-  "max_tokens": 1024,
-  "messages": [
-    {
-      "role": "user",
-      "content": "What changed in the latest TypeScript release?"
-    }
-  ],
-  "tools": [
-    {
-      "type": "web_search_20250305",
-      "name": "web_search",
-      "max_uses": 1
-    }
-  ]
-}
-```
-
-The model decides whether to search. Agent Maestro executes at most one search,
-keeps the internal call and untrusted result hidden from the client, performs a
-tool-free synthesis round, and adds a deduplicated `Sources` URL list when it
-fits within `max_tokens`. Responses report dispatched searches in
-`usage.server_tool_use.web_search_requests`.
+Authentication is disabled by default. **Agent Maestro: Set LLM API Key** stores an optional key in VS Code SecretStorage; an empty value disables it again. Generated placeholder client keys do not configure the server key. When authentication is enabled, configure the same key in your client, using:
 
-Supported server-tool filters are `allowed_domains`, `blocked_domains`, and
-`user_location.country`. Domain allow/block lists are mutually exclusive and
-accept hostnames only. Searches with filters use Exa advanced search. Client
-tools named `WebSearch` or `web_search` remain ordinary client tools when they
-have an `input_schema`.
-
-Search queries and result URLs are sent to Exa. Results are untrusted and are
-isolated from client tools and additional searches during synthesis. The first
-release returns normal text plus source links, not Anthropic-native search
-result blocks, encrypted content, or citation objects. Streaming requests keep
-the connection alive with heartbeat events while the hidden search loop is
-buffered.
-
-### OpenAI Responses Web Search
-
-Agent Maestro supports the stable `web_search` and `web_search_2025_08_26`
-server tools on `POST /api/openai/v1/responses`. When Codex or another Responses
-client declares one of these tools, a GPT-5-family model decides whether current
-or verifiable information requires search. Agent Maestro then executes at most
-one Exa request, performs a tool-free synthesis round, and returns a
-`web_search_call`, source URLs, and `url_citation` annotations.
+| Route prefix       | Header                        |
+| ------------------ | ----------------------------- |
+| `/api/anthropic/*` | `x-api-key: <key>`            |
+| `/api/openai/*`    | `Authorization: Bearer <key>` |
+| `/api/gemini/*`    | `x-goog-api-key: <key>`       |
 
-After running **Agent Maestro: Configure Codex Settings**, enable live search
-for a Codex invocation with `codex --search -c 'web_search="live"'`. No Codex
-MCP search tool is required. Codex may send `parallel_tool_calls: false`; Agent
-Maestro accepts and echoes it while independently enforcing the one-server-search
-limit.
+See [complete request examples](docs/llm-compatibility.md#request-examples).
 
-`external_web_access: false` is rejected because it requests cached-only search,
-which Exa live retrieval cannot honor. Search results are delimited as untrusted
-evidence, embedded instructions are ignored, and synthesis cannot access server
-or client tools. Search queries and result URLs are sent to Exa; snippets,
-credentials, and full provider responses are not logged.
+### Claude Code with Authentication Enabled
 
-### Codex Standalone Web Search Compatibility
+Set `ANTHROPIC_API_KEY` in the chosen settings file's `env` section and remove `ANTHROPIC_AUTH_TOKEN` there and from the launching environment. AM requires `x-api-key`; the configurator's `ANTHROPIC_AUTH_TOKEN` sends a bearer header instead. Keep `ANTHROPIC_BASE_URL` pointing to AM. Rerunning the configurator can reintroduce the token setting, so recheck these fields afterward. See Claude Code's [gateway authentication guidance](https://code.claude.com/docs/en/llm-gateway-rollout).
 
-Agent Maestro supports the experimental standalone web-search protocol used by
-Codex `0.151.0-alpha.7.1` at
-`POST /api/openai/v1/alpha/search`. This Codex-specific compatibility endpoint
-is backed by Exa; it is not a public OpenAI Search API and does not claim OpenAI
-ranking, freshness, citations, or billing compatibility.
+### Remote Access
 
-Run **Agent Maestro: Configure Codex Settings** to enable the
-`standalone_web_search` feature and provider capability. An existing explicit
-`web_search = "disabled"` setting is preserved. For manual configuration:
+The HTTP server listens on a wildcard address. **The LLM key does not protect `/api/v1` task, file, or workspace operations, or the separate MCP server.** Before making either port accessible beyond a trusted local environment, put authenticated access controls in front of it. CORS is not an access-control substitute; AM currently allows cross-origin browser requests. See the [remote demo requirements](examples/demo-site/README.md#remote-access).
 
-```toml
-web_search = "live"
+## API and Commands
 
-[features]
-standalone_web_search = true
+The default HTTP origin is `http://127.0.0.1:23333`. Inspect the running instance's [`/openapi.json`](http://127.0.0.1:23333/openapi.json) for routes and schemas; use the compatibility guides for supported protocol behavior and limits.
 
-[model_providers.agent-maestro]
-name = "Agent Maestro"
-base_url = "http://127.0.0.1:23333/api/openai/v1"
-wire_api = "responses"
-supports_standalone_web_search = true
-```
+| Interface               | Paths                                                                                               | Reference                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Anthropic               | `/api/anthropic/v1/messages`, `/api/anthropic/v1/messages/count_tokens`, `/api/anthropic/v1/models` | [LLM compatibility](docs/llm-compatibility.md#endpoints)       |
+| OpenAI                  | `/api/openai/v1/chat/completions`, `/api/openai/v1/responses`                                       | [Responses compatibility](docs/openai-responses-api-design.md) |
+| Gemini                  | `/api/gemini/v1beta/models/{model}:generateContent`, `:streamGenerateContent`, `:countTokens`       | [LLM compatibility](docs/llm-compatibility.md#endpoints)       |
+| Codex standalone search | `/api/openai/v1/alpha/search`                                                                       | [Search compatibility](docs/llm-compatibility.md#web-search)   |
+| Roo and Cline           | `/api/v1/roo/*`, `/api/v1/cline/task`                                                               | [Roo HTTP/SSE](docs/roo-routes-events.md)                      |
+| Model discovery         | `/api/v1/lm/chatModels`, `/api/v1/lm/tools`                                                         | Running OpenAPI document                                       |
 
-The endpoint supports up to four searches and uses anonymous Exa MCP access for
-unconstrained searches. Domain, recency, country, and cache-only search settings
-require an Exa API key so Agent Maestro can use Exa's Search API with highlights
-only instead of requesting full-page text. It also supports direct or
-reference-based `open` and literal `find`; cache-only requests can open only
-pages already cached by the current extension process. Direct page targets must
-be public HTTP(S) URLs. Agent Maestro rejects literal and locally resolved
-non-public addresses as defense in depth; because Exa performs remote fetching
-with its own resolver, this is not a complete DNS-rebinding or provider-side
-SSRF guarantee.
+Use these Command Palette actions to manage the extension:
 
-Search and page content are labeled as untrusted, bounded, and kept in
-process-local reference state for 30 minutes. `click`, image search, screenshots,
-finance, weather, sports, and time commands return recoverable
-unsupported-operation results. Configure an optional key with **Agent Maestro:
-Set Exa API Key** for advanced settings and to avoid anonymous service limits.
+- **Agent Maestro: Start API Server**, **Stop API Server**, **Restart API Server**, **Get API Server Status**.
+- **Agent Maestro: Start MCP Server**, **Stop MCP Server**, **Get MCP Server Status**, **Install MCP Configuration**.
+- **Agent Maestro: Get Extensions Status**.
+- **Agent Maestro: Set Exa API Key** to configure or clear an optional search-provider key.
 
-## API Overview
+## Troubleshooting and Diagnostics
 
-> 💡 **Always refer to [`/openapi.json`](http://localhost:23333/openapi.json) for the latest API documentation.**
+| Symptom                                       | First check                                                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Connection refused                            | Keep the VS Code window open; check **Get API Server Status** and the client's configured port.        |
+| No models in the setup picker                 | Check Copilot sign-in, model access, and model-discovery messages in AM Output.                        |
+| HTTP 401                                      | Match the server key and provider-specific header; see the Claude Code authentication note above.      |
+| Client answers but AM has no matching request | Start a new client session and inspect its active provider/base URL and project/environment overrides. |
+| MCP unavailable with Kilo                     | Select Kilo as the default Roo extension and reload; check the generated MCP URL for custom ports.     |
 
-### Base URLs
+Start with the **Agent Maestro** Output channel. Supported LLM request failures also append diagnostics to a timestamped `*-debug.log` in the first workspace folder when file logging succeeds; the error response includes the path when available.
 
-- **REST API**: `http://localhost:23333/api/v1`
-- **Anthropic API**: `http://localhost:23333/api/anthropic`
-- **OpenAI API**: `http://localhost:23333/api/openai`
-- **Gemini API**: `http://localhost:23333/api/gemini`
-- **MCP Server**: `http://localhost:23334`
+**Review every log before sharing it.** Known Anthropic message fields are redacted in diagnostic files, but system prompts, tool definitions, unknown fields, and error details can remain. Raw OpenAI/Gemini request bodies are not redacted. Debug-level Output logs are a separate channel and can contain request or response content. See the [logging scope](docs/llm-compatibility.md#diagnostic-logs).
 
-### Anthropic-Compatible Endpoints
+## Development and Further Reading
 
-Perfect for GitHub Copilot and Claude Code integration:
+- [Documentation index](docs/README.md): current guides, runbooks, and dated design records.
+- [Testing guide](docs/testing.md) and [contributor instructions](AGENTS.md).
+- [Roo extension API notes](docs/roo-code/README.md) and [remote demo](examples/demo-site/README.md).
+- [Changelog](CHANGELOG.md), including migration details for older versions.
 
-- **`POST /api/anthropic/v1/messages`** - Anthropic Claude API compatibility using VS Code's Language Model API
-- **`POST /api/anthropic/v1/messages/count_tokens`** - Token counting for Anthropic-compatible messages
+Potential future work includes code-server deployment support, richer orchestration for Claude Code/Codex, and task scheduling. These are roadmap items, not supported interfaces.
 
-> **Reasoning effort**: `output_config.effort` is forwarded to Copilot but is not yet applied to Anthropic Messages requests, pending upstream Copilot support. It currently has no effect for Claude models.
-
-### OpenAI-Compatible Endpoints
-
-Perfect for Codex and OpenAI model integration:
-
-- **`POST /api/openai/v1/chat/completions`** - OpenAI Chat Completions API compatibility using VS Code's Language Model API
-- **`POST /api/openai/v1/responses`** - OpenAI Responses API compatibility using VS Code's Language Model API
-
-Anthropic Messages and both OpenAI endpoints cancel the upstream language model request when the client disconnects or when the request remains unfinished for 10 minutes. Non-streaming timeouts return HTTP 504; streaming timeouts use each protocol's error event instead of a successful completion event.
-
-Responses streams send JSON `keepalive` events every 10 seconds
-without downstream events, including while waiting for the model, web search,
-or final token counts. These events reset Codex's SSE idle timer without replacing
-the OpenAI SDK's accumulated response; SSE comments alone do not reset the timer.
-Heartbeats do not extend the 10-minute request limit.
-
-### Gemini-Compatible Endpoints
-
-Perfect for Gemini CLI integration:
-
-- **`POST /api/gemini/v1beta/models/{model}:generateContent`** - Google Gemini API compatibility using VS Code's Language Model API
-- **`POST /api/gemini/v1beta/models/{model}:streamGenerateContent`** - Streaming support for Gemini API
-- **`POST /api/gemini/v1beta/models/{model}:countTokens`** - Token counting for Gemini-compatible messages
-
-Streaming responses send blank-line heartbeats while waiting for the model, keeping long-running requests alive without interrupting Gemini CLI or Google Gen AI SDK stream parsing. These heartbeats do not produce extra response chunks or affect generated content and token usage.
-
-Gemini results without IDs are paired with unmatched calls to the same tool within the current turn, after explicit IDs have been matched. Excess or ambiguous results remain context instead of being matched to future calls. Restored results with different bodies, including masked versus full output, remain visible as conflict context; only structurally equal results with the same explicit identity are deduplicated.
-
-> **Thinking levels**: Not forwarded for Gemini. Copilot's Gemini path does not read the `thinkingConfig.thinkingLevel` parameter from the model configuration; it only applies a hardcoded `low` effort behind an internal experiment flag, so any forwarded value would be ignored.
-
-### RooCode Agent Routes
-
-Full-featured agent integration with real-time streaming:
-
-- **`POST /api/v1/roo/task`** - Create new RooCode task with SSE streaming
-- **`POST /api/v1/roo/task/{taskId}/message`** - Send message to existing task with SSE streaming
-- **`POST /api/v1/roo/task/{taskId}/action`** - Perform actions (pressPrimaryButton, pressSecondaryButton, cancel, resume)
-- **`GET /api/v1/roo/settings`** - Get current RooCode settings
-- **`GET /api/v1/roo/modes`** - Get available RooCode modes
-
-### VS Code Language Model API
-
-Direct access to VS Code's language model ecosystem:
-
-- **`GET /api/v1/lm/tools`** - Lists all tools registered via [`lm.registerTool()`](https://code.visualstudio.com/api/extension-guides/language-model)
-- **`GET /api/v1/lm/chatModels`** - Lists available VS Code Language Model API chat models
-
-### Cline Agent Routes
-
-Basic integration support:
-
-- **`POST /api/v1/cline/task`** - Create new Cline task (basic support)
-
-### Documentation Routes
-
-- **`GET /openapi.json`** - Complete OpenAPI v3 specification
-
-## Error Diagnostics
-
-Agent Maestro automatically logs detailed error diagnostics when API requests fail. Each extension launch creates a timestamped log file in your workspace root: `{YYYY}-{MM}-{DD}_{HH}-{MM}-{SS}-{mmm}-debug.log`. All errors during that session are appended to the same file.
-
-**What's logged**: Request payload, transformed VSCode LM messages, error details, extension metadata, model ID, endpoint, and timestamp.
-
-**Supported endpoints**:
-
-- `/api/anthropic/v1/messages` (content sanitized)
-- `/api/openai/v1/chat/completions` (TODO: sanitization)
-- `/api/openai/v1/responses` (TODO: sanitization)
-- `/api/gemini/v1beta/models/{model}:generateContent|streamGenerateContent` (TODO: sanitization)
-
-**Privacy protection**:
-
-- **Anthropic only**: User content is automatically redacted (text, images, documents, tool I/O, search results → `[REDACTED]`)
-- **OpenAI/Gemini**: Not yet sanitized - **review carefully before sharing logs**
-
-Error responses include the log file path for easy troubleshooting:
-
-```json
-{
-  "error": {
-    "message": "...",
-    "log_file": "/path/to/workspace/2025-12-28_14-30-45-123-debug.log"
-  }
-}
-```
-
-**Tip**: Add `*-debug.log` to `.gitignore` to prevent committing diagnostic files.
-
-## Migration from v1.x
-
-⚠️ **Important changes when upgrading from v1.x:**
-
-1. **Roo Task SSE Events Renamed**
-
-   - Events now follow [`RooCodeEventName`](https://www.npmjs.com/package/@roo-code/types) enum
-   - The `message` event remains unchanged (most commonly used)
-   - **Removed events**: `stream_closed`, `task_completed`, `task_aborted`, `tool_failed`, `task_created`, `error`, `task_resumed`
-
-2. **OpenAPI Path Change**
-   - **Old**: `/api/v1/openapi.json`
-   - **New**: `/openapi.json`
-
-## Roadmap
-
-Our development roadmap includes several exciting enhancements:
-
-- **Production Deployment**: Code-server compatibility for containerization and deployment
-- **Headless AI Agent Control**: Complete REST API integration for Claude Code and Codex extensions with task lifecycle management
-- **Task Scheduler**: Cron-like scheduling system for automated AI agent tasks and workflows
-
-**Contributions Welcome**: We encourage community contributions to help expand Agent Maestro's capabilities and support for additional AI coding agents. We recommend using AI coding agents themselves to accelerate your development workflow when contributing to this project.
+[Report a bug or request a feature](https://github.com/Joouis/agent-maestro/issues).
 
 ## License
 
-This project is licensed under the terms specified in the [LICENSE](./LICENSE) file.
-
----
-
-<div align="center">
-
-**⭐ Star this project if you find it useful!**
-
-Built with ❤️ by AI agents for AI agents
-
-[🐛 Report Bug](https://github.com/Joouis/agent-maestro/issues) • [✨ Request Feature](https://github.com/Joouis/agent-maestro/issues)
-
-</div>
+[MIT](LICENSE).

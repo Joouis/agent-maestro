@@ -24,6 +24,14 @@ const Footer = () => {
           {/* Links */}
           <div className="flex items-center gap-6">
             <a
+              href="https://github.com/Joouis/agent-maestro/blob/main/docs/README.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Docs
+            </a>
+            <a
               href="https://github.com/Joouis/agent-maestro/"
               target="_blank"
               rel="noopener noreferrer"

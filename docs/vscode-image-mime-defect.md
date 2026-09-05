@@ -1,5 +1,7 @@
 # VS Code LM API image MIME re-encode defect
 
+Implementation note reviewed on 2026-09-05. The upstream behavior below records the defect behind the workaround, not a fresh verification of every VS Code release. Recheck it when changing the minimum VS Code version.
+
 ## Summary
 
 The VS Code Language Model API silently re-encodes images to PNG when sending
@@ -7,7 +9,7 @@ them to a model provider, but does **not** update the part's declared MIME type.
 Providers that validate image bytes against the declared type (notably Anthropic)
 reject the request:
 
-```
+```text
 messages.0.content.4.image.source.base64: The image was specified using the
 image/jpeg media type, but the image appears to be a image/png image
 ```
@@ -45,7 +47,7 @@ size, but the LM API path never passes a mimeType, so it never fires here.)
 ## Workaround (this repo)
 
 `src/server/utils/imageMime.ts` exports `mimeForVscodeLm(buffer, originalMime)`,
-applied at all four image-construction sites. It sniffs the real format from the
+used by the top-level image converters across the four protocol adapters. It sniffs the real format from the
 bytes (header-only, via `image-size`, which also yields the dimensions) and
 returns:
 
@@ -61,6 +63,19 @@ bytes over the caller's label corrects both that and the VS Code re-encode in
 one rule.
 
 This makes the declared type match the bytes the provider actually receives.
+
+### Anthropic Tool-Result Exception
+
+Images nested in Anthropic `tool_result` blocks take a different path: the
+[Anthropic converter](../src/server/utils/anthropic.ts) passes
+`preserveMimeType: true` and retains the declared MIME type. Applying the
+top-level large-image relabeling there caused a mismatch and was corrected in
+v2.9.7. Keep that exception when maintaining the workaround; do not assume all
+`LanguageModelDataPart` instances undergo the same upstream transformation.
+
+The current history normalizer also preserves these converted result parts when
+they become ordinary context. Revalidate affected image paths separately if
+conversion placement or upstream serialization changes.
 
 ## ⚠️ When VS Code fixes this, revisit the workaround
 

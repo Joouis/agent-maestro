@@ -6,19 +6,19 @@ const features = [
     icon: Zap,
     title: "Universal API Compatibility",
     description:
-      "Anthropic, OpenAI, and Gemini compatible endpoints, including transparent Anthropic server web search through Exa.",
+      "Anthropic, OpenAI, and Gemini compatible endpoints, with Exa-backed search where supported. See the documentation for release-specific limits.",
   },
   {
     icon: MousePointer,
     title: "One-Click Setup",
     description:
-      "Automated configuration commands for instant Claude Code, Codex, and Gemini CLI integration with VS Code's language models.",
+      "Configure Claude Code, Claude Desktop, Codex, or Gemini CLI to use available GitHub Copilot models through Agent Maestro.",
   },
   {
     icon: Cpu,
     title: "Headless AI Agent Control",
     description:
-      "Create and manage tasks through REST APIs for Roo Code and Cline extensions with comprehensive lifecycle management.",
+      "Manage Roo Code tasks through REST APIs, with basic task creation for Cline.",
   },
   {
     icon: Radio,
@@ -34,9 +34,9 @@ const features = [
   },
   {
     icon: Shield,
-    title: "Privacy First",
+    title: "Error Diagnostics",
     description:
-      "Content sanitization for Anthropic endpoints protects your privacy with detailed error diagnostics.",
+      "Inspect request failures in local diagnostics. Some fields remain unredacted; review logs before sharing them.",
   },
 ];
 

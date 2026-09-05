@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Implemented in [#247](https://github.com/Joouis/agent-maestro/pull/247), including direct/reference `open`, `find`, and the Phase 2 configurator gate. Documentation checked on 2026-09-05. The rollout phases below record the original plan, not outstanding work. Use [LLM compatibility](llm-compatibility.md#web-search) for current setup and check release notes for packaged availability.
 
 This design targets the standalone web search protocol used by Codex
 `0.151.0-alpha.7.1`. The protocol is experimental and must be treated as a
@@ -10,22 +10,22 @@ versioned Codex compatibility surface, not as a stable OpenAI API.
 
 ## Decision
 
-Agent Maestro will expose a Codex-specific endpoint at:
+Agent Maestro exposes a Codex-specific endpoint at:
 
 ```text
 POST /api/openai/v1/alpha/search
 ```
 
-The endpoint will translate supported Codex `web.run` commands into calls to
+The endpoint translates supported Codex `web.run` commands into calls to
 the hosted Exa MCP server. Advanced search settings use Exa's authenticated
 Search API because the pinned MCP advanced-search tool cannot disable full-page
-text retrieval. It will return the plain-text search output expected by Codex
+text retrieval. It returns the plain-text search output expected by Codex
 and optional structured result DTOs for Codex clients that display search
 activity.
 
-The first implementation will be opt-in. `Configure Codex Settings` must not
-write `supports_standalone_web_search = true` until reference-based `open` and
-`find` are supported in addition to search queries.
+The original rollout gated automatic configuration on reference-based `open`
+and `find`. That gate is complete: `Configure Codex Settings` writes the
+capability fields while preserving an explicit `web_search = "disabled"`.
 
 The standalone endpoint is separate from the OpenAI Responses hosted
 `web_search` compatibility layer:
@@ -207,7 +207,7 @@ The current Codex standalone tool:
 - treats `results` as optional opaque DTOs for out-of-band client display; and
 - does not consume `encrypted_output`.
 
-Agent Maestro will return `encrypted_output: null`. It will not attempt to
+Agent Maestro returns `encrypted_output: null`. It does not attempt to
 reproduce OpenAI's encrypted search context.
 
 ## Exa MCP Contract
@@ -217,7 +217,7 @@ reproduce OpenAI's encrypted search context.
 The Exa hosted MCP `tools` query parameter replaces the server's default tool
 set. It does not add to the defaults.
 
-Agent Maestro currently uses:
+Before standalone support, Agent Maestro used:
 
 ```text
 https://mcp.exa.ai/mcp?tools=web_search_exa,web_search_advanced_exa
@@ -289,9 +289,9 @@ responses explicitly.
 | `response_length`                  | Total result and evidence budget                | Approximate           |
 | cached or indexed access           | `maxAgeHours: -1`                               | Supported             |
 | live access                        | Cached content with live-crawl fallback         | Supported             |
-| `open` with an HTTP(S) URL         | `web_fetch_exa`                                 | Phase 2               |
-| `open` with a known reference      | Reference lookup, then `web_fetch_exa`          | Phase 2               |
-| `find`                             | Search bounded fetched text locally             | Phase 2               |
+| `open` with an HTTP(S) URL         | `web_fetch_exa`                                 | Supported             |
+| `open` with a known reference      | Reference lookup, then `web_fetch_exa`          | Supported             |
+| `find`                             | Search bounded fetched text locally             | Supported             |
 | `click`                            | Parse links and maintain link references        | Deferred              |
 | city, region, or timezone location | No equivalent Exa MCP field                     | Unsupported           |
 | `image_query`                      | No equivalent structured image-search operation | Unsupported           |
@@ -303,7 +303,7 @@ weather, sports, or time data source.
 
 ## Request Validation
 
-The route will use a dedicated Codex request schema rather than adding this
+The route uses a dedicated Codex request schema rather than adding this
 experimental protocol to the stable OpenAI Responses schema.
 
 Validation is divided into two classes.
@@ -448,7 +448,7 @@ guarantee cache-only retrieval.
 
 ### Multiple Queries
 
-Codex permits up to four search queries in one call. Agent Maestro will:
+Codex permits up to four search queries in one call. Agent Maestro applies these rules:
 
 - reuse one MCP session for the complete HTTP request;
 - process anonymous requests sequentially;
@@ -613,8 +613,7 @@ recoverable `unsupported_command: click` output.
 
 ### Shared Exa MCP Client
 
-Extract the protocol transport currently embedded in
-`ExaMcpWebSearchProvider` into a reusable client:
+The protocol transport was extracted from `ExaMcpWebSearchProvider` into a reusable client:
 
 ```text
 src/server/webSearch/exaMcpClient.ts
@@ -651,12 +650,11 @@ other failures without exposing provider details.
 
 `ExaMcpWebSearchProvider` remains the implementation of the narrow shared
 `WebSearchProvider` interface used by Anthropic and Responses hosted search. It
-will delegate MCP work to the extracted client and preserve its current public
-behavior.
+delegates MCP work to the extracted client and preserves its public behavior.
 
 ### Codex Adapter
 
-Add a protocol-specific adapter:
+The protocol-specific adapter is:
 
 ```text
 src/server/webSearch/codexStandaloneWebSearch.ts
@@ -675,15 +673,15 @@ It must not depend on Anthropic or OpenAI Responses hosted-tool types.
 
 ### Route
 
-Add:
+The route implementation is:
 
 ```text
 src/server/routes/openai/codexSearchRoutes.ts
 ```
 
-`registerOpenaiRoutes` will accept route options and register the new route.
-`ProxyServer` will construct or provide a shared Exa MCP client factory to both
-the existing search provider and the Codex adapter.
+`registerOpenaiRoutes` accepts route options and registers the route.
+`ProxyServer` constructs a shared Exa MCP client for the hosted search provider
+and the Codex adapter.
 
 The route belongs under a `Codex Compatibility` OpenAPI tag. Its description
 must state the supported Codex version and experimental status.
@@ -732,44 +730,9 @@ document, or diagnostic log.
 
 ## Configuration Rollout
 
-### Phase 1: Explicit Opt-in
+The original plan had two stages: manual opt-in for query search, then automatic capability configuration only after direct/reference `open`, `find`, reference eviction, and anonymous failure recovery were validated. Both stages are implemented in #247.
 
-Ship query search with filters, structured results, output budgeting, and
-recoverable errors. Document manual configuration:
-
-```toml
-web_search = "live"
-
-[features]
-standalone_web_search = true
-
-[model_providers.agent-maestro]
-name = "Agent Maestro"
-base_url = "http://127.0.0.1:23333/api/openai/v1"
-wire_api = "responses"
-supports_standalone_web_search = true
-```
-
-Do not have `Configure Codex Settings` add these fields yet. Codex exposes the
-complete `web.run` schema to the model, so search-only support can still lead
-the model to select an unavailable `open`, `find`, or `click` operation.
-
-### Phase 2: Default Capability
-
-Implement and validate:
-
-- direct-URL `open`;
-- reference-based `open`;
-- `find`;
-- reference eviction behavior; and
-- anonymous rate-limit recovery.
-
-After these are complete, update `Configure Codex Settings` to add the feature
-and provider capability. Preserve a user's explicit `web_search = "disabled"`
-choice.
-
-`click`, image search, screenshots, and specialized data commands remain
-documented limitations and return recoverable tool outputs.
+The configurator now writes the feature/provider capability and preserves `web_search = "disabled"`. Current manual settings are documented only in [LLM compatibility](llm-compatibility.md#codex-standalone-configuration). `click` and specialized commands remain unsupported and return recoverable tool output.
 
 ## Observability
 
@@ -799,90 +762,16 @@ content, keys, provider response bodies, or Codex metadata.
 
 ## Testing
 
-### Unit Tests
+[Standalone search tests](../src/test/server/codexStandaloneWebSearch.test.ts) cover the pinned Codex request fixture and these invariants:
 
-Add focused tests for:
+- Distinguish malformed HTTP requests, recoverable operation failures, and internal errors.
+- Honor domain intersections, recency, location, cache-only policy, output budgets, and UTF-8/reference boundaries.
+- Bound query concurrency and reference state; preserve session serialization and cancellation order.
+- Exercise direct/reference open, literal find, eviction, provider failures, and unsupported commands.
+- Prove that conversation `input`, credentials, and request metadata do not enter Exa calls or diagnostics.
+- Preserve the existing hosted-search provider behavior after transport extraction.
 
-- the Codex `0.151.0-alpha.7.1` request fixture;
-- malformed request versus recoverable tool failure classification;
-- all command and settings enums;
-- domain normalization, intersection, and empty intersection;
-- recency date mapping with a fixed clock;
-- cache-only and live-access mapping;
-- simple versus advanced tool selection;
-- one to four query aggregation and round-robin result merging;
-- duplicate URL removal;
-- output and UTF-8 budget enforcement;
-- stable result/reference DTO generation;
-- anonymous sequential dispatch;
-- authenticated bounded dispatch;
-- unknown and expired reference behavior;
-- direct and reference-based `open`;
-- recoverable `open` failures for rejected, timed-out, and empty fetches;
-- `find` context extraction;
-- unsupported command output;
-- downstream authentication, rate-limit, protocol, timeout, and empty-result
-  behavior;
-- request cancellation; and
-- proof that `input` and request metadata never enter any mocked Exa MCP call.
-
-Update existing Exa provider tests to prove that extracting the transport does
-not change Anthropic behavior.
-
-### Route Tests
-
-Verify:
-
-- the route is mounted at `/api/openai/v1/alpha/search`;
-- OpenAI authentication middleware still applies;
-- valid operational failures return HTTP 200 with `results: []`;
-- malformed payloads return HTTP 400;
-- internal failures return HTTP 500;
-- OpenAPI documents the route as experimental; and
-- no Exa call occurs for malformed or unsupported requests.
-
-### Compatibility Test
-
-Keep a captured request fixture from the official Codex
-`0.151.0-alpha.7.1` binary in the unit tests. Before release, repeat the local
-recording-server test with the latest supported Codex binary and verify this
-sequence:
-
-```text
-Responses selects web.run
-  -> Codex POSTs /api/openai/v1/alpha/search
-  -> Agent Maestro returns output
-  -> Codex sends output in the next Responses request
-  -> Codex completes the turn
-```
-
-Tests must mock Exa MCP. CI must not consume anonymous or user Exa quota.
-
-## Acceptance Criteria
-
-1. A real supported Codex binary sends standalone requests to
-   `/api/openai/v1/alpha/search`.
-2. Requests without an Exa key can search through anonymous hosted MCP access.
-3. Requests with a SecretStorage key authenticate without exposing the key.
-4. The Exa client explicitly requests simple search, advanced search, and fetch
-   tools.
-5. Search queries support domain, recency, country, context, and external-access
-   policy mapping.
-6. Multiple queries remain within one total result, output, timeout, and
-   provider-call budget.
-7. `input` and request metadata are never forwarded to Exa or logged.
-8. Search output is bounded, labeled untrusted, and contains normalized source
-   URLs and stable references.
-9. Structured `text_result` DTOs match the same normalized search results.
-10. Downstream 429 and other provider failures become explicit recoverable tool
-    output rather than a false empty success or Codex fatal response.
-11. Malformed requests return HTTP 400 before provider dispatch.
-12. The first release remains opt-in.
-13. Automatic Codex configuration is enabled only after reference-based `open`
-    and `find` pass compatibility tests.
-14. Existing Anthropic and Responses behavior is unchanged.
-15. Documentation states all unsupported commands and avoids public OpenAI API
-    compatibility claims.
+Tests mock Exa rather than consume provider quota. A supported real Codex client must also complete the sequence `POST /responses` → `POST /alpha/search` → `POST /responses`, including a reference-based follow-up. Record the exact binary version and use the [manual validation guidance](testing.md#manual-validation).
 
 ## Risks
 
@@ -948,17 +837,7 @@ Mitigation:
 
 ## Implementation Sequence
 
-1. Extract and regression-test the reusable Exa MCP client.
-2. Add the three-tool endpoint configuration and typed provider errors.
-3. Add Codex schemas, mapping, output formatting, and bounded reference state.
-4. Register `/v1/alpha/search` with authentication and OpenAPI.
-5. Add query search and recoverable error behavior.
-6. Add `web_fetch_exa`, reference-based `open`, and `find`.
-7. Update README with explicit opt-in configuration and limitations.
-8. Run the real Codex compatibility test.
-9. Add a user-visible minor changeset.
-10. Enable the capability in `Configure Codex Settings` only after the Phase 2
-    gate is met.
+Completed in #247: shared Exa transport extraction, protocol validation and output packing, bounded reference state, route registration, search/open/find, client capability configuration, documentation, and a minor changeset. The current [implementation](../src/server/webSearch/codexStandaloneWebSearch.ts) and tests supersede the original task checklist.
 
 ## References
 

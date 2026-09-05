@@ -10,7 +10,7 @@ Agent Maestro is a VS Code extension that:
 - Exposes a local proxy server (default port `23333`) presenting OpenAI-, Anthropic-, and Gemini-compatible APIs backed by the VS Code Language Model API (GitHub Copilot models), used by clients such as Claude Code, Codex, and Gemini.
 - Runs an MCP server (default port `23334`) for Model Context Protocol clients.
 
-Primary language: **TypeScript** (ESM, Node ≥ 22, VS Code ≥ 1.100). Package manager: **pnpm 11**.
+Primary language: **TypeScript** (ESM). Runtime and package-manager requirements are defined in `package.json` (`engines` and `packageManager`).
 
 ## Repository layout
 
@@ -23,7 +23,7 @@ Primary language: **TypeScript** (ESM, Node ≥ 22, VS Code ≥ 1.100). Package 
   - `utils/` — request conversion helpers between Anthropic/OpenAI and the VS Code LM API.
 - `src/utils/` — shared utilities (logger, config, chat-model resolution, Claude Code helpers).
 - `src/test/` — Mocha tests run via `@vscode/test-electron`.
-- `docs/`, `website/` — user-facing documentation.
+- `docs/README.md` — index of current guides, runbooks, and historical designs; `website/` contains the landing page.
 - `.changeset/` — pending release notes (Changesets).
 
 ## Known upstream (VS Code) issues

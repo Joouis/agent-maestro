@@ -1,5 +1,7 @@
 # Claude Code Context Window Handling
 
+Current implementation note, reviewed on 2026-09-05. See [LLM compatibility](llm-compatibility.md) for usage reporting and general proxy limits.
+
 Agent Maestro bridges three different context-window models when Claude Code uses
 VS Code language models through the Anthropic-compatible proxy:
 
@@ -59,14 +61,14 @@ the reported counts.
 ## Proxy Behavior
 
 Before calling `LanguageModelChat.sendRequest`, Agent Maestro applies
-`withCopilotContextSize` to all proxy routes. The helper only mutates request
-options for Copilot-provided models; non-Copilot providers are left unchanged.
-For Copilot models with a positive `maxInputTokens`, this adds:
+`withCopilotConfiguration` to generation requests. The helper returns updated
+options for Copilot-provided models; other providers are left unchanged.
+For a model advertising `maxInputTokens: 1000000`, this adds the numeric budget:
 
 ```json
 {
   "configuration": {
-    "contextSize": "<selected maxInputTokens>"
+    "contextSize": 1000000
   }
 }
 ```

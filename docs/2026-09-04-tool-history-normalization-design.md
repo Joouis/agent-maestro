@@ -2,7 +2,7 @@
 
 ## Status and Scope
 
-Implemented and validated on 2026-09-05. Baseline recorded on 2026-09-04: `main` at `f041fe1`, which includes [#251](https://github.com/Joouis/agent-maestro/pull/251).
+Implemented and validated on 2026-09-05 in [#252](https://github.com/Joouis/agent-maestro/pull/252). Baseline recorded on 2026-09-04: `main` at `f041fe1`, which includes [#251](https://github.com/Joouis/agent-maestro/pull/251). This is a design record; see [LLM compatibility](llm-compatibility.md#content-tools-and-history) for the current user-facing summary.
 
 Unify **inbound history normalization** across Anthropic Messages, OpenAI Chat Completions / Responses (including custom tools), and Gemini GenerateContent. The goal is to send complete tool-call/result pairs to VS Code LM while preserving useful task progress.
 
@@ -12,7 +12,7 @@ Normalization runs on a decoded history snapshot before an upstream model reques
 
 ## Core Decisions
 
-**Identify complete tool-call turns and pairs before deciding what to preserve, convert to context, or deduplicate.** Replace the global `seenResultIds` approach that deletes results as they arrive. The following rules are proposed defaults for the first version.
+**Identify complete tool-call turns and pairs before deciding what to preserve, convert to context, or deduplicate.** These rules replace the earlier global `seenResultIds` approach that deleted results as they arrived.
 
 | Situation                                                                     | Content sent to the model                                                               | Rationale                                                                                      |
 | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -23,7 +23,9 @@ Normalization runs on a decoded history snapshot before an upstream model reques
 | Same turn, same ID, different results                                         | Convert the associated calls and results to ordinary context with a conflict note       | Do not infer the final result from ordering or length, or invent an unambiguous pair           |
 | Complete call/result pairs replayed across turns                              | Preserve each pair, remapping upstream IDs when necessary                               | Matching IDs and content do not prove that these were not separate executions                  |
 | Repeated calls within a turn with the same ID, tool name, type, and arguments | Merge the calls and handle their results together under the rules above                 | Calls and results must be evaluated as a group                                                 |
-| Repeated ID within a turn with different tool names, types, or arguments      | Convert the related calls and results to conflict context                               | The ID does not uniquely identify a call; do not choose arbitrarily                            |
+| Repeated ID within the same tool type/turn with different names or arguments  | Convert the related calls and results to conflict context                               | The ID does not uniquely identify a call; do not choose arbitrarily                            |
+
+Typed Responses function/custom outputs distinguish their namespaces, so complete pairs can reuse an ID across those types. An untyped result that could match both types makes the associated groups conflicting.
 
 Ordinary context remains historical data with explicit provenance. It is not a new user instruction and must never be promoted to system/developer instructions. Preserve unrelated text/images and their relative order. The output renderer combines same-turn call/result messages and keeps parallel formal tool parts contiguous, followed by ordinary content from that message group: Copilot rejects text interleaved between parallel results. Nothing moves across a turn boundary. Omit a message only when all its content has been explicitly removed.
 
@@ -57,7 +59,7 @@ This is not a reversal of #251: that fix already preserves complete pairs across
 Adapters identify tool-call turns before role conversion or message merging: a group of consecutive assistant/model call messages followed by their result messages. Consecutive OpenAI Responses call items belong to one group; function and custom tools use separate matching types.
 
 - A new assistant/model turn, independent user input without tool results, an instruction boundary, or the end of the request closes the current turn.
-- When a user message mixes results with text or images, its results still belong to the current turn. Other content is neither deleted nor moved.
+- When a user message mixes results with text or images, its results still belong to the current turn. Other content is retained in relative order within that turn, subject to grouping formal tool parts for the serializer as described above.
 - Results can match only calls already encountered in the current turn. They cannot cross boundaries, match future calls, or connect separate turns merely because tool names match. Late results become orphaned context.
 - Finalize missing results only when the turn closes. Receiving the first result does not mean other parallel calls are missing their results.
 - Do not attach a result across a subsequent assistant message, even if that message contains only text. Without reliable turn information, preserve context rather than moving historical messages to manufacture a pair.
@@ -135,7 +137,7 @@ Validate invariants over the final emitted formal tool parts only: every formal 
 - Preserve the current public counting behavior of `/api/anthropic/v1/messages/count_tokens` and `/api/gemini/v1beta/models/{model}:countTokens`: both currently estimate the serialized request body. Changing these endpoint contracts or existing usage-estimation rules is outside v1. Fixture measurements of normalized input are separate from client-visible counts and provider-reported usage.
 - Log only reason/count summaries, without adding raw arguments, results, or sensitive IDs. Track recoveries per request. HTTP 200 and CLI exit 0 are not sufficient success criteria.
 
-| Entry point          | Current implementation                                                 | Migration and regression focus                                                                       |
+| Entry point          | Baseline implementation at `f041fe1`                                   | Migration and regression focus                                                                       |
 | -------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `anthropic.ts`       | Uses the shared tracker                                                | Replace tracker decisions; preserve mixed content and orphan-context conversion                      |
 | `openaiResponses.ts` | Uses separate shared trackers for function/custom tools                | Replace tracker decisions; preserve tool types, parallel item grouping, and instruction boundaries   |

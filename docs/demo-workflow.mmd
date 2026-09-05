@@ -1,57 +1,29 @@
 sequenceDiagram
     participant Client
-    participant Maestro as Agent Maestro
-    participant AIAgent as AI Agent (Roo)
-    participant MCPServer as MCP Server
+    participant AM as Agent Maestro
+    participant Roo as Roo extension
 
-    Note over Client,AIAgent: New Task Creation
-    Client->>Maestro: POST /roo/task (initial message)
-    Maestro->>AIAgent: Start new task
-    Maestro->>Client: SSE: TASK_CREATED
-    loop Streaming message processing
-        AIAgent->>Maestro: Generate response chunk
-        Maestro->>Client: SSE: MESSAGE (partial)
+    Client->>AM: POST /api/v1/roo/task
+    AM->>Roo: Start task and forward events
+    AM-->>Client: taskCreated / taskStarted
+    Roo-->>AM: Partial message updates
+    AM-->>Client: message (partial)
+    Roo-->>AM: Complete follow-up question
+    AM-->>Client: message (ask=followup, partial=false)
+    AM-->>Client: HTTP stream ends
+    Note over Client,AM: No stream_closed event
 
-        AIAgent->>Maestro: Ask follow-up question
-        Maestro->>Client: SSE: MESSAGE (followup)
+    Client->>AM: POST /api/v1/roo/task/{id}/message
+    AM->>Roo: Resume/select task as needed and send reply
+    Roo-->>AM: Text and tool-interaction messages
+    AM-->>Client: message
+    opt User approves the intended task operation
+        Client->>AM: POST /api/v1/roo/task/{id}/action
+        AM->>Roo: pressPrimaryButton
     end
-    Maestro->>Client: SSE: STREAM_CLOSED (followup_question)
-    Note over Client,Maestro: Connection closed
-
-    Note over Client,AIAgent: Send Message to Existing Task
-    Client->>Maestro: POST /roo/task/{id}/message (reply to question)
-    Maestro->>AIAgent: Check task in history
-    Maestro->>AIAgent: Resume task if needed
-    Maestro->>AIAgent: Send message
-    Maestro->>Client: SSE: TASK_RESUMED
-    loop Streaming message processing
-        AIAgent->>Maestro: Generate response chunk
-        Maestro->>Client: SSE: MESSAGE
-
-        AIAgent->>Maestro: Request MCP tool usage
-        Maestro->>Client: SSE: MESSAGE (use_mcp_server)
-    end
-
-    Note over Client,AIAgent: Tool Approval
-    Client->>Maestro: POST /roo/task/{id}/action (approve)
-    Maestro->>AIAgent: Click Approve button
-    AIAgent->>MCPServer: Execute tool
-    MCPServer->>AIAgent: Tool result
-    alt Tool execution successful
-        loop Streaming message processing
-            AIAgent->>Maestro: Process tool result
-            Maestro->>Client: SSE: MESSAGE
-        end
-    else Tool execution failed
-        Maestro->>Client: SSE: TOOL_FAILED (with error)
-    end
-
-    Note over Client,AIAgent: Task Completion
-    loop Streaming message processing
-        AIAgent->>Maestro: Continue response chunk
-        Maestro->>Client: SSE: MESSAGE
-    end
-    AIAgent->>Maestro: Task completion
-    Maestro->>Client: SSE: TASK_COMPLETED (with usage stats)
-    Maestro->>Client: SSE: STREAM_CLOSED (task_completed)
-    Note over Client,Maestro: Connection closed
+    Roo-->>AM: Task completion notification
+    AM-->>Client: taskCompleted (usage)
+    Note over Client,AM: Keep reading for final content
+    Roo-->>AM: Complete result message
+    AM-->>Client: message (say=completion_result, partial=false)
+    AM-->>Client: HTTP stream ends

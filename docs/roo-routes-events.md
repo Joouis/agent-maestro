@@ -1,306 +1,72 @@
-# RooRoutes Server-Sent Events (SSE) Documentation
+# Roo HTTP and SSE Reference
 
-## Introduction
+Current AM contract, reviewed on 2026-09-05. This describes `/api/v1/roo` HTTP routes, not the Roo extension's in-process EventEmitter API. See [upstream API notes](roo-code/README.md) for that separate interface.
 
-The RooRoutes API provides real-time communication through Server-Sent Events (SSE) to deliver live updates during task execution. These events enable client applications to receive immediate feedback about task progress, completion status, errors, and other important state changes without polling.
+## Access and Endpoints
 
-SSE streams are established when creating new tasks or sending messages to existing tasks, providing a persistent connection for receiving updates until the task completes or the stream is explicitly closed.
+The default origin is `http://127.0.0.1:23333`. These routes require an active Roo-compatible extension. **The optional LLM API key does not authenticate `/api/v1/roo/*`.** Use authenticated network access before exposing the server remotely; see the [demo requirements](../examples/demo-site/README.md#remote-access).
 
-## Visual Workflow Overview
+| Method             | Path below `/api/v1`               | Purpose                                                             |
+| ------------------ | ---------------------------------- | ------------------------------------------------------------------- |
+| POST               | `/roo/task`                        | Start a task and stream events                                      |
+| POST               | `/roo/task/{taskId}/message`       | Send a message and stream events                                    |
+| POST               | `/roo/task/{taskId}/action`        | `pressPrimaryButton`, `pressSecondaryButton`, `cancel`, or `resume` |
+| GET                | `/roo/tasks`, `/roo/task/{taskId}` | Task history/detail                                                 |
+| GET / PUT          | `/roo/settings`                    | Read/update settings                                                |
+| GET                | `/roo/modes`                       | Available modes                                                     |
+| GET / POST         | `/roo/profiles`                    | List/create profiles                                                |
+| GET / PUT / DELETE | `/roo/profiles/{name}`             | Read/update/delete a profile                                        |
+| PUT                | `/roo/profiles/active/{name}`      | Activate a profile                                                  |
+| POST               | `/roo/install-mcp-config`          | Install AM MCP configuration                                        |
 
-![Workflow Diagram](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/demo-workflow.png)
+The running [`/openapi.json`](http://127.0.0.1:23333/openapi.json) is the reference for request fields and variant selection (`extensionId`). Task creation and message continuation accept `text` and optional `images`; only creation consumes `configuration` and `newTab`. Use the settings route for later configuration changes.
 
-The workflow diagram above illustrates the high-level task creation and conversation flow that generates the SSE events documented below. This visual representation shows how user interactions trigger task creation, message exchanges, and the overall lifecycle that produces the various event types. The diagram complements the detailed SSE event documentation by providing context for when and why each event occurs during the task execution process.
+## Wire Format
 
-The workflow demonstrates the relationship between user actions (creating tasks, sending messages) and the corresponding SSE events that flow back to the client, showing how the events fit into the broader task management and communication system.
+Task creation and message requests return `text/event-stream`. Event names use `RooCodeEventName` camelCase values. Each `data` field is one JSON **object** defined by AM's [TaskEvent types](../src/server/types.ts), rather than an upstream positional argument array.
 
-## Event Overview
+```text
+event: message
+data: {"taskId":"example-task","action":"updated","message":{"ts":1,"type":"say","say":"text","text":"Working","partial":true}}
 
-The RooRoutes API emits 8 distinct event types that cover the complete lifecycle of task execution:
-
-| Event Type                          | Purpose                                     | Stream Behavior     |
-| ----------------------------------- | ------------------------------------------- | ------------------- |
-| [`TASK_CREATED`](#task_created)     | Confirms successful task creation           | Continues streaming |
-| [`TASK_RESUMED`](#task_resumed)     | Indicates task resumption from history      | Continues streaming |
-| [`MESSAGE`](#message)               | Real-time task progress and agent responses | Continues streaming |
-| [`TASK_COMPLETED`](#task_completed) | Task finished successfully with usage stats | **Closes stream**   |
-| [`TASK_ABORTED`](#task_aborted)     | Task was cancelled or aborted               | **Closes stream**   |
-| [`TOOL_FAILED`](#tool_failed)       | Tool execution encountered an error         | Continues streaming |
-| [`ERROR`](#error)                   | General error during task processing        | **Closes stream**   |
-| [`STREAM_CLOSED`](#stream_closed)   | Stream closure notification with reason     | **Closes stream**   |
-
-## Event Reference
-
-### `TASK_CREATED`
-
-**Enum Value:** `SSEEventType.TASK_CREATED = "task_created"`
-
-**Triggered when:** A new task is successfully created and started.
-
-**Interface:**
-
-```typescript
-{
-  taskId: string; // Unique identifier for the created task
-  status: "created"; // Status indicator
-  message: string; // Human-readable confirmation message
-}
 ```
 
-**Usage Scenarios:**
+| Event                                                                                         | Data                                                              |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `taskCreated`, `taskStarted`, `taskPaused`, `taskUnpaused`, `taskAskResponded`, `taskAborted` | `{taskId}`                                                        |
+| `message`                                                                                     | `{taskId, action: "created" or "updated", message: ClineMessage}` |
+| `taskModeSwitched`                                                                            | `{taskId, mode}`                                                  |
+| `taskSpawned`                                                                                 | `{taskId, childTaskId}`                                           |
+| `taskCompleted`                                                                               | `{taskId, tokenUsage, toolUsage}`                                 |
+| `taskTokenUsageUpdated`                                                                       | `{taskId, tokenUsage}`                                            |
+| `taskToolFailed`                                                                              | `{taskId, tool, error}`                                           |
 
-- Confirming task creation to users
-- Storing task ID for future reference
-- Initializing progress tracking UI
+An exception inside an open task/message stream can instead emit `taskAborted` with `{message: <error description>}`. Clients must allow that error shape. Failures before streaming use the route's JSON error response.
 
----
+AM filters `message.say === "api_req_started"` and repeated identical complete messages. Other message content is passed through. Do not expect every event exposed by a newer Roo extension to be forwarded by AM; the table matches the registered adapter listeners.
 
-### `TASK_RESUMED`
+## Completion and Stream Closure
 
-**Enum Value:** `SSEEventType.TASK_RESUMED = "task_resumed"`
+`taskCompleted` supplies usage information but **does not close the stream**: completion text can arrive afterward. AM closes after forwarding one of these terminal events:
 
-**Triggered when:** An existing task from history is resumed and reactivated.
+- A `message` with `partial` false/absent and `ask === "followup"`. The task is waiting for input, not necessarily finished.
+- A `message` with `partial` false/absent and `say === "completion_result"`.
+- `taskAborted`, or a stream-handler failure.
 
-**Interface:**
+There is no separate `stream_closed` event. Do not wait an arbitrary number of seconds after `taskCompleted`; continue reading the stream and classify the terminal message. Transport EOF without a known terminal event can be a disconnect, not proof of success.
 
-```typescript
-{
-  taskId: string; // ID of the resumed task
-  status: "resumed"; // Status indicator
-  message: string; // Human-readable confirmation message
-}
-```
+Old snake_case events (`task_created`, `task_completed`, `task_aborted`, `tool_failed`, `task_resumed`) and the old `error` / `stream_closed` events were removed in v2.0.1. The `message` name stayed unchanged.
 
-**Usage Scenarios:**
+## Task Flow
 
-- Continuing work on previously paused tasks
-- Restoring task context in the UI
-- Notifying users of successful task reactivation
+![Roo task and follow-up stream lifecycle](../assets/demo-workflow.png)
 
----
+The diagram is generated from [demo-workflow.mmd](demo-workflow.mmd). It illustrates possible events; task content determines the exact sequence.
 
-### `MESSAGE`
+## Client Integration
 
-**Enum Value:** `SSEEventType.MESSAGE = "message"`
+Use a streaming POST client: browser `EventSource` alone cannot supply a POST request body. See the demo's [API reader](../examples/demo-site/src/app/roo/hooks/useApiClient.ts) for the repository's current integration.
 
-**Triggered when:** The AI agent generates responses, progress updates, or asks questions during task execution.
+Treat `message.text` as plain text unless the corresponding message type defines a JSON payload. Parse JSON defensively and preserve unknown messages for display. Tool approval must be associated with the intended task and structured operation; never classify a request as read-only by searching its free text for a tool name.
 
-**Interface:**
-
-```typescript
-{
-  taskId: string; // Associated task identifier
-  message: object; // Complex message structure from @roo-code/types
-}
-```
-
-**Note:** The `message` field structure is defined in the [`@roo-code/types`](https://www.npmjs.com/package/@roo-code/types) package as it contains complex agent response data that is proxied directly to clients.
-
-**Usage Scenarios:**
-
-- Displaying real-time agent responses
-- Implementing typewriter-style text streaming
-- Handling follow-up questions with suggested responses
-- Managing MCP server tool requests
-
----
-
-### `TASK_COMPLETED`
-
-**Enum Value:** `SSEEventType.TASK_COMPLETED = "task_completed"`
-
-**Triggered when:** A task finishes successfully with all objectives completed.
-
-**Interface:**
-
-```typescript
-{
-  taskId: string;           // Completed task identifier
-  tokenUsage: {             // Token consumption statistics
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-  };
-  toolUsage: {              // Tool usage statistics
-    [toolName: string]: number;
-  };
-}
-```
-
-**Stream Behavior:** This event triggers automatic stream closure with reason `"task_completed"`.
-
-**Usage Scenarios:**
-
-- Displaying completion confirmation to users
-- Showing resource usage statistics
-- Updating task history records
-- Enabling new task creation
-
----
-
-### `TASK_ABORTED`
-
-**Enum Value:** `SSEEventType.TASK_ABORTED = "task_aborted"`
-
-**Triggered when:** A task is cancelled, manually stopped, or aborted due to conditions.
-
-**Interface:**
-
-```typescript
-{
-  taskId: string; // Aborted task identifier
-}
-```
-
-**Stream Behavior:** This event triggers automatic stream closure with reason `"task_aborted"`.
-
-**Usage Scenarios:**
-
-- Notifying users of task cancellation
-- Cleaning up UI state
-- Logging aborted tasks for analytics
-- Allowing task restart options
-
----
-
-### `TOOL_FAILED`
-
-**Enum Value:** `SSEEventType.TOOL_FAILED = "tool_failed"`
-
-**Triggered when:** A specific tool execution fails during task processing.
-
-**Interface:**
-
-```typescript
-{
-  taskId: string; // Associated task identifier
-  tool: string; // Name of the failed tool
-  error: string; // Error description
-}
-```
-
-**Usage Scenarios:**
-
-- Displaying specific tool errors to users
-- Implementing retry mechanisms
-- Debugging task execution issues
-- Logging tool failure analytics
-
----
-
-### `ERROR`
-
-**Enum Value:** `SSEEventType.ERROR = "error"`
-
-**Triggered when:** General errors occur during task processing that prevent continuation.
-
-**Interface:**
-
-```typescript
-{
-  error: string; // Error description
-}
-```
-
-**Stream Behavior:** This event triggers immediate stream closure.
-
-**Usage Scenarios:**
-
-- Displaying critical error messages
-- Implementing error recovery flows
-- Logging system errors
-- Providing user feedback for resolution
-
----
-
-### `STREAM_CLOSED`
-
-**Enum Value:** `SSEEventType.STREAM_CLOSED = "stream_closed"`
-
-**Triggered when:** The SSE stream is about to close, providing closure reason.
-
-**Interface:**
-
-```typescript
-{
-  message: string; // Reason for stream closure
-}
-```
-
-**Usage Scenarios:**
-
-- Understanding why streams closed
-- Implementing appropriate UI transitions
-- Debugging connection issues
-- Analytics and monitoring
-
-## Event Flow Diagrams
-
-### New Task Creation Flow
-
-```
-Client                         Proxy Server                         AI Agent (Roo)
-  |                                 |                                     |
-  | POST /roo/task                  |                                     |
-  |-------------------------------->|                                     |
-  |                                 | Start task processing               |
-  |                                 |------------------------------------>|
-  |                                 | SSE: TASK_CREATED                   |
-  |<--------------------------------|                                     |
-  |                                 |                                     |
-  |                                 | SSE: MESSAGE (partial)              |
-  |<--------------------------------|<------------------------------------|
-  |                                 | SSE: MESSAGE (partial)              |
-  |<--------------------------------|<------------------------------------|
-  |                                 | SSE: MESSAGE (complete)             |
-  |<--------------------------------|<------------------------------------|
-  |                                 |                                     |
-  |                                 | SSE: TASK_COMPLETED                 |
-  |<--------------------------------|<------------------------------------|
-  |                                 | SSE: STREAM_CLOSED                  |
-  |<--------------------------------|                                     |
-  | Connection closed               |                                     |
-```
-
-### Send Message Flow
-
-```
-Client                         Proxy Server                         AI Agent (Roo)
-  |                                 |                                     |
-  | POST /roo/task/{id}/message     |                                     |
-  |-------------------------------->|                                     |
-  |                                 | Check task in history               |
-  |                                 | Resume task if needed               |
-  |                                 |------------------------------------>|
-  |                                 | SSE: TASK_RESUMED                   |
-  |<--------------------------------|                                     |
-  |                                 | Process new message                 |
-  |                                 | SSE: MESSAGE...                     |
-  |<--------------------------------|<------------------------------------|
-```
-
-### Error Handling Flow
-
-```
-Client                         Proxy Server                         AI Agent (Roo)
-  |                                 |                                     |
-  | POST /roo/task                  |                                     |
-  |-------------------------------->|                                     |
-  |                                 | Start task processing               |
-  |                                 |------------------------------------>|
-  |                                 | SSE: TASK_CREATED                   |
-  |<--------------------------------|                                     |
-  |                                 | Processing error occurs             |
-  |                                 |                              X      |
-  |                                 | SSE: TOOL_FAILED                    |
-  |<--------------------------------|                                     |
-  |                                 | Critical error occurs               |
-  |                                 | SSE: ERROR                          |
-  |<--------------------------------|                                     |
-  |                                 | SSE: STREAM_CLOSED                  |
-  |<--------------------------------|                                     |
-```
-
----
-
-**Note:** This documentation is based on the [`SSEEventType`](../src/server/routes/rooRoutes.ts:8) enum and implementation in the RooRoutes codebase. Always refer to the latest source code for the most up-to-date event structures and behaviors.
+Implementation: [route forwarding](../src/server/routes/rooRoutes.ts), [adapter listeners and termination](../src/core/RooCodeAdapter.ts), [payload types](../src/server/types.ts).

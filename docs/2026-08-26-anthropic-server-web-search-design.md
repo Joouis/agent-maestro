@@ -1,5 +1,9 @@
 # Anthropic Server Web Search Design
 
+## Status
+
+Implemented and released in v2.13.0; documentation checked on 2026-09-05. This record preserves the protocol decisions for the original feature. Use [LLM compatibility](llm-compatibility.md#web-search) for current setup, release scope, and limits.
+
 ## Problem
 
 Agent Maestro exposes an Anthropic-compatible `POST /v1/messages` endpoint
@@ -14,9 +18,9 @@ server-side web search tool:
 }
 ```
 
-The VS Code API does not execute Anthropic server tools. Agent Maestro currently
-drops them, so clients such as Claude Code cannot use their expected WebSearch
-capability through the proxy.
+The VS Code API does not execute Anthropic server tools. Before this feature,
+Agent Maestro dropped them, so clients such as Claude Code could not use their
+expected WebSearch capability through the proxy.
 
 Installing Exa MCP directly in every client can provide web search, but it does
 not make the `/v1/messages` endpoint compatible with Anthropic's server-tool
@@ -380,8 +384,9 @@ Agent Maestro does not claim Anthropic's native web search pricing semantics.
   ignore embedded instructions. They are never inserted as system instructions.
 - Agent Maestro does not automatically add workspace contents, file contents,
   or credentials to a search query.
-- Credentials, full provider responses, and fetched page content are not
-  written to diagnostic logs.
+- The search-provider path does not write credentials, full provider responses,
+  or fetched page content to its diagnostic summaries. Other logging channels
+  have different redaction boundaries; see [diagnostic logs](llm-compatibility.md#diagnostic-logs).
 
 ## Limitations
 
@@ -410,57 +415,12 @@ Agent Maestro does not claim Anthropic's native web search pricing semantics.
 
 ## Acceptance Criteria
 
-1. Requests containing only client tools and no supported server web search
-   behave exactly as before.
-2. A request that declares `web_search_20250305` can produce a current,
-   search-grounded answer with a deterministic, deduplicated source URL list
-   when the response completes within its output budget.
-3. Search runs only when selected by the model and never through automatic tool
-   injection.
-4. A request executes at most one provider call and two model rounds.
-5. Client tools continue to work. If a model response contains both client and
-   internal search calls, only the internal search call blocks are removed;
-   client-visible text and client tool calls retain their original order, and
-   the immediate tool-result continuation does not expose search.
-6. A normal client tool named `WebSearch` or `web_search` is not intercepted and
-   remains selectable when server search is unavailable.
-7. `tool_choice` correctly handles `none`, `auto`, `any`, named web search, and
-   named client tools; an executed search is followed by a tool-free synthesis
-   round, including after a failed provider attempt.
-8. A named tool choice resolves after classification and availability filtering,
-   narrows the VS Code tool list to exactly one tool before using required mode,
-   and rejects genuinely ambiguous same-name candidates.
-9. `disable_parallel_tool_use: true` returns `400 invalid_request_error`;
-   omitted and `false` values are accepted for `auto`, `any`, and named choices,
-   while `{type: "none"}` must omit the field.
-10. Invalid domain, location, and unsupported web search options return
-    `400 invalid_request_error`.
-11. Valid SDK metadata is handled consistently: `cache_control` is accepted and
-    ignored, `strict` is accepted, nullable fields accept `null`, and unsupported
-    caller or deferred-loading modes return `400 invalid_request_error`.
-12. Web search is available without extra configuration, but performs no
-    outbound request unless the client declares the supported server tool and
-    the model selects it. Exa anonymous access works without a key; configuring
-    a key is optional.
-13. Non-streaming and streaming responses are valid Anthropic Messages API
-    responses; streaming retains heartbeat behavior during search.
-14. Usage aggregates all hidden model rounds and reports only dispatched search
-    requests according to the documented counting rules.
-15. The total output, including hidden model rounds and appended sources, does
-    not exceed the request's `max_tokens`; exhaustion returns
-    `stop_reason: "max_tokens"`.
-16. Request validation and explicitly required disabled-search failures return
-    an API error; Exa MCP failures after a model search call become hidden tool
-    errors and allow the model to respond.
-17. Exa failures are surfaced without leaking credentials or producing a false
-    successful search result.
-18. Responses contain no `web_search_result`, fabricated `encrypted_content`,
-    `encrypted_index`, or Anthropic-native citation claims.
-19. Search-result isolation tests prove that the synthesis round exposes no
-    tools and that immediate client-tool continuations cannot invoke search.
-20. Unit tests cover classification, validation, tool choice, normal search,
-    source serialization, mixed-tool serialization, output budgeting, provider
-    errors, usage, streaming, and cancellation.
-21. An end-to-end `/v1/messages` test covers the complete hidden loop with a
-    mock provider, and manual Claude Code smoke tests cover anonymous Exa and an
-    optional user API key.
+The implementation is covered by [Anthropic search tests](../src/test/server/anthropicWebSearch.test.ts). The essential invariants are:
+
+- Classify declarations and resolve tool choice before dispatch; ordinary client tools keep their semantics.
+- Run at most one provider call and two model rounds; preserve client text and calls when mixed output takes precedence.
+- Keep search results isolated from further tools and immediate client-tool continuations.
+- Preserve source visibility, cancellation, streaming heartbeats, and the shared output/usage budget on success and failure.
+- Reject unsupported options and never expose private tool calls, provider credentials, or fabricated native citation objects.
+
+Use the [testing guide](testing.md#manual-validation) to record a real client run when changing the provider boundary. Exact field and outcome rules are defined once in the sections above.

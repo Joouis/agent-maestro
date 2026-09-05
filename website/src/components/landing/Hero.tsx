@@ -112,7 +112,7 @@ const Hero = () => {
             {[
               { label: "API Endpoints", value: "3+" },
               { label: "Concurrent Tasks", value: "20" },
-              { label: "One-Click Setups", value: "3" },
+              { label: "One-Click Setups", value: "4" },
             ].map((stat, index) => (
               <div key={index} className="text-center">
                 <div className="text-2xl md:text-3xl font-bold text-gradient">
