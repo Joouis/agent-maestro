@@ -397,6 +397,8 @@ Perfect for Gemini CLI integration:
 
 Streaming responses send blank-line heartbeats while waiting for the model, keeping long-running requests alive without interrupting Gemini CLI or Google Gen AI SDK stream parsing. These heartbeats do not produce extra response chunks or affect generated content and token usage.
 
+Gemini CLI session restoration can repeat results for a single tool-call turn. For a call with an explicit ID that appears once in that turn, Agent Maestro keeps its first explicitly identified result and ignores repeats in the following user messages. A later model turn starts a new scope, so replaying a complete call/result pair does not leave a call without its result.
+
 > **Thinking levels**: Not forwarded for Gemini. Copilot's Gemini path does not read the `thinkingConfig.thinkingLevel` parameter from the model configuration; it only applies a hardcoded `low` effort behind an internal experiment flag, so any forwarded value would be ignored.
 
 ### RooCode Agent Routes

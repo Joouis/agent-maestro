@@ -264,8 +264,43 @@ export const convertGeminiContentsToVSCode = (
     }
   }
 
-  return contents.map((content) => {
-    const parts = (content.parts || []).map((part) => {
+  const turnCallCounts = new Map<string, number>();
+  const turnResultIds = new Set<string>();
+  let previousWasModel = false;
+  let duplicateResultCount = 0;
+  const messages = contents.flatMap((content) => {
+    const isModel = content.role === "model";
+    if (isModel) {
+      if (!previousWasModel) {
+        turnCallCounts.clear();
+        turnResultIds.clear();
+      }
+      for (const part of content.parts || []) {
+        const call = part.functionCall;
+        if (call?.name && typeof call.id === "string" && call.id.length > 0) {
+          turnCallCounts.set(call.id, (turnCallCounts.get(call.id) || 0) + 1);
+        }
+      }
+    }
+    previousWasModel = isModel;
+
+    let droppedDuplicate = false;
+    const parts = (content.parts || []).flatMap((part) => {
+      // CLI restore can repeat results within a turn. A later call with the
+      // same ID needs its own result, and id-less results are not identifiable.
+      const resultId = part.functionResponse?.id;
+      if (
+        !isModel &&
+        typeof resultId === "string" &&
+        turnCallCounts.get(resultId) === 1
+      ) {
+        if (turnResultIds.has(resultId)) {
+          droppedDuplicate = true;
+          duplicateResultCount++;
+          return [];
+        }
+        turnResultIds.add(resultId);
+      }
       // For functionCall: use the pre-assigned callId so the tool-result side
       // has something to match against.
       if (part.functionCall?.name) {
@@ -302,6 +337,9 @@ export const convertGeminiContentsToVSCode = (
     });
 
     if (parts.length === 0) {
+      if (droppedDuplicate) {
+        return [];
+      }
       parts.push(new vscode.LanguageModelTextPart(""));
     }
 
@@ -327,6 +365,13 @@ export const convertGeminiContentsToVSCode = (
       >,
     );
   });
+
+  if (duplicateResultCount > 0) {
+    logger.warn(
+      `Gemini tool result recovery: dropped ${duplicateResultCount} duplicate result(s) within tool-call turns`,
+    );
+  }
+  return messages;
 };
 
 /**
