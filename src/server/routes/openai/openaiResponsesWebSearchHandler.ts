@@ -21,6 +21,7 @@ import {
   generateResponseId,
   getCurrentTimestamp,
   openMessageOutputItem,
+  withOpenAIResponsesHeartbeat,
   writeCustomToolCallOutputItem,
   writeFunctionToolCallOutputItem,
   writeMessageOutputTextDelta,
@@ -30,7 +31,6 @@ import {
   PreparedOpenAIResponsesTools,
   runOpenAIResponsesWebSearchLoop,
 } from "../../utils/openaiResponsesWebSearch";
-import { SSE_HEARTBEAT, withSseHeartbeat } from "../../utils/sseHeartbeat";
 import { WebSearchProvider } from "../../webSearch/webSearchProvider";
 
 interface OpenAIResponsesWebSearchHandlerOptions {
@@ -172,123 +172,122 @@ export async function handleOpenAIResponsesWebSearch({
         response: buildResponseEnvelope("in_progress", [], null, null),
       });
 
-      let searchOutputEmitted = false;
-      const callbacks: OpenAIResponsesSearchLoopCallbacks = {
-        onSearchCallStarted: async (item) => {
-          searchOutputEmitted = true;
-          await writeEvent("response.output_item.added", {
-            type: "response.output_item.added",
-            output_index: 0,
-            item,
-          });
-          await writeEvent("response.web_search_call.in_progress", {
-            type: "response.web_search_call.in_progress",
-            output_index: 0,
-            item_id: item.id,
-          });
-        },
-        onProviderStarted: async (itemId) => {
-          await writeEvent("response.web_search_call.searching", {
-            type: "response.web_search_call.searching",
-            output_index: 0,
-            item_id: itemId,
-          });
-        },
-        onSearchCallCompleted: async (item) => {
-          await writeEvent("response.web_search_call.completed", {
-            type: "response.web_search_call.completed",
-            output_index: 0,
-            item_id: item.id,
-          });
-          await writeEvent("response.output_item.done", {
-            type: "response.output_item.done",
-            output_index: 0,
-            item,
-          });
-        },
-      };
-
-      const resultStream = (async function* () {
-        yield await runSearchLoop(callbacks);
-      })();
-      let result:
-        | Awaited<ReturnType<typeof runOpenAIResponsesWebSearchLoop>>
-        | undefined;
-      for await (const item of withSseHeartbeat(
-        resultStream,
-        heartbeatIntervalMs,
-      )) {
-        if (item === SSE_HEARTBEAT) {
-          await lifecycle.waitFor(sseStream.write(": keep-alive\n\n"));
-        } else {
-          result = item;
-        }
-      }
-      if (!result) {
-        throw new Error("OpenAI Responses web search loop returned no result");
-      }
-
-      let outputIndex = searchOutputEmitted ? 1 : 0;
-      for (const item of result.output) {
-        if (item.type === "web_search_call") {
-          continue;
-        }
-
-        if (item.type === "message") {
-          const part = outputTextPart(item);
-          if (!part) {
-            continue;
-          }
-          await openMessageOutputItem(
-            writeSSE,
-            item.id,
-            outputIndex,
-            0,
-            sequenceNumberRef,
-          );
-          await writeMessageOutputTextDelta(
-            writeSSE,
-            item.id,
-            outputIndex,
-            0,
-            part.text,
-            sequenceNumberRef,
-          );
-          await closeMessageOutputItem(
-            writeSSE,
-            item.id,
-            outputIndex,
-            0,
-            part.text,
-            sequenceNumberRef,
-            {
-              annotations: part.annotations,
-              status: item.status,
+      const result = await withOpenAIResponsesHeartbeat(
+        writeSSE,
+        sequenceNumberRef,
+        async (writeSSE) => {
+          const writeEvent = (event: string, data: Record<string, unknown>) =>
+            writeSSE({
+              event,
+              data: JSON.stringify({
+                ...data,
+                sequence_number: sequenceNumberRef.value++,
+              }),
+            });
+          let searchOutputEmitted = false;
+          const callbacks: OpenAIResponsesSearchLoopCallbacks = {
+            onSearchCallStarted: async (item) => {
+              searchOutputEmitted = true;
+              await writeEvent("response.output_item.added", {
+                type: "response.output_item.added",
+                output_index: 0,
+                item,
+              });
+              await writeEvent("response.web_search_call.in_progress", {
+                type: "response.web_search_call.in_progress",
+                output_index: 0,
+                item_id: item.id,
+              });
             },
-          );
-          outputIndex++;
-          continue;
-        }
+            onProviderStarted: async (itemId) => {
+              await writeEvent("response.web_search_call.searching", {
+                type: "response.web_search_call.searching",
+                output_index: 0,
+                item_id: itemId,
+              });
+            },
+            onSearchCallCompleted: async (item) => {
+              await writeEvent("response.web_search_call.completed", {
+                type: "response.web_search_call.completed",
+                output_index: 0,
+                item_id: item.id,
+              });
+              await writeEvent("response.output_item.done", {
+                type: "response.output_item.done",
+                output_index: 0,
+                item,
+              });
+            },
+          };
 
-        if (item.type === "custom_tool_call") {
-          await writeCustomToolCallOutputItem(
-            writeSSE,
-            item,
-            outputIndex,
-            sequenceNumberRef,
-          );
-          outputIndex++;
-          continue;
-        }
+          const result = await runSearchLoop(callbacks);
 
-        await writeFunctionToolCallOutputItem(
-          writeSSE,
-          item,
-          outputIndex,
-          sequenceNumberRef,
-        );
-        outputIndex++;
-      }
+          let outputIndex = searchOutputEmitted ? 1 : 0;
+          for (const item of result.output) {
+            if (item.type === "web_search_call") {
+              continue;
+            }
+
+            if (item.type === "message") {
+              const part = outputTextPart(item);
+              if (!part) {
+                continue;
+              }
+              await openMessageOutputItem(
+                writeSSE,
+                item.id,
+                outputIndex,
+                0,
+                sequenceNumberRef,
+              );
+              await writeMessageOutputTextDelta(
+                writeSSE,
+                item.id,
+                outputIndex,
+                0,
+                part.text,
+                sequenceNumberRef,
+              );
+              await closeMessageOutputItem(
+                writeSSE,
+                item.id,
+                outputIndex,
+                0,
+                part.text,
+                sequenceNumberRef,
+                {
+                  annotations: part.annotations,
+                  status: item.status,
+                },
+              );
+              outputIndex++;
+              continue;
+            }
+
+            if (item.type === "custom_tool_call") {
+              await writeCustomToolCallOutputItem(
+                writeSSE,
+                item,
+                outputIndex,
+                sequenceNumberRef,
+              );
+              outputIndex++;
+              continue;
+            }
+
+            await writeFunctionToolCallOutputItem(
+              writeSSE,
+              item,
+              outputIndex,
+              sequenceNumberRef,
+            );
+            outputIndex++;
+          }
+
+          return result;
+        },
+        heartbeatIntervalMs,
+      );
 
       const terminalStatus = result.incomplete ? "incomplete" : "completed";
       await writeEvent(`response.${terminalStatus}`, {

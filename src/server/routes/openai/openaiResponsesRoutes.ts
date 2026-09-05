@@ -41,6 +41,7 @@ import {
   getCurrentTimestamp,
   openMessageOutputItem,
   plaintextFunctionCallMetadata,
+  withOpenAIResponsesHeartbeat,
   writeCustomToolCallOutputItem,
   writeFunctionToolCallOutputItem,
   writeMessageOutputTextDelta,
@@ -49,7 +50,6 @@ import {
   OpenAIResponsesRequestValidationError,
   prepareOpenAIResponsesTools,
 } from "../../utils/openaiResponsesWebSearch";
-import { SSE_HEARTBEAT, withSseHeartbeat } from "../../utils/sseHeartbeat";
 import {
   WEB_SEARCH_PROVIDER_TIMEOUT_MS,
   WebSearchProvider,
@@ -368,17 +368,15 @@ export function registerOpenaiResponsesRoutes(
         });
       }
 
-      // 8. Send request to VSCode LM
-      const response = await requestLifecycle.waitFor(
-        client.sendRequest(
-          vsCodeMessages,
-          configuredRequestOptions,
-          cancellationToken,
-        ),
-      );
-
       // 9. Handle non-streaming response
       if (!stream) {
+        const response = await requestLifecycle.waitFor(
+          client.sendRequest(
+            vsCodeMessages,
+            configuredRequestOptions,
+            cancellationToken,
+          ),
+        );
         let accumulatedText = "";
         const toolCalls: { callId: string; name: string; input: unknown }[] =
           [];
@@ -457,12 +455,12 @@ export function registerOpenaiResponsesRoutes(
       }
 
       // 10. Handle streaming response
+      const responseId = generateResponseId();
+      const createdAt = getCurrentTimestamp();
+      const sequenceNumberRef = { value: 0 };
       return streamSSE(
         c,
         async (sseStream) => {
-          const responseId = generateResponseId();
-          const createdAt = getCurrentTimestamp();
-          const sequenceNumberRef = { value: 0 };
           const writeSSE = (
             message: Parameters<typeof sseStream.writeSSE>[0],
           ) => requestLifecycle!.waitFor(sseStream.writeSSE(message));
@@ -507,54 +505,127 @@ export function registerOpenaiResponsesRoutes(
             }),
           });
 
-          // Process stream
-          const output: OutputItem[] = [];
-          let outputIndex = 0;
-          let contentIndex = 0;
-          let currentMessageId: string | null = null;
-          let accumulatedText = "";
-          let totalOutputText = ""; // Track all output for token counting
-          let responseUsage: ResponseUsage | undefined;
-
-          for await (const chunk of withSseHeartbeat(
-            interruptibleLanguageModelStream(
-              response.stream,
-              requestLifecycle!,
-            ),
-            options.heartbeatIntervalMs,
-          )) {
-            if (chunk === SSE_HEARTBEAT) {
-              await requestLifecycle!.waitFor(
-                sseStream.write(": keep-alive\n\n"),
+          const { output, responseUsage } = await withOpenAIResponsesHeartbeat(
+            writeSSE,
+            sequenceNumberRef,
+            async (writeSSE) => {
+              const response = await requestLifecycle!.waitFor(
+                client.sendRequest(
+                  vsCodeMessages,
+                  configuredRequestOptions,
+                  cancellationToken,
+                ),
               );
-              continue;
-            }
+              // Process stream
+              const output: OutputItem[] = [];
+              let outputIndex = 0;
+              let contentIndex = 0;
+              let currentMessageId: string | null = null;
+              let accumulatedText = "";
+              let totalOutputText = ""; // Track all output for token counting
+              let responseUsage: ResponseUsage | undefined;
 
-            if (chunk instanceof vscode.LanguageModelTextPart) {
-              if (!currentMessageId) {
-                currentMessageId = generateMessageId();
-                contentIndex = 0;
-                await openMessageOutputItem(
-                  writeSSE,
-                  currentMessageId,
-                  outputIndex,
-                  contentIndex,
-                  sequenceNumberRef,
-                );
+              for await (const chunk of interruptibleLanguageModelStream(
+                response.stream,
+                requestLifecycle!,
+              )) {
+                if (chunk instanceof vscode.LanguageModelTextPart) {
+                  if (!currentMessageId) {
+                    currentMessageId = generateMessageId();
+                    contentIndex = 0;
+                    await openMessageOutputItem(
+                      writeSSE,
+                      currentMessageId,
+                      outputIndex,
+                      contentIndex,
+                      sequenceNumberRef,
+                    );
+                  }
+
+                  accumulatedText += chunk.value;
+                  totalOutputText += chunk.value;
+                  await writeMessageOutputTextDelta(
+                    writeSSE,
+                    currentMessageId,
+                    outputIndex,
+                    contentIndex,
+                    chunk.value,
+                    sequenceNumberRef,
+                  );
+                } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
+                  // Close current message if open
+                  if (currentMessageId) {
+                    const outputItem = await closeMessageOutputItem(
+                      writeSSE,
+                      currentMessageId,
+                      outputIndex,
+                      contentIndex,
+                      accumulatedText,
+                      sequenceNumberRef,
+                    );
+                    output.push(outputItem);
+                    outputIndex++;
+                    currentMessageId = null;
+                    accumulatedText = "";
+                  }
+
+                  totalOutputText += JSON.stringify(chunk);
+
+                  const toolInfo = preparedTools.toolMap.get(chunk.name);
+                  const toolName = toolInfo?.name ?? chunk.name;
+                  const toolNamespace = toolInfo?.namespace;
+
+                  if (toolInfo?.isCustom) {
+                    const ctcId = generateCustomToolCallId();
+                    const callId = chunk.callId;
+                    const inputStr = customToolCallInput(chunk.input);
+                    const customItem: ResponseCustomToolCall = {
+                      type: "custom_tool_call",
+                      id: ctcId,
+                      call_id: callId,
+                      name: toolName,
+                      input: inputStr,
+                      ...(toolNamespace ? { namespace: toolNamespace } : {}),
+                    };
+                    output.push(customItem);
+                    await writeCustomToolCallOutputItem(
+                      writeSSE,
+                      customItem,
+                      outputIndex,
+                      sequenceNumberRef,
+                    );
+                    outputIndex++;
+                    continue;
+                  }
+
+                  const fcId = generateFunctionCallId();
+                  const callId = chunk.callId;
+                  const argsStr = JSON.stringify(chunk.input ?? {});
+                  const functionItem: PlaintextResponseFunctionToolCall = {
+                    type: "function_call",
+                    id: fcId,
+                    call_id: callId,
+                    name: toolName,
+                    arguments: argsStr,
+                    status: "completed",
+                    ...(toolNamespace ? { namespace: toolNamespace } : {}),
+                    ...plaintextFunctionCallMetadata(toolInfo),
+                  };
+                  output.push(functionItem);
+                  await writeFunctionToolCallOutputItem(
+                    writeSSE,
+                    functionItem,
+                    outputIndex,
+                    sequenceNumberRef,
+                  );
+                  outputIndex++;
+                } else if (chunk instanceof vscode.LanguageModelDataPart) {
+                  responseUsage =
+                    extractOpenAIResponsesUsage(chunk) ?? responseUsage;
+                }
               }
 
-              accumulatedText += chunk.value;
-              totalOutputText += chunk.value;
-              await writeMessageOutputTextDelta(
-                writeSSE,
-                currentMessageId,
-                outputIndex,
-                contentIndex,
-                chunk.value,
-                sequenceNumberRef,
-              );
-            } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-              // Close current message if open
+              // Close any remaining message
               if (currentMessageId) {
                 const outputItem = await closeMessageOutputItem(
                   writeSSE,
@@ -566,100 +637,36 @@ export function registerOpenaiResponsesRoutes(
                 );
                 output.push(outputItem);
                 outputIndex++;
-                currentMessageId = null;
-                accumulatedText = "";
               }
 
-              totalOutputText += JSON.stringify(chunk);
-
-              const toolInfo = preparedTools.toolMap.get(chunk.name);
-              const toolName = toolInfo?.name ?? chunk.name;
-              const toolNamespace = toolInfo?.namespace;
-
-              if (toolInfo?.isCustom) {
-                const ctcId = generateCustomToolCallId();
-                const callId = chunk.callId;
-                const inputStr = customToolCallInput(chunk.input);
-                const customItem: ResponseCustomToolCall = {
-                  type: "custom_tool_call",
-                  id: ctcId,
-                  call_id: callId,
-                  name: toolName,
-                  input: inputStr,
-                  ...(toolNamespace ? { namespace: toolNamespace } : {}),
+              if (!responseUsage) {
+                const [fallbackInputTokens, outputTokens] =
+                  await requestLifecycle!.waitFor(
+                    Promise.all([
+                      client.countTokens(
+                        JSON.stringify(requestBody),
+                        cancellationToken,
+                      ),
+                      client.countTokens(totalOutputText, cancellationToken),
+                    ]),
+                  );
+                inputTokens = fallbackInputTokens;
+                responseUsage = {
+                  input_tokens: fallbackInputTokens,
+                  input_tokens_details: {
+                    cached_tokens: 0,
+                    cache_write_tokens: 0,
+                  },
+                  output_tokens: outputTokens,
+                  output_tokens_details: { reasoning_tokens: 0 },
+                  total_tokens: fallbackInputTokens + outputTokens,
                 };
-                output.push(customItem);
-                await writeCustomToolCallOutputItem(
-                  writeSSE,
-                  customItem,
-                  outputIndex,
-                  sequenceNumberRef,
-                );
-                outputIndex++;
-                continue;
               }
 
-              const fcId = generateFunctionCallId();
-              const callId = chunk.callId;
-              const argsStr = JSON.stringify(chunk.input ?? {});
-              const functionItem: PlaintextResponseFunctionToolCall = {
-                type: "function_call",
-                id: fcId,
-                call_id: callId,
-                name: toolName,
-                arguments: argsStr,
-                status: "completed",
-                ...(toolNamespace ? { namespace: toolNamespace } : {}),
-                ...plaintextFunctionCallMetadata(toolInfo),
-              };
-              output.push(functionItem);
-              await writeFunctionToolCallOutputItem(
-                writeSSE,
-                functionItem,
-                outputIndex,
-                sequenceNumberRef,
-              );
-              outputIndex++;
-            } else if (chunk instanceof vscode.LanguageModelDataPart) {
-              responseUsage =
-                extractOpenAIResponsesUsage(chunk) ?? responseUsage;
-            }
-          }
-
-          // Close any remaining message
-          if (currentMessageId) {
-            const outputItem = await closeMessageOutputItem(
-              writeSSE,
-              currentMessageId,
-              outputIndex,
-              contentIndex,
-              accumulatedText,
-              sequenceNumberRef,
-            );
-            output.push(outputItem);
-            outputIndex++;
-          }
-
-          if (!responseUsage) {
-            const [fallbackInputTokens, outputTokens] =
-              await requestLifecycle!.waitFor(
-                Promise.all([
-                  client.countTokens(
-                    JSON.stringify(requestBody),
-                    cancellationToken,
-                  ),
-                  client.countTokens(totalOutputText, cancellationToken),
-                ]),
-              );
-            inputTokens = fallbackInputTokens;
-            responseUsage = {
-              input_tokens: fallbackInputTokens,
-              input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 },
-              output_tokens: outputTokens,
-              output_tokens_details: { reasoning_tokens: 0 },
-              total_tokens: fallbackInputTokens + outputTokens,
-            };
-          }
+              return { output, responseUsage };
+            },
+            options.heartbeatIntervalMs,
+          );
 
           // Emit response.completed
           await writeSSE({
@@ -691,14 +698,12 @@ export function registerOpenaiResponsesRoutes(
 
           logger.error("✕ /v1/responses (stream) |", error);
 
-          const responseId = generateResponseId();
-          const createdAt = getCurrentTimestamp();
-
           try {
             await sseStream.writeSSE({
               event: "response.failed",
               data: JSON.stringify({
                 type: "response.failed",
+                sequence_number: sequenceNumberRef.value++,
                 response: {
                   id: responseId,
                   object: "response",

@@ -29,6 +29,7 @@ import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
 import { mimeForVscodeLm } from "./imageMime";
+import { SSE_HEARTBEAT_INTERVAL_MS } from "./sseHeartbeat";
 import {
   ToolResultPairingTracker,
   logToolResultRecovery,
@@ -136,6 +137,57 @@ export const buildOpenAIResponsesEnvelope = ({
 type ResponseSSEWriter = (
   message: Parameters<SSEStreamingApi["writeSSE"]>[0],
 ) => Promise<void>;
+
+export async function withOpenAIResponsesHeartbeat<T>(
+  writeSSE: ResponseSSEWriter,
+  sequenceNumberRef: { value: number },
+  operation: (writeSSE: ResponseSSEWriter) => Promise<T>,
+  intervalMs: number = SSE_HEARTBEAT_INTERVAL_MS,
+): Promise<T> {
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    throw new RangeError("SSE heartbeat interval must be greater than zero");
+  }
+
+  let lastWrite = performance.now();
+  const trackedWrite: ResponseSSEWriter = async (message) => {
+    await writeSSE(message);
+    lastWrite = performance.now();
+  };
+  const pendingResult = operation(trackedWrite).then((value) => ({ value }));
+
+  while (true) {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      const outcome = await Promise.race([
+        pendingResult,
+        new Promise<undefined>((resolve) => {
+          timeout = setTimeout(
+            () => resolve(undefined),
+            Math.max(1, intervalMs - (performance.now() - lastWrite)),
+          );
+          timeout.unref();
+        }),
+      ]);
+      if (outcome) {
+        return outcome.value;
+      }
+      if (performance.now() - lastWrite < intervalMs) {
+        continue;
+      }
+
+      // Codex needs a parsed event; lifecycle events replace SDK response state.
+      await trackedWrite({
+        event: "keepalive",
+        data: JSON.stringify({
+          type: "keepalive",
+          sequence_number: sequenceNumberRef.value++,
+        }),
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
 
 export const openMessageOutputItem = async (
   writeSSE: ResponseSSEWriter,
