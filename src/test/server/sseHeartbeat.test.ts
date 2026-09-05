@@ -241,7 +241,7 @@ suite("SSE Heartbeat Test Suite", () => {
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let body = "";
-      for (let index = 0; index < 2; index++) {
+      while (body.length < 2) {
         const heartbeat = await reader.read();
         assert.strictEqual(heartbeat.done, false);
         const text = decoder.decode(heartbeat.value);
