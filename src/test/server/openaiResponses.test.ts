@@ -586,12 +586,12 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
           {
             type: "function_call_output",
             call_id: "call_known",
-            output: "duplicate output",
+            output: "first output",
           },
           {
             type: "function_call_output",
             call_id: "call_missing",
-            output: "duplicate orphaned output",
+            output: "orphaned output",
           },
           {
             type: "custom_tool_call_output",
@@ -601,16 +601,18 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
           {
             type: "custom_tool_call_output",
             call_id: "call_custom",
-            output: "duplicate custom output",
+            output: "custom output",
           },
         ] as any);
 
-        assert.strictEqual(result.length, 3);
+        assert.strictEqual(result.length, 2);
         assert.deepStrictEqual(
           toolCallParts(result[0]).map((part) => part.callId),
           ["call_known", "call_custom"],
         );
-        const orphanedParts = result[1].content;
+        const orphanedParts = result[1].content.filter(
+          (part) => part instanceof vscode.LanguageModelTextPart,
+        );
         assert.ok(orphanedParts[0] instanceof vscode.LanguageModelTextPart);
         assert.match(
           (orphanedParts[0] as vscode.LanguageModelTextPart).value,
@@ -630,8 +632,8 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
           ["call_known", "call_custom"],
         );
         assert.strictEqual(warnings.length, 1);
-        assert.match(warnings[0], /converted 1 orphaned result/);
-        assert.match(warnings[0], /dropped 3 duplicate result/);
+        assert.match(warnings[0], /"orphanedResults":1/);
+        assert.match(warnings[0], /"duplicateResults":3/);
       } finally {
         logger.warn = originalWarn;
       }
@@ -676,10 +678,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
             .every((part) => part instanceof vscode.LanguageModelTextPart),
         );
         assert.strictEqual(warnings.length, 1);
-        assert.match(
-          warnings[0],
-          /converted 2 call\(s\) and 2 result\(s\) with invalid IDs/,
-        );
+        assert.match(warnings[0], /"conflictGroups":2/);
       } finally {
         logger.warn = originalWarn;
       }
@@ -881,13 +880,21 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       const result = convertResponsesInputToVSCode(input, instruction);
 
       assert.strictEqual(result.length, 2);
-      assert.deepStrictEqual(
-        toolCallParts(result[0]).map((part) => part.callId),
-        ["call_instruction"],
+      assert.ok(
+        result.every((message) =>
+          message.content.every(
+            (part) => part instanceof vscode.LanguageModelTextPart,
+          ),
+        ),
       );
-      assert.deepStrictEqual(
-        toolCallParts(result[1]).map((part) => part.callId),
-        ["call_input"],
+      assert.ok(
+        result.every((message) =>
+          message.content.some(
+            (part) =>
+              part instanceof vscode.LanguageModelTextPart &&
+              part.value.includes("Execution status is unknown"),
+          ),
+        ),
       );
     });
   });

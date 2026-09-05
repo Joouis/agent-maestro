@@ -580,12 +580,12 @@ suite("Anthropic Conversion Utils Test Suite", () => {
               {
                 type: "tool_result",
                 tool_use_id: "tool-known",
-                content: "duplicate output",
+                content: "first output",
               },
               {
                 type: "tool_result",
                 tool_use_id: "tool-missing",
-                content: "duplicate orphaned output",
+                content: "orphaned output",
               },
             ],
           },
@@ -612,8 +612,8 @@ suite("Anthropic Conversion Utils Test Suite", () => {
           "first output",
         );
         assert.strictEqual(warnings.length, 1);
-        assert.match(warnings[0], /converted 1 orphaned result/);
-        assert.match(warnings[0], /dropped 2 duplicate result/);
+        assert.match(warnings[0], /"orphanedResults":1/);
+        assert.match(warnings[0], /"duplicateResults":2/);
       } finally {
         logger.warn = originalWarn;
       }
@@ -655,10 +655,7 @@ suite("Anthropic Conversion Utils Test Suite", () => {
             .every((part) => part instanceof vscode.LanguageModelTextPart),
         );
         assert.strictEqual(warnings.length, 1);
-        assert.match(
-          warnings[0],
-          /converted 1 call\(s\) and 1 result\(s\) with invalid IDs/,
-        );
+        assert.match(warnings[0], /"conflictGroups":1/);
       } finally {
         logger.warn = originalWarn;
       }
