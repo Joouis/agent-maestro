@@ -10,11 +10,20 @@ Copilot session inside VS Code Insiders and consumes model quota.
 - VS Code Insiders with GitHub Copilot signed in and the target model available.
 - A Codex CLI version that supports Multi-Agent V2 plaintext collaboration
   messages (`encrypted_function_args: []`).
+- Run **Agent Maestro: Configure Codex Settings** first so the `agent-maestro`
+  provider exists. Use a trusted local test instance; the examples below assume
+  its optional LLM authentication is disabled. If enabled, supply its key to
+  both curl and Codex before testing.
 - Free local ports for an isolated Agent Maestro instance. The examples use
   `24333` and `24334` to avoid replacing a normal installation on the default
   ports.
 
 ## 1. Build and launch the extension
+
+Record the exact AM revision, VS Code version, and `codex --version` with each
+run. The original runbook did not pin a CLI build, so do not treat it as verified
+against every later Multi-Agent V2 release. Choose a model present in your
+Copilot session rather than relying on the example ID.
 
 From the repository root:
 

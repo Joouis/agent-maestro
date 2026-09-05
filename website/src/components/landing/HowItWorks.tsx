@@ -7,14 +7,14 @@ const steps = [
     step: "01",
     title: "Install Extension",
     description:
-      "Install Agent Maestro from VS Code Marketplace or Open VSX Registry.",
+      "Install Agent Maestro and sign in to GitHub Copilot with an available model.",
   },
   {
     icon: Terminal,
     step: "02",
     title: "Run Setup Command",
     description:
-      "Use Command Palette to run one-click setup for Claude Code, Codex, or Gemini CLI.",
+      "Use Command Palette to configure Claude Code, Claude Desktop, Codex, or Gemini CLI.",
   },
   {
     icon: Rocket,

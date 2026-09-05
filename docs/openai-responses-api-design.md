@@ -1,183 +1,75 @@
-# OpenAI Responses API Design
+# OpenAI Responses Compatibility
 
-## Overview
+Current-checkout reference, reviewed on 2026-09-05. The filename is retained for existing links. See [LLM compatibility](llm-compatibility.md) for setup, request examples, usage, logging, and shared history rules.
 
-The OpenAI Responses API (`POST /v1/responses`) is a newer API that provides a different interface from the Chat Completions API. This document outlines the design decisions for supporting this API in Agent Maestro.
+## Request and Response
 
-## API Comparison: Chat Completions vs Responses
+`POST /api/openai/v1/responses` accepts `input` as text or an array of message/tool items, with optional `instructions`. AM translates this snapshot through VS Code's Language Model API and returns Responses output items or SSE events. It does not expose the whole native OpenAI Responses service.
 
-| Aspect               | Chat Completions (`/chat/completions`)        | Responses (`/v1/responses`)                                            |
-| -------------------- | --------------------------------------------- | ---------------------------------------------------------------------- |
-| **Input format**     | `messages` array with role/content            | `input` (string or array of items)                                     |
-| **System prompt**    | `system` role in messages or `developer` role | Dedicated `instructions` field                                         |
-| **Response format**  | `choices[].message`                           | `output` array of items                                                |
-| **Tool calls**       | In `choices[].message.tool_calls`             | Separate `function_call` items in `output`                             |
-| **Streaming events** | `chat.completion.chunk` object                | Fine-grained events (e.g., `response.output_text.delta`)               |
-| **Multi-turn**       | Manual message history management             | `previous_response_id` / `conversation`                                |
-| **Reasoning**        | Not supported                                 | `reasoning` object with effort/summary                                 |
-| **Tool types**       | Function tools only                           | Function, file_search, web_search, computer_use, code_interpreter, mcp |
+Send the complete conversation history on each request. The Responses endpoint does not persist response objects. Codex standalone search has separate bounded reference state; that does not enable Responses server-side conversation storage.
 
-## Architecture
+## Supported, Rejected, and Ignored Inputs
 
-### Request Flow
+| Input                                                                             | AM behavior                                                                                                                              |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Text messages and `instructions`                                                  | Converted to VS Code messages; system/developer instructions use the VS Code user-role representation.                                   |
+| Function tools/calls/results                                                      | Supported with complete-history normalization.                                                                                           |
+| Custom tools/calls/results                                                        | Raw string input is preserved and returned as `custom_tool_call`.                                                                        |
+| Namespace tools                                                                   | Nested function/custom tools are registered under encoded names and decoded to namespace + bare name on output.                          |
+| `additional_tools` input items                                                    | Tool declarations are merged into the effective request tool set.                                                                        |
+| Codex `agent_message`                                                             | Plaintext content is retained with author/recipient provenance. Opaque `encrypted_content` cannot be used by VS Code LM.                 |
+| Base64 `input_image`                                                              | Supported, including recognized image parts in function/custom outputs.                                                                  |
+| URL/file-ID images and `input_file`                                               | Serialized as textual metadata; AM does not fetch the referenced content.                                                                |
+| Stable `web_search`, `web_search_2025_08_26`                                      | Hosted Exa-backed search with URL citations; see below.                                                                                  |
+| Preview/unknown `web_search*` declarations                                        | Rejected with HTTP 400, including `web_search_preview`.                                                                                  |
+| Other hosted tools, e.g. file search/code interpreter/MCP                         | Filtered out; a choice that requires an unavailable tool can be rejected.                                                                |
+| `previous_response_id`, `conversation`                                            | Nonempty values are rejected with HTTP 400; send history in `input`.                                                                     |
+| Standalone `item_reference` input item                                            | Logged and skipped; it cannot retrieve a stored response item.                                                                           |
+| `reasoning.effort`                                                                | Passed into Copilot configuration; application depends on the model. Reasoning items/summaries are not generated by AM.                  |
+| `include: ["web_search_call.action.sources"]`                                     | Adds normalized consulted URLs to hosted-search output. Unsupported search-specific includes are rejected in the applicable search path. |
+| Other `include` values, `store`, `background`, `prompt_cache_key`, `service_tier` | Do not enable the corresponding OpenAI service feature. AM does not persist responses or start background jobs.                          |
 
-1. **Validate request** - Check for unsupported stateful parameters, validate required fields
-2. **Get model client** - Use existing model resolution and VSCode LM client
-3. **Convert input** - Transform Responses API input format to VSCode `LanguageModelChatMessage[]`
-4. **Convert tools** - Filter to function tools only (unsupported tools are skipped)
-5. **Send request** - Call VSCode Language Model API
-6. **Convert output** - Transform VSCode response to Responses API output format
-7. **Handle streaming** - Emit fine-grained SSE events for streaming mode
+The capability table concerns this endpoint. Chat Completions has its own representation and supports function/custom call histories and `reasoning_effort`; it is not limited to the old function-only format.
 
-### File Structure
+## Tool Choice
 
-| File                                         | Purpose                                    |
-| -------------------------------------------- | ------------------------------------------ |
-| `src/server/routes/openaiResponsesRoutes.ts` | Route handler for `/v1/responses` endpoint |
-| `src/server/utils/openaiResponses.ts`        | Conversion utilities and ID generation     |
-| `src/test/server/openaiResponses.test.ts`    | Unit tests for conversion functions        |
+| Choice                                      | Behavior                                                             |
+| ------------------------------------------- | -------------------------------------------------------------------- |
+| `auto` / omitted                            | Expose supported tools in automatic mode.                            |
+| `none`                                      | Expose no tools.                                                     |
+| `required`                                  | Require a tool from the available set.                               |
+| Named function/custom                       | Narrow the available set to the resolved tool and use required mode. |
+| Specific supported web search               | Select only hosted search in required mode.                          |
+| `allowed_tools` with declared server search | Rejected; AM does not partially interpret that combination.          |
 
-## Data Mapping
+`parallel_tool_calls: false` is accepted and echoed for Codex compatibility. It does not guarantee that the model emits only one client tool call; hosted search independently enforces its single-dispatch limit.
 
-### Input Conversion (Responses API → VSCode)
+## Hosted Web Search
 
-| Responses API Input                    | VSCode LM Output            |
-| -------------------------------------- | --------------------------- |
-| `input: string`                        | User message with text part |
-| `instructions: string`                 | User message (prepended)    |
-| `{role: "user", content: ...}`         | User message                |
-| `{role: "assistant", content: ...}`    | Assistant message           |
-| `{role: "system" \| "developer", ...}` | User message                |
-| `{type: "function_call", ...}`         | Assistant with tool call    |
-| `{type: "function_call_output", ...}`  | User with tool result       |
+Stable search is implemented. Search produces a public `web_search_call` item, final text, and `url_citation` annotations. These are synthesized from Exa sources, not OpenAI-native ranking or claim-level citations. Other annotations remain empty. The tested model scope is GPT-5-family models; AM does not enforce this by model-name matching.
 
-### Content Type Handling
+The [LLM search guide](llm-compatibility.md#web-search) covers configuration and limits. The [search design](2026-08-30-openai-responses-web-search-design.md) records exact option validation, output budgeting, isolation, and success/failure event order. Codex's experimental `/alpha/search` endpoint is a distinct contract.
 
-| Content Type  | Handling                                                  |
-| ------------- | --------------------------------------------------------- |
-| `input_text`  | Convert to `LanguageModelTextPart`                        |
-| `output_text` | Convert to `LanguageModelTextPart`                        |
-| `input_image` | Base64 data URI → `LanguageModelDataPart`, URL → fallback |
-| `input_file`  | Not supported, fallback to JSON text                      |
+## Streaming and Errors
 
-### Output Conversion (VSCode → Responses API)
+Lifecycle events begin with `response.created` and `response.in_progress`. Output-item and content events carry the generated data, followed by the appropriate terminal response. Text deltas reconstruct the final text, including serializer-added source links. Custom tools use `response.custom_tool_call_input.*`; functions use `response.function_call_arguments.*`.
 
-| VSCode LM Part              | Responses API Output                |
-| --------------------------- | ----------------------------------- |
-| `LanguageModelTextPart`     | `{type: "message", content: [...]}` |
-| `LanguageModelToolCallPart` | `{type: "function_call", ...}`      |
+JSON `keepalive` events maintain Codex's SSE idle timer without replacing the OpenAI SDK's accumulated response. See [SSE heartbeats](2026-08-11-sse-heartbeats.md) for wire format, sequence numbers, and terminal ordering.
 
-### Tool Choice Mapping
+- Invalid supported-contract inputs return structured HTTP 400 errors before dispatch.
+- Model resolution with no available fallback returns 404.
+- Other failures return 500; unfinished requests time out after ten minutes, returning 504 before streaming.
+- Open streams use `response.failed` for errors/timeouts. Hosted-search output-budget exhaustion uses `response.incomplete` rather than successful completion.
+- A failed Exa attempt can yield a failed search item and a completed explanatory answer. Inspect item status as well as HTTP status.
 
-| Responses API        | VSCode LM                            |
-| -------------------- | ------------------------------------ |
-| `"none"`             | Don't pass tools                     |
-| `"auto"`             | `LanguageModelChatToolMode.Auto`     |
-| `"required"`         | `LanguageModelChatToolMode.Required` |
-| `{type: "function"}` | `LanguageModelChatToolMode.Required` |
+## IDs and Codex Collaboration
 
-## Streaming Events
+AM generates response/message/output-item IDs such as `resp_AM-*`, `msg_AM-*`, `fc_AM-*`, `ctc_AM-*`, and `ws_AM-*`. Client-visible call IDs normally come from the model. History normalization may remap IDs only in the upstream request copy; outbound newly generated IDs remain unchanged.
 
-For `stream: true`, emit fine-grained events in this order:
+For Codex Multi-Agent V2 collaboration message arguments, AM removes unsupported `encrypted` schema markers and returns `encrypted_function_args: []`. Codex can then deliver plaintext tasks instead of treating the text as encrypted. Use the [manual collaboration runbook](codex-multi-agent-e2e.md) when changing this behavior.
 
-1. **Lifecycle events**: `response.created` → `response.in_progress` → `response.completed`
-2. **Output item events**: `response.output_item.added` → `response.output_item.done`
-3. **Text events**: `response.content_part.added` → `response.output_text.delta` → `response.output_text.done`
-4. **Function call events**: `response.function_call_arguments.delta` → `response.function_call_arguments.done`
+## Implementation and Verification
 
-## Limitations
-
-### Stateless Architecture
-
-Agent Maestro is stateless and doesn't persist responses between requests.
-
-| Feature                | Status        | Workaround                                      |
-| ---------------------- | ------------- | ----------------------------------------------- |
-| `previous_response_id` | Not supported | Send full conversation history in `input` array |
-| `conversation`         | Not supported | Send full conversation history in `input` array |
-| `item_reference`       | Not supported | Include full item content instead               |
-
-**Error Response**: Return 400 with clear explanation directing users to send full history.
-
-### Supported Tools
-
-| Tool Type          | Handling                                                                                                                                                                                                                                                                      |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `function`         | Passed through with its JSON Schema parameters.                                                                                                                                                                                                                               |
-| `custom`           | Registered as a schema-less tool; the model's call is serialized back as a `custom_tool_call` (raw string input) instead of a `function_call`.                                                                                                                                |
-| `namespace`        | Nested `function`/`custom` tools are flattened. Since VSCode LM's tool-call shape has no namespace slot, each nested tool is registered under an encoded name `<namespace>__<name>` and decoded back into a separate `namespace` + bare `name` on output via a mapping table. |
-| `additional_tools` | Developer-injected tools carried on input items; merged with request-level tools before dispatch.                                                                                                                                                                             |
-
-Codex Multi-Agent V2 marks the `message` parameter of
-`collaboration.spawn_agent`, `send_message`, and `followup_task` as encrypted.
-The stable VS Code Language Model API cannot preserve that provider-specific
-encrypted-argument contract. Agent Maestro therefore removes the `encrypted`
-marker for those parameters before model dispatch and adds
-`encrypted_function_args: []` to their returned function-call items. This tells
-Codex to deliver the generated message as plaintext instead of wrapping it in
-an `agent_message.encrypted_content` item.
-
-### Unsupported Tools
-
-Other tool types are filtered out with a debug log.
-
-| Tool Type              | Reason                                        |
-| ---------------------- | --------------------------------------------- |
-| `file_search`          | Requires OpenAI vector store infrastructure   |
-| `web_search_preview`   | No VSCode LM equivalent                       |
-| `code_interpreter`     | No VSCode LM equivalent                       |
-| `computer_use_preview` | No VSCode LM equivalent                       |
-| `image_gen`            | No VSCode LM equivalent                       |
-| `local_shell`          | Security concerns                             |
-| `mcp`                  | Would require separate MCP server integration |
-| `shell`                | No VSCode LM equivalent                       |
-| `apply_patch`          | No VSCode LM equivalent                       |
-
-Server-side compatibility for the stable `web_search` tool is proposed
-separately in
-[OpenAI Responses Server Web Search Design](./2026-08-30-openai-responses-web-search-design.md).
-
-### Content Limitations
-
-| Content Type    | Limitation                                                                     |
-| --------------- | ------------------------------------------------------------------------------ |
-| `input_image`   | Only base64 data URI supported; URL-based images fallback to JSON              |
-| `input_file`    | Not supported, serialized as JSON text                                         |
-| `annotations`   | Currently empty; the proposed server web-search path synthesizes URL citations |
-| Reasoning items | Never generated (VSCode LM doesn't expose reasoning)                           |
-
-### Manual E2E Validation
-
-Follow the
-[Codex Multi-Agent Responses E2E runbook](./codex-multi-agent-e2e.md) when
-changing tool conversion, namespace handling, function-call streaming, or Codex
-collaboration compatibility.
-
-### Ignored Parameters
-
-These parameters are accepted but have no effect:
-
-- `store`, `include`, `background`, `prompt_cache_key`, `service_tier`
-- `reasoning.effort` (passed through but may not affect behavior)
-- `reasoning.generate_summary` (no reasoning token access)
-
-## ID Format
-
-All generated IDs use the prefix `AM-` to identify Agent Maestro:
-
-- Response ID: `resp_AM-{timestamp}-{random}`
-- Message ID: `msg_AM-{random}`
-- Function call ID: `fc_AM-{random}`
-- Call ID: `call_AM-{random}`
-
-## Error Handling
-
-- **Validation errors**: Return 400 with structured error object
-- **Model not found**: Return 404
-- **Server errors**: Return 500, log error details for debugging
-- **Streaming errors**: Emit `response.failed` event
-
-## References
-
-- [OpenAI Responses API Reference](https://platform.openai.com/docs/api-reference/responses/create)
-- [OpenAI Responses vs Chat Completions Guide](https://platform.openai.com/docs/guides/responses-vs-chat-completions)
+- [Route](../src/server/routes/openai/openaiResponsesRoutes.ts), [conversion/serialization](../src/server/utils/openaiResponses.ts), and [hosted-search validation](../src/server/utils/openaiResponsesWebSearch.ts).
+- [Conversion tests](../src/test/server/openaiResponses.test.ts), [search tests](../src/test/server/openaiResponsesWebSearch.test.ts), and [official-SDK history tests](../src/test/server/toolHistoryRoutes.test.ts).
+- [OpenAI upstream API reference](https://developers.openai.com/api/reference/resources/responses/methods/create) describes the native API; it is not a promise that AM implements every feature.

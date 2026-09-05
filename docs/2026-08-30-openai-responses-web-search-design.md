@@ -1,5 +1,9 @@
 # OpenAI Responses Server Web Search Design
 
+## Status
+
+Implemented in [#243](https://github.com/Joouis/agent-maestro/pull/243); documentation checked on 2026-09-05. Streaming includes the later #250 heartbeat correction. This record explains protocol decisions; [Responses compatibility](openai-responses-api-design.md) is the current support reference. Check release notes for packaged availability.
+
 ## Decision
 
 OpenAI Responses web search gets a separate design and route-specific
@@ -37,9 +41,8 @@ answer, a `web_search_call` output item, and URL citation annotations.
 
 The stable VS Code Language Model API exposes only caller-executed function
 tools. It cannot pass an OpenAI hosted-tool declaration to GitHub Copilot or
-receive native `web_search_call` events. Agent Maestro currently skips
-`web_search` tools, so the model cannot search and the client receives an
-ungrounded answer.
+receive native `web_search_call` events. Before this feature, Agent Maestro
+skipped `web_search` tools, so the model could not search through this endpoint.
 
 Agent Maestro can fill this protocol gap by replacing the hosted-tool
 declaration with a private VS Code function tool, allowing the selected language
@@ -515,7 +518,7 @@ round but starts the Responses lifecycle immediately:
 
 1. Validate the complete request before opening the SSE stream.
 2. Emit `response.created` and `response.in_progress`.
-3. Buffer the first VS Code model round, sending SSE comments as keep-alives.
+3. Buffer the first VS Code model round using the [Responses JSON keepalive contract](2026-08-11-sse-heartbeats.md).
 4. If no search is selected, replay the buffered ordinary output events.
 5. If search is selected, emit the web search lifecycle around the actual Exa
    call.
@@ -691,7 +694,7 @@ decision, except for the immediate client-tool continuation isolation rule.
 | Shared web search provider contract   | Normalize provider-neutral requests and results                   |
 | Exa MCP provider                      | Execute simple or advanced Exa search                             |
 
-Proposed route-specific files:
+Route-specific implementation files:
 
 ```text
 src/server/utils/openaiResponsesWebSearch.ts
@@ -710,9 +713,8 @@ src/server/webSearch/exaMcpWebSearchProvider.ts
 and OpenAI route registrations. Request validators and serializers remain in
 their protocol-specific modules.
 
-Provider timeout execution should be extracted from the Anthropic utility into
-the shared provider layer rather than copied. Shared helpers must not contain
-Anthropic or OpenAI request/response types.
+Provider timeout execution lives in the shared provider layer. Shared helpers
+must not contain Anthropic or OpenAI request/response types.
 
 ## Configuration and Security
 
@@ -726,7 +728,9 @@ Anthropic or OpenAI request/response types.
 - Search results are untrusted and cannot access tools during synthesis.
 - Agent Maestro does not automatically add workspace contents, file contents,
   tool results, or credentials to a search query.
-- Credentials, full provider responses, and snippets are not written to logs.
+- Search-provider diagnostics exclude credentials, full provider responses, and
+  snippets. This does not sanitize other request/response logs; see
+  [diagnostic logs](llm-compatibility.md#diagnostic-logs).
 - Allow/block filters constrain retrieval but do not make retrieved content
   trustworthy.
 
@@ -749,66 +753,15 @@ Anthropic or OpenAI request/response types.
 
 ## Acceptance Criteria
 
-1. A Responses request without a supported `web_search` declaration behaves
-   exactly as before and makes no Exa request.
-2. A request with `web_search` and automatic tool choice lets the selected model
-   decide whether to search.
-3. A forced search choice narrows the VS Code tool list to the private search
-   tool and uses required mode.
-4. Any `allowed_tools` choice is rejected before model execution when server
-   search is declared, including an allowed list containing only client tools.
-5. Nullable fields follow the field-by-field omission or rejection rules.
-6. The private function name and tool history never appear in non-streaming or
-   streaming output.
-7. A selected search executes at most one provider call and one tool-free
-   synthesis round.
-8. `parallel_tool_calls: false` is accepted and echoed while the orchestrator
-   still dispatches at most one server search.
-9. Without a client-visible tool call, multiple private search calls produce
-   exactly one representative public search item and lifecycle; only the first
-   internal call in content order can dispatch.
-10. A valid representative call that cannot dispatch because the first round
-    exhausted the output budget is serialized as failed and terminates the
-    response as incomplete.
-11. Successful search output contains one completed `web_search_call`, a final
-    assistant message, visible source URLs, and valid `url_citation` offsets.
-12. `web_search_call.action.sources` contains all normalized result URLs only
-    when requested.
-13. Concatenated streaming text deltas exactly match output-text done content,
-    including serializer-added Sources, and every citation offset is in range.
-14. Successful streaming output contains valid lifecycle, web search, output
-    item, text, annotation, and completion events in protocol order.
-15. Failed-call streaming follows the outcome matrix: pre-dispatch failures omit
-    `searching`, dispatched provider failures include it, and every call ends
-    with the `completed` lifecycle event plus an output item whose status carries
-    success or failure.
-16. Budget exhaustion emits `response.incomplete` with
-    `incomplete_details.reason: "max_output_tokens"` and never emits
-    `response.completed` afterward.
-17. Search selection that produces client tool calls does not execute search and
-    preserves the client calls.
-18. Immediate client-tool continuations cannot initiate an external search,
-    including when metadata-only `additional_tools` items trail the tool output.
-19. Search-result synthesis exposes no server or client tools.
-20. Invalid options, unsupported privacy controls, and unsupported include
-    values return `400` rather than being ignored.
-21. `web_search_call.results` is rejected before model execution whenever the
-    prepared request can enter the server search loop.
-22. Invalid model input and provider failures produce schema-valid failed search
-    items with a required search action and do not claim current evidence.
-23. Request timeout and client cancellation stop active model and provider work.
-24. Aggregated usage and serializer-added sources remain within
-    `max_output_tokens`.
-25. Anonymous Exa and the existing optional SecretStorage API key both work.
-26. Unit tests cover classification, nullable fields, allowed-tool rejection,
-    tool choice, no-search output, successful search, citations, source deltas,
-    `parallel_tool_calls: false`, first-call-only serialization, failed-call
-    actions, mixed tools, trailing continuation metadata, isolation, budgeting,
-    failed-call lifecycle, incomplete streaming, provider errors, cancellation,
-    and timeout.
-27. A manual Codex test using an available GPT-5-family model with Responses
-    `web_search` in live mode can answer a freshness-sensitive question without
-    client MCP configuration or a client-executed search tool.
+The [Responses search suite](../src/test/server/openaiResponsesWebSearch.test.ts) covers the field/outcome rules above. Review changes against these invariants:
+
+- Validate declarations, nullable fields, includes, and tool choices before opening the stream; never broaden unsupported policy controls.
+- Preserve the model's search decision and client-tool precedence. Expose no tools to search-result synthesis or hosted search to an immediate client-tool continuation.
+- Produce one representative public search attempt, with the correct dispatched/pre-dispatch failure lifecycle and no leaked private calls.
+- Keep text deltas, final text, Sources, annotations, item status, and the terminal response consistent.
+- Respect the single-provider/two-model-round limits, shared output budget, aggregated usage, cancellation, and timeout.
+
+Official SDK stream tests cover the Responses accumulator; manual model/client checks follow the [testing guide](testing.md#manual-validation). The validation tables above remain the source for individual edge cases.
 
 ## References
 

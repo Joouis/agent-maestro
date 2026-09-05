@@ -1,145 +1,43 @@
 # Testing Guide
 
-Agent Maestro uses the VS Code testing framework with Mocha. Tests ensure that changes don't break existing functionality.
+Use the Node/pnpm versions in [package.json](../package.json). Tests use Mocha and an extension host via `@vscode/test-cli`; dependencies must be installed before running them.
 
-## Running Tests
+## Commands
 
-```bash
-# Run all tests (includes build, lint, and type checking)
-pnpm test
-
-# Build tests only
-pnpm run build-tests
-
-# Watch tests during development
-pnpm run watch-tests
-```
-
-## Test Coverage Summary
-
-| Test File                                      | Tests | What It Covers                                                                                          |
-| ---------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------- |
-| `extension.test.ts`                            | 12    | Extension activation, command registration, configuration                                               |
-| `utils/config.test.ts`                         | 5     | Configuration defaults and reading                                                                      |
-| `utils/mimeTypes.test.ts`                      | 12    | MIME type detection for file extensions                                                                 |
-| `utils/rooSettingsFilter.test.ts`              | 5     | API key filtering from settings                                                                         |
-| `utils/updateEnvFile.test.ts`                  | 13    | .env file creation/update logic                                                                         |
-| `schemas/cline.test.ts`                        | 6     | Cline API request/response validation                                                                   |
-| `schemas/roo.test.ts`                          | 7     | Roo API request/response validation                                                                     |
-| `schemas/common.test.ts`                       | 7     | Common schemas (file ops, extension info, OS info)                                                      |
-| `server/anthropic.test.ts`                     | 23    | Anthropic → VS Code message conversion                                                                  |
-| `server/languageModelRequestLifecycle.test.ts` | 14    | LM request timeout and disconnect cancellation                                                          |
-| `server/modelResolution.test.ts`               | 17    | Model matching and Copilot model configuration                                                          |
-| `server/openaiChat.test.ts`                    | 15    | OpenAI → VS Code message conversion                                                                     |
-| `server/openaiResponses.test.ts`               | 52    | OpenAI Responses → VS Code conversion                                                                   |
-| `server/gemini.test.ts`                        | 27    | Gemini → VS Code message conversion                                                                     |
-| `server/sseHeartbeat.test.ts`                  | 16    | Startup/token-counting heartbeats, SDK snapshots, lifecycle cleanup, and frame order under backpressure |
-| `server/toolHistory.test.ts`                   | 65    | Shared normalization, replay, IDs, media, skipped tool types, and wrong-role Anthropic tool blocks      |
-| `server/toolHistoryRoutes.test.ts`             | 1     | Official SDK requests and streaming responses preserve new IDs after historical remapping               |
-
-## How Tests Prevent Regressions
-
-1. **Extension Core** - Tests verify all commands register correctly and the extension activates without errors.
-
-2. **Schema Validation** - Zod schemas define the API contract. Tests ensure valid requests pass and invalid ones fail.
-
-3. **API Conversion Logic** - The proxy server translates between OpenAI/Anthropic/Gemini formats and VS Code's chat API. Tests verify:
-
-   - Message roles convert correctly (user/assistant/system)
-   - Tool calls and tool results are preserved
-   - Edge cases like empty arrays don't crash
-
-4. **Utility Functions** - Tests cover pure functions:
-   - MIME type detection for file uploads
-   - Settings filtering (ensuring API keys don't leak)
-   - .env file manipulation
-
-## Regression Prevention Workflow
-
-Before committing any changes, run:
+Run from the repository root:
 
 ```bash
+pnpm check-types
+pnpm lint
 pnpm test
 ```
 
-This command:
+`pnpm test` compiles tests, type-checks/builds the extension, runs lint, and launches the VS Code test host. Use type-check/lint during editing, then the full suite for behavior changes. For tests-only iteration, `pnpm build-tests` refreshes compiled tests and `pnpm watch-tests` watches them.
 
-1. Compiles all test files
-2. Builds the extension
-3. Runs ESLint
-4. Executes all tests
+The checked-in [.vscode-test.mjs](../.vscode-test.mjs) selects `out/test/**/*.test.js`. If the host cannot start (for example, a missing cached executable), fix the test-host installation or select a verified local installation with a temporary test-runner configuration. A launch failure is not a passing test run; do not commit machine-specific paths.
 
-If any test fails, the command exits with a non-zero code.
+## Suite Map
 
-## Test Structure
+| Area under `src/test`                                                     | Coverage                                                       |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [extension.test.ts](../src/test/extension.test.ts)                        | Activation and registered commands                             |
+| [schemas](../src/test/schemas/)                                           | Request schema validation                                      |
+| [utils](../src/test/utils/)                                               | Configuration, models, images, and shared helpers              |
+| [server](../src/test/server/) conversion suites                           | Anthropic, Chat, Responses, and Gemini message/tool conversion |
+| `server/toolHistory*.test.ts`                                             | Shared normalization and official SDK stream compatibility     |
+| `server/*WebSearch.test.ts`                                               | Hosted/standalone search, provider limits, and isolation       |
+| `server/sseHeartbeat.test.ts` and `languageModelRequestLifecycle.test.ts` | Heartbeats, cancellation, timeouts, and stream ordering        |
 
-```
-src/test/
-├── extension.test.ts          # Extension activation and commands
-├── schemas/                   # Zod schema validation tests
-│   ├── cline.test.ts
-│   ├── common.test.ts
-│   └── roo.test.ts
-├── server/                    # API conversion utilities tests
-│   ├── anthropic.test.ts
-│   ├── gemini.test.ts
-│   ├── openaiChat.test.ts
-│   └── openaiResponses.test.ts
-└── utils/                     # Utility function tests
-    ├── config.test.ts
-    ├── mimeTypes.test.ts
-    ├── rooSettingsFilter.test.ts
-    └── updateEnvFile.test.ts
-```
+Use the test runner's output for current counts; parameterized suites make manually maintained totals unreliable.
 
-## Writing Tests
+## Adding Tests
 
-### Test Template
+Follow existing `suite` / `test` conventions with Node `assert`. Cover the observable regression, restore mocks/listeners in cleanup hooks, and use isolated temporary files/ports. Do not make ordinary tests consume external model or Exa quota. See [AGENTS.md](../AGENTS.md#tests) for required coverage.
 
-```typescript
-import * as assert from "assert";
+## Manual Validation
 
-suite("FeatureName Test Suite", () => {
-  suite("functionOrClassName", () => {
-    test("should do expected behavior", () => {
-      const input = {
-        /* test data */
-      };
-      const result = functionToTest(input);
-      assert.strictEqual(result.success, true);
-    });
-  });
-});
-```
+Unit tests do not prove UI behavior or live provider compatibility. Record the AM revision, VS Code/client versions, model, isolated ports, expected output, and relevant AM logs for manual runs. Avoid sharing raw request/session logs without applying the [logging guidance](llm-compatibility.md#diagnostic-logs).
 
-### Test Hooks
-
-Use Mocha hooks for setup and teardown:
-
-```typescript
-suite("Test Suite with Hooks", () => {
-  const testDir = path.join(os.tmpdir(), "test-data");
-
-  setup(() => {
-    fs.mkdirSync(testDir, { recursive: true });
-  });
-
-  teardown(() => {
-    fs.rmSync(testDir, { recursive: true, force: true });
-  });
-
-  test("test case", () => {
-    // Your test
-  });
-});
-```
-
-### Best Practices
-
-1. **Descriptive Names**: Use clear test names like `"should return error when API key is missing"`
-
-2. **Test Edge Cases**: Include tests for empty inputs, invalid inputs, and error conditions
-
-3. **Avoid Test Dependencies**: Tests should run independently
-
-4. **Clean Up Resources**: Always clean up created files in `teardown`
+- Use the [Codex collaboration runbook](codex-multi-agent-e2e.md) for Responses namespace/plaintext collaboration changes.
+- Recheck [image MIME behavior](vscode-image-mime-defect.md) when changing the VS Code engine.
+- For documentation-only edits, check links, anchors, examples, and diagrams. Build the website if its source changes; model requests and a full extension-host run are unnecessary unless behavior also changes.

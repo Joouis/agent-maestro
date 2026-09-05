@@ -1,5 +1,7 @@
 # SSE heartbeats
 
+Current implementation note, reviewed on 2026-09-05, including the Gemini and Responses corrections in PRs #249 and #250. Feature designs should link here for heartbeat wire formats.
+
 ## Problem
 
 Streaming routes establish an SSE response before VS Code LM produces its first
