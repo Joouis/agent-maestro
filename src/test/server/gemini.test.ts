@@ -1,4 +1,8 @@
-import { FunctionCallingConfigMode } from "@google/genai";
+import {
+  type Content,
+  FunctionCallingConfigMode,
+  type Part,
+} from "@google/genai";
 import * as assert from "assert";
 import * as vscode from "vscode";
 
@@ -325,6 +329,251 @@ suite("Gemini Conversion Utils Test Suite", () => {
         "call_B",
         "id-less response must drain to call_B, not stale call_A",
       );
+    });
+  });
+
+  suite("Gemini resume result deduplication", () => {
+    const call = (id: string, name = "lookup"): Part => ({
+      functionCall: { id, name, args: {} },
+    });
+    const response = (id: string, output = "first", name = "lookup"): Part => ({
+      functionResponse: { id, name, response: { output } },
+    });
+    const toolResults = (messages: vscode.LanguageModelChatMessage[]) =>
+      messages
+        .flatMap((message) => message.content)
+        .filter((part) => part instanceof vscode.LanguageModelToolResultPart);
+    const toolCalls = (messages: vscode.LanguageModelChatMessage[]) =>
+      messages
+        .flatMap((message) => message.content)
+        .filter((part) => part instanceof vscode.LanguageModelToolCallPart);
+
+    for (const separateMessages of [false, true]) {
+      test(`drops repeated results within a call turn in ${separateMessages ? "separate user messages" : "one user message"}`, () => {
+        const contents: Content[] = [
+          { role: "model", parts: [call("x")] },
+          ...(separateMessages
+            ? [
+                { role: "user", parts: [response("x")] },
+                { role: "user", parts: [response("x", "replayed")] },
+              ]
+            : [
+                {
+                  role: "user",
+                  parts: [response("x"), response("x", "replayed")],
+                },
+              ]),
+          { role: "model", parts: [{ text: "Done" }] },
+        ];
+        const original = structuredClone(contents);
+        const converted = convertGeminiContentsToVSCode(contents);
+        const results = toolResults(converted);
+
+        assert.strictEqual(converted.length, 3);
+        assert.strictEqual(toolCalls(converted).length, 1);
+        assert.strictEqual(results.length, 1);
+        assert.strictEqual(results[0].callId, "x");
+        assert.strictEqual(
+          (results[0].content[0] as vscode.LanguageModelTextPart).value,
+          JSON.stringify({ output: "first" }),
+        );
+        assert.deepStrictEqual(contents, original);
+        assert.deepStrictEqual(
+          convertGeminiContentsToVSCode(contents),
+          converted,
+        );
+      });
+    }
+
+    for (const laterOutput of ["first", "later"]) {
+      test(`preserves a complete later call/result pair with the same ID and ${laterOutput} output`, () => {
+        const converted = convertGeminiContentsToVSCode([
+          { role: "model", parts: [call("x")] },
+          { role: "user", parts: [response("x"), response("x")] },
+          { role: "model", parts: [call("x")] },
+          {
+            role: "user",
+            parts: [response("x", laterOutput), response("x", laterOutput)],
+          },
+        ]);
+
+        assert.strictEqual(converted.length, 4);
+        assert.deepStrictEqual(
+          toolCalls(converted).map((part) => part.callId),
+          ["x", "x"],
+        );
+        const results = toolResults(converted);
+        assert.deepStrictEqual(
+          results.map((part) => part.callId),
+          ["x", "x"],
+        );
+        assert.deepStrictEqual(
+          results.map(
+            (part) => (part.content[0] as vscode.LanguageModelTextPart).value,
+          ),
+          [
+            JSON.stringify({ output: "first" }),
+            JSON.stringify({ output: laterOutput }),
+          ],
+        );
+      });
+    }
+
+    test("preserves parallel same-name calls across consecutive model messages", () => {
+      const converted = convertGeminiContentsToVSCode([
+        { role: "model", parts: [call("a")] },
+        { role: "model", parts: [call("b")] },
+        {
+          role: "user",
+          parts: [
+            response("b", "B"),
+            response("a", "A"),
+            response("b", "B"),
+            response("a", "A"),
+          ],
+        },
+      ]);
+      assert.deepStrictEqual(
+        toolCalls(converted).map((part) => part.callId),
+        ["a", "b"],
+      );
+      assert.deepStrictEqual(
+        toolResults(converted).map((part) => part.callId),
+        ["b", "a"],
+      );
+    });
+
+    test("preserves text and images next to repeated results", () => {
+      const image = {
+        mimeType: "image/png",
+        data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFE8AAAAASUVORK5CYII=",
+      };
+      const converted = convertGeminiContentsToVSCode([
+        { role: "model", parts: [call("x")] },
+        { role: "user", parts: [response("x")] },
+        {
+          role: "user",
+          parts: [
+            { text: "Keep context" },
+            response("x"),
+            { inlineData: image },
+          ],
+        },
+      ]);
+      assert.strictEqual(converted.length, 3);
+      assert.strictEqual(toolResults(converted).length, 1);
+      assert.strictEqual(converted[2].content.length, 2);
+      assert.deepStrictEqual(
+        converted[2].content[0],
+        new vscode.LanguageModelTextPart("Keep context"),
+      );
+      const data = converted[2].content[1];
+      assert.ok(data instanceof vscode.LanguageModelDataPart);
+      assert.strictEqual(data.mimeType, image.mimeType);
+      assert.deepStrictEqual(
+        Buffer.from(data.data),
+        Buffer.from(image.data, "base64"),
+      );
+    });
+
+    test("does not consume another FIFO match when dropping an explicit duplicate", () => {
+      const converted = convertGeminiContentsToVSCode([
+        { role: "model", parts: [call("a"), call("b")] },
+        {
+          role: "user",
+          parts: [
+            response("a"),
+            response("a"),
+            { functionResponse: { name: "lookup", response: { output: "B" } } },
+          ],
+        },
+      ]);
+      assert.deepStrictEqual(
+        toolResults(converted).map((part) => part.callId),
+        ["a", "b"],
+      );
+    });
+
+    test("does not infer duplicates for id-less results", () => {
+      const converted = convertGeminiContentsToVSCode([
+        {
+          role: "model",
+          parts: [
+            { functionCall: { name: "lookup", args: {} } },
+            { functionCall: { name: "lookup", args: {} } },
+          ],
+        },
+        {
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                name: "lookup",
+                response: { output: "same" },
+              },
+            },
+            {
+              functionResponse: {
+                name: "lookup",
+                response: { output: "same" },
+              },
+            },
+          ],
+        },
+      ]);
+      const ids = toolCalls(converted).map((part) => part.callId);
+      assert.strictEqual(new Set(ids).size, 2);
+      assert.deepStrictEqual(
+        toolResults(converted).map((part) => part.callId),
+        ids,
+      );
+    });
+
+    test("leaves unmatched results unchanged without poisoning a later pair", () => {
+      const converted = convertGeminiContentsToVSCode([
+        {
+          role: "user",
+          parts: [response("x", "orphan"), response("x", "orphan")],
+        },
+        { role: "model", parts: [call("x")] },
+        {
+          role: "user",
+          parts: [response("x", "valid"), response("x", "valid")],
+        },
+      ]);
+      assert.strictEqual(converted[0].content.length, 2);
+      assert.ok(
+        converted[0].content.every(
+          (part) => part instanceof vscode.LanguageModelToolResultPart,
+        ),
+      );
+      assert.strictEqual(converted[2].content.length, 1);
+      const result = converted[2].content[0];
+      assert.ok(result instanceof vscode.LanguageModelToolResultPart);
+      assert.strictEqual(
+        (result.content[0] as vscode.LanguageModelTextPart).value,
+        JSON.stringify({ output: "valid" }),
+      );
+    });
+
+    test("does not match results against an earlier model turn", () => {
+      const converted = convertGeminiContentsToVSCode([
+        { role: "model", parts: [call("x")] },
+        { role: "user", parts: [response("x")] },
+        { role: "model", parts: [{ text: "Done" }] },
+        { role: "user", parts: [response("x"), response("x")] },
+      ]);
+      assert.strictEqual(converted[3].content.length, 2);
+      assert.strictEqual(toolResults(converted).length, 3);
+    });
+
+    test("does not deduplicate results when the call ID is ambiguous within one turn", () => {
+      const converted = convertGeminiContentsToVSCode([
+        { role: "model", parts: [call("x"), call("x")] },
+        { role: "user", parts: [response("x"), response("x")] },
+      ]);
+      assert.strictEqual(toolCalls(converted).length, 2);
+      assert.strictEqual(toolResults(converted).length, 2);
     });
   });
 
