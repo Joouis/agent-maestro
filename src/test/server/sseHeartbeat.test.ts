@@ -1,5 +1,9 @@
+import { FinishReason, GoogleGenAI } from "@google/genai";
+import { getRequestListener } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import * as assert from "assert";
+import { once } from "node:events";
+import { createServer } from "node:http";
 import * as vscode from "vscode";
 
 import { registerAnthropicRoutes } from "../../server/routes/anthropicRoutes";
@@ -194,29 +198,173 @@ suite("SSE Heartbeat Test Suite", () => {
     assert.ok(body.includes("event: response.completed"));
   });
 
-  test("writes SSE comments for Gemini streamGenerateContent", async () => {
+  test("delivers blank-line Gemini heartbeats before the model responds", async () => {
+    let releaseModel!: () => void;
+    const modelReady = new Promise<void>((resolve) => {
+      releaseModel = resolve;
+    });
     const app = new OpenAPIHono();
     registerGeminiRoutes(app, {
       heartbeatIntervalMs,
+      requestTimeoutMs: 1000,
       resolveChatModelClient: async () => ({
-        client: createDelayedModel(),
+        client: {
+          ...createDelayedModel(),
+          sendRequest: async () => ({
+            stream: (async function* () {
+              await modelReady;
+              yield new vscode.LanguageModelTextPart("Hello");
+            })(),
+            text: (async function* () {})(),
+          }),
+        },
       }),
     });
+    const server = createServer(getRequestListener(app.fetch));
+    server.listen(0, "127.0.0.1");
 
-    const response = await app.request(
-      "/v1beta/models/claude-opus-test:streamGenerateContent",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: "Hello" }] }],
-        }),
-      },
+    try {
+      await once(server, "listening");
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      const response = await fetch(
+        `http://127.0.0.1:${address.port}/v1beta/models/claude-opus-test:streamGenerateContent`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: "Hello" }] }],
+          }),
+          signal: AbortSignal.timeout(2000),
+        },
+      );
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let body = "";
+      for (let index = 0; index < 2; index++) {
+        const heartbeat = await reader.read();
+        assert.strictEqual(heartbeat.done, false);
+        const text = decoder.decode(heartbeat.value);
+        assert.match(text, /^\n+$/);
+        body += text;
+      }
+      releaseModel();
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          break;
+        }
+        body += decoder.decode(chunk.value, { stream: true });
+      }
+
+      assert.strictEqual(response.status, 200);
+      assert.ok(!body.includes(": keep-alive"));
+      assert.ok(!body.includes("data: {}"));
+      assert.ok(body.includes('"text":"Hello"'));
+      assert.ok(body.includes('"finishReason":"STOP"'));
+    } finally {
+      releaseModel();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  test("Google Gen AI SDK ignores Gemini heartbeats and preserves text, tools, and usage", async () => {
+    const app = new OpenAPIHono();
+    const toolCall = new vscode.LanguageModelToolCallPart(
+      "write-report",
+      "write_file",
+      { file_path: "tmp/report.md", content: '# 调研\n\n"quoted" text' },
     );
-    const body = await response.text();
+    const tokenInputs: unknown[] = [];
+    registerGeminiRoutes(app, {
+      heartbeatIntervalMs,
+      requestTimeoutMs: 1000,
+      resolveChatModelClient: async () => ({
+        client: {
+          ...createDelayedModel(),
+          sendRequest: async () => ({
+            stream: (async function* () {
+              await new Promise((resolve) => setTimeout(resolve, 25));
+              yield new vscode.LanguageModelTextPart("Hello");
+              await new Promise((resolve) => setTimeout(resolve, 25));
+              yield toolCall;
+              await new Promise((resolve) => setTimeout(resolve, 25));
+            })(),
+            text: (async function* () {})(),
+          }),
+          countTokens: async (input) => {
+            tokenInputs.push(input);
+            return 1;
+          },
+        },
+      }),
+    });
+    const server = createServer(getRequestListener(app.fetch));
+    server.listen(0, "127.0.0.1");
 
-    assert.ok(body.includes(": keep-alive\n\n"));
-    assert.ok(body.includes('"finishReason":"STOP"'));
+    try {
+      await once(server, "listening");
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      const sdk = new GoogleGenAI({
+        apiKey: "test-key",
+        vertexai: false,
+        httpOptions: {
+          baseUrl: `http://127.0.0.1:${address.port}`,
+          apiVersion: "v1beta",
+          timeout: 1000,
+        },
+      });
+      const stream = await sdk.models.generateContentStream({
+        model: "claude-opus-test",
+        contents: "Hello",
+      });
+      const chunks = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+
+      assert.strictEqual(
+        chunks.length,
+        3,
+        "Heartbeats must not yield SDK responses",
+      );
+      assert.strictEqual(chunks[0].text, "Hello");
+      assert.strictEqual(chunks[1].functionCalls?.length, 1);
+      assert.strictEqual(
+        chunks.map((chunk) => chunk.text ?? "").join(""),
+        "Hello",
+      );
+      assert.deepStrictEqual(
+        chunks.flatMap((chunk) => chunk.functionCalls ?? []),
+        [{ id: toolCall.callId, name: toolCall.name, args: toolCall.input }],
+      );
+      const finalChunk = chunks.at(-1)!;
+      assert.deepStrictEqual(finalChunk.candidates, [
+        { finishReason: FinishReason.STOP, index: 0 },
+      ]);
+      assert.deepStrictEqual(finalChunk.usageMetadata, {
+        cachedContentTokenCount: 0,
+        candidatesTokenCount: 1,
+        promptTokenCount: 1,
+        thoughtsTokenCount: 0,
+        totalTokenCount: 2,
+      });
+      assert.strictEqual(
+        chunks.filter((chunk) => chunk.usageMetadata).length,
+        1,
+      );
+      assert.strictEqual(tokenInputs.length, 2);
+      assert.strictEqual(tokenInputs[1], `Hello${JSON.stringify(toolCall)}`);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   test("cancels a stalled Gemini stream when its total timeout expires", async () => {
