@@ -16,6 +16,7 @@ import {
   OpenAIResponsesEnvelope,
   OpenAIResponsesStatus,
   OutputItem,
+  ResponseSSEWriter,
   buildOpenAIResponsesEnvelope,
   closeMessageOutputItem,
   generateResponseId,
@@ -152,7 +153,7 @@ export async function handleOpenAIResponsesWebSearch({
   return streamSSE(
     c,
     async (sseStream) => {
-      const writeSSE = (message: Parameters<typeof sseStream.writeSSE>[0]) =>
+      const writeSSE: ResponseSSEWriter = (message) =>
         lifecycle.waitFor(sseStream.writeSSE(message));
       const writeEvent = (event: string, data: Record<string, unknown>) =>
         writeSSE({

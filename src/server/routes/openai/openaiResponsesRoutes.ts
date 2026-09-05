@@ -28,6 +28,7 @@ import {
   OpenAIResponsesStatus,
   OutputItem,
   PlaintextResponseFunctionToolCall,
+  ResponseSSEWriter,
   buildOpenAIResponsesEnvelope,
   buildResponseOutput,
   closeMessageOutputItem,
@@ -461,9 +462,8 @@ export function registerOpenaiResponsesRoutes(
       return streamSSE(
         c,
         async (sseStream) => {
-          const writeSSE = (
-            message: Parameters<typeof sseStream.writeSSE>[0],
-          ) => requestLifecycle!.waitFor(sseStream.writeSSE(message));
+          const writeSSE: ResponseSSEWriter = (message) =>
+            requestLifecycle!.waitFor(sseStream.writeSSE(message));
 
           const buildResponseEnvelope = (
             status: OpenAIResponsesStatus,

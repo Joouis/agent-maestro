@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { SSEStreamingApi } from "hono/streaming";
+import { SSEMessage } from "hono/streaming";
 import {
   EasyInputMessage,
   FunctionTool,
@@ -134,8 +134,9 @@ export const buildOpenAIResponsesEnvelope = ({
   usage,
 });
 
-type ResponseSSEWriter = (
-  message: Parameters<SSEStreamingApi["writeSSE"]>[0],
+// Deferred data can resolve out of order before Hono queues complete frames.
+export type ResponseSSEWriter = (
+  message: Omit<SSEMessage, "data"> & { data: string },
 ) => Promise<void>;
 
 export async function withOpenAIResponsesHeartbeat<T>(

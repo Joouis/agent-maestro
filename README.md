@@ -395,6 +395,8 @@ Perfect for Gemini CLI integration:
 - **`POST /api/gemini/v1beta/models/{model}:streamGenerateContent`** - Streaming support for Gemini API
 - **`POST /api/gemini/v1beta/models/{model}:countTokens`** - Token counting for Gemini-compatible messages
 
+Streaming responses send blank-line heartbeats while waiting for the model, keeping long-running requests alive without interrupting Gemini CLI or Google Gen AI SDK stream parsing. These heartbeats do not produce extra response chunks or affect generated content and token usage.
+
 > **Thinking levels**: Not forwarded for Gemini. Copilot's Gemini path does not read the `thinkingConfig.thinkingLevel` parameter from the model configuration; it only applies a hardcoded `low` effort behind an internal experiment flag, so any forwarded value would be ignored.
 
 ### RooCode Agent Routes

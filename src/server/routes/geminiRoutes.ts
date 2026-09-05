@@ -538,9 +538,8 @@ export function registerGeminiRoutes(
               options.heartbeatIntervalMs,
             )) {
               if (chunk === SSE_HEARTBEAT) {
-                await requestLifecycle!.waitFor(
-                  stream.write(": keep-alive\n\n"),
-                );
+                // The Google Gen AI SDK ignores blank lines but stalls on SSE comments.
+                await requestLifecycle!.waitFor(stream.write("\n"));
                 continue;
               }
 
