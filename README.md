@@ -86,7 +86,7 @@ Search is available when a supported client requests it. AM does not add search 
 
 After configuring a supported Codex release, try asking it to find a recent release announcement and cite its sources. An existing `web_search = "disabled"` setting is preserved; change it to `"live"` if you want to enable search.
 
-Basic searches can use Exa's anonymous allowance. Run **Agent Maestro: Set Exa API Key** to use your Exa account; domain, recency, country, or cache-only constraints on standalone search require a key. Queries and retrieved page URLs are sent to Exa, whose usage limits and billing are separate from Copilot.
+Searches can use Exa's anonymous allowance, including domain, recency, country, and cache-only constraints on standalone search. No Exa API key is required; anonymous access remains subject to Exa's rate limits. Run **Agent Maestro: Set Exa API Key** to use your Exa account. Queries and retrieved page URLs are sent to Exa, whose usage limits and billing are separate from Copilot.
 
 These paths have different contracts: Gemini has no hosted-search integration here, and not every native search option or Codex web command is supported. See [search compatibility and supported Codex versions](docs/llm-compatibility.md#web-search).
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.14.0 - 2026.09.06
+
+- Add experimental Codex standalone search at `/api/openai/v1/alpha/search`, with search queries, page `open`/`find`, and domain, date, country, and cache-only controls. Rerun **Agent Maestro: Configure Codex Settings** to add the required configuration; existing `web_search = "disabled"` settings are preserved.
+- Add hosted search directly to `/api/openai/v1/responses`: declare `web_search` to let AM search and generate an answer with source citations within the same request, with streaming support. Both search paths work without an Exa API key, subject to anonymous rate limits.
+- Fix Gemini CLI JSON parsing errors and Codex idle timeouts during slow or long-running responses.
+- Fix request failures caused by missing or repeated tool results when resuming conversations, and preserve results from parallel Codex tool calls. These improvements apply across Anthropic-, OpenAI-, and Gemini-compatible APIs.
+- Update client setup and troubleshooting instructions, and clarify supported search features and remote-access requirements.
+- **API compatibility:** Unsupported and preview web-search tool declarations in OpenAI Responses requests now return HTTP 400 instead of being silently ignored. Use `web_search` or `web_search_2025_08_26`.
+
 ## v2.13.0 - 2026.08.28
 
 - Add transparent Exa-powered web search to Anthropic-compatible requests, with streamed source links and support for anonymous or securely authenticated access.

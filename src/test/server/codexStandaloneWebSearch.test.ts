@@ -478,25 +478,205 @@ suite("Codex standalone web search", () => {
     assert.match(response.output, /unknown_reference/);
   });
 
-  test("requires an API key for advanced search instead of requesting full-page text", async () => {
-    const session = new FakeExaSession(false, () => {
-      throw new Error("Unexpected provider call");
-    });
+  test("maps anonymous advanced filters and returns highlights without extracted text", async () => {
+    const session = new FakeExaSession(false, () => ({
+      results: [
+        {
+          title: "Example",
+          url: "https://example.com/result",
+          publishedDate: "2026-08-29",
+          highlights: ["Relevant evidence"],
+          text: "UNUSED_TEXT_SENTINEL".repeat(1_000),
+          summary: "UNUSED_SUMMARY_SENTINEL",
+        },
+      ],
+    }));
     const adapter = createStandaloneSearch({
       client: createClient(session),
+      now: () => new Date("2026-08-31T12:00:00.000Z"),
     });
 
     const response = await adapter.execute(
       request(
         "anonymous-advanced",
-        { search_query: [{ q: "facts", domains: ["example.com"] }] },
-        { external_web_access: "cached" },
+        {
+          search_query: [{ q: "facts", domains: ["example.com"], recency: 7 }],
+        },
+        {
+          filters: {
+            allowed_domains: ["example.com", "other.example"],
+            blocked_domains: ["blocked.example"],
+          },
+          user_location: { type: "approximate", country: "us" },
+        },
       ),
       new AbortController().signal,
     );
 
+    assert.deepStrictEqual(session.calls, [
+      {
+        name: "web_search_advanced_exa",
+        args: {
+          query: "facts",
+          numResults: 5,
+          highlightsMaxCharacters: 1_200,
+          includeDomains: ["example.com"],
+          excludeDomains: ["blocked.example"],
+          startPublishedDate: "2026-08-24",
+          userLocation: "US",
+          textMaxCharacters: 1,
+          enableHighlights: true,
+        },
+      },
+    ]);
+    assert.deepStrictEqual(response.results, [
+      {
+        type: "text_result",
+        ref_id: "turn0search0",
+        url: "https://example.com/result",
+        title: "Example",
+        snippet: "Relevant evidence",
+      },
+    ]);
+    assert.match(response.output, /Published: 2026-08-29/);
+    assert.doesNotMatch(JSON.stringify(response), /UNUSED_/);
+    assert.doesNotMatch(JSON.stringify(session.calls), /private conversation/);
+  });
+
+  test("preserves anonymous cache-only modes without filling the page cache or fetching pages", async () => {
+    for (const mode of [false, "cached", "indexed"]) {
+      const session = new FakeExaSession(false, () => ({
+        results: [
+          {
+            title: "Cached result",
+            url: "https://example.com/result",
+            highlights: ["Cached evidence"],
+            text: "Text that must not populate the page cache",
+          },
+        ],
+      }));
+      const adapter = createStandaloneSearch({ client: createClient(session) });
+      const search = await adapter.execute(
+        request(
+          "anonymous-cache",
+          { search_query: [{ q: "facts" }] },
+          { external_web_access: mode },
+        ),
+        new AbortController().signal,
+      );
+      assert.strictEqual(search.results.length, 1);
+      assert.strictEqual(session.calls[0].name, "web_search_advanced_exa");
+      assert.strictEqual(session.calls[0].args.maxAgeHours, -1);
+      const page = await adapter.execute(
+        request(
+          "anonymous-cache",
+          {
+            open: [{ ref_id: "turn0search0" }],
+            find: [{ ref_id: "turn0search0", pattern: "Cached" }],
+          },
+          { external_web_access: mode },
+        ),
+        new AbortController().signal,
+      );
+      assert.match(page.output, /cache_only_page_not_cached/);
+      assert.strictEqual(session.calls.length, 1);
+    }
+  });
+
+  test("does not retry an anonymous cache miss with live access", async () => {
+    const session = new FakeExaSession(false, () => ({ results: [] }));
+    const adapter = createStandaloneSearch({ client: createClient(session) });
+    const response = await adapter.execute(
+      request(
+        "cache-miss",
+        { search_query: [{ q: "facts" }] },
+        { external_web_access: false },
+      ),
+      new AbortController().signal,
+    );
+    assert.strictEqual(session.calls.length, 1);
+    assert.strictEqual(session.calls[0].args.maxAgeHours, -1);
+    assert.deepStrictEqual(response.results, []);
+    assert.match(response.output, /No usable web search results/);
+  });
+
+  test("keeps mixed anonymous simple and advanced searches sequential", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const session = new FakeExaSession(false, async (_name, args) => {
+      maxActive = Math.max(maxActive, ++active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return searchResult(String(args.query), `https://${args.query}.example`);
+    });
+    const adapter = createStandaloneSearch({ client: createClient(session) });
+    const response = await adapter.execute(
+      request("mixed-anonymous", {
+        search_query: [
+          { q: "simple" },
+          { q: "filtered", domains: ["filtered.example"] },
+        ],
+      }),
+      new AbortController().signal,
+    );
+    assert.strictEqual(maxActive, 1);
+    assert.deepStrictEqual(
+      session.calls.map(({ name }) => name),
+      ["web_search_exa", "web_search_advanced_exa"],
+    );
+    assert.deepStrictEqual(
+      response.results.map(({ title }) => title),
+      ["simple", "filtered"],
+    );
+  });
+
+  test("does not broaden anonymous advanced search when its MCP tool is unavailable", async () => {
+    const session = new FakeExaSession(false, () => {
+      throw new Error("Unexpected provider call");
+    });
+    session.listTools = async () => ["web_search_exa", "web_fetch_exa"];
+    const adapter = createStandaloneSearch({ client: createClient(session) });
+    const response = await adapter.execute(
+      request("missing-advanced", {
+        search_query: [{ q: "facts", domains: ["example.com"] }],
+      }),
+      new AbortController().signal,
+    );
+    assert.match(response.output, /protocol_error/);
+    assert.deepStrictEqual(response.results, []);
     assert.strictEqual(session.calls.length, 0);
-    assert.match(response.output, /advanced_search_requires_api_key/);
+  });
+
+  test("bounds anonymous advanced highlights and never substitutes raw text", async () => {
+    const session = new FakeExaSession(false, () => ({
+      results: [
+        {
+          title: "No highlights",
+          url: "https://example.com/one",
+          text: "RAW_TEXT_SENTINEL",
+        },
+        {
+          title: "Long highlights",
+          url: "https://example.com/two",
+          highlights: ["字".repeat(20_000)],
+          text: "RAW_TEXT_SENTINEL",
+        },
+      ],
+    }));
+    const adapter = createStandaloneSearch({ client: createClient(session) });
+    const response = await adapter.execute(
+      {
+        ...request("bounded-advanced", {
+          search_query: [{ q: "facts", domains: ["example.com"] }],
+        }),
+        max_output_tokens: 500,
+      },
+      new AbortController().signal,
+    );
+    assert.ok(Buffer.byteLength(response.output) <= codexOutputByteBudget(500));
+    assert.strictEqual(response.results.length, 2);
+    assert.strictEqual(response.results[0].snippet, undefined);
+    assert.doesNotMatch(JSON.stringify(response), /RAW_TEXT_SENTINEL/);
   });
 
   test("supports reference open and cached literal find", async () => {
@@ -845,17 +1025,15 @@ suite("Codex standalone web search", () => {
     const response = await adapter.execute(
       {
         ...request("priority-status", {
-          search_query: [
-            { q: "simple" },
-            { q: "filtered", domains: ["example.com"] },
-          ],
+          search_query: [{ q: "simple" }],
+          sports: [{ fn: "schedule", league: "nba" }],
         }),
         max_output_tokens: 220,
       },
       new AbortController().signal,
     );
 
-    assert.match(response.output, /advanced_search_requires_api_key/);
+    assert.match(response.output, /unsupported_command: sports/);
     assert.doesNotMatch(response.output, /Optional evidence/);
     assert.deepStrictEqual(response.results, []);
   });
@@ -871,10 +1049,8 @@ suite("Codex standalone web search", () => {
     const response = await adapter.execute(
       {
         ...request("priority-tight-status", {
-          search_query: [
-            { q: "simple" },
-            { q: "filtered", domains: ["example.com"] },
-          ],
+          search_query: [{ q: "simple" }],
+          sports: [{ fn: "schedule", league: "nba" }],
         }),
         max_output_tokens: 130,
       },
@@ -1781,26 +1957,75 @@ suite("Codex standalone web search", () => {
       assert.strictEqual(JSON.stringify(body).includes('"text"'), false);
     });
 
-    test("does not contact MCP for anonymous advanced-only requests", async () => {
-      let fetches = 0;
+    test("dispatches anonymous advanced MCP and preserves policy across a rate-limit retry", async () => {
+      const toolCalls: ToolCall[] = [];
+      let discoveries = 0;
       const client = new ExaMcpClient({
+        endpoint: "https://mcp.test",
         getApiKey: async () => undefined,
-        fetch: async () => {
-          fetches++;
-          throw new Error("Unexpected fetch");
+        fetch: async (input, init) => {
+          assert.strictEqual(String(input), "https://mcp.test");
+          const headers = new Headers(init?.headers);
+          assert.strictEqual(headers.has("x-api-key"), false);
+          assert.strictEqual(headers.has("authorization"), false);
+          assert.doesNotMatch(String(init?.body), /private conversation/);
+          const body = JSON.parse(String(init?.body));
+          if (body.method === "notifications/initialized") {
+            return new Response(null, { status: 202 });
+          }
+          let result: unknown;
+          if (body.method === "initialize") {
+            result = { protocolVersion: "2025-03-26" };
+          } else if (body.method === "tools/list") {
+            discoveries++;
+            result = { tools: [{ name: "web_search_advanced_exa" }] };
+          } else {
+            assert.strictEqual(body.method, "tools/call");
+            toolCalls.push({
+              name: body.params.name,
+              args: body.params.arguments,
+            });
+            if (toolCalls.length === 1) {
+              return new Response(null, {
+                status: 429,
+                headers: { "retry-after": "0" },
+              });
+            }
+            result = searchResult("Example", "https://example.com/result");
+          }
+          return new Response(
+            JSON.stringify({ jsonrpc: "2.0", id: body.id, result }),
+            { headers: { "content-type": "application/json" } },
+          );
         },
       });
       const adapter = createStandaloneSearch({ client });
 
       const response = await adapter.execute(
-        request("lazy-anonymous", {
-          search_query: [{ q: "facts", domains: ["example.com"] }],
-        }),
+        request(
+          "anonymous-mcp",
+          { search_query: [{ q: "facts", domains: ["example.com"] }] },
+          { external_web_access: false },
+        ),
         new AbortController().signal,
       );
 
-      assert.strictEqual(fetches, 0);
-      assert.match(response.output, /advanced_search_requires_api_key/);
+      assert.strictEqual(discoveries, 1);
+      assert.strictEqual(toolCalls.length, 2);
+      assert.deepStrictEqual(toolCalls[0], {
+        name: "web_search_advanced_exa",
+        args: {
+          query: "facts",
+          numResults: 5,
+          includeDomains: ["example.com"],
+          highlightsMaxCharacters: 1_200,
+          maxAgeHours: -1,
+          textMaxCharacters: 1,
+          enableHighlights: true,
+        },
+      });
+      assert.deepStrictEqual(toolCalls[1], toolCalls[0]);
+      assert.strictEqual(response.results[0].snippet, "Example evidence");
     });
 
     test("honors cancellation while retrieving an API key", async () => {

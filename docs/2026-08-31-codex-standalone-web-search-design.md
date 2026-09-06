@@ -17,11 +17,12 @@ POST /api/openai/v1/alpha/search
 ```
 
 The endpoint translates supported Codex `web.run` commands into calls to
-the hosted Exa MCP server. Advanced search settings use Exa's authenticated
-Search API because the pinned MCP advanced-search tool cannot disable full-page
-text retrieval. It returns the plain-text search output expected by Codex
-and optional structured result DTOs for Codex clients that display search
-activity.
+the hosted Exa MCP server. Advanced search settings use anonymous advanced MCP
+when no key is configured, or Exa's authenticated Search API when a key is
+available. Both paths return bounded highlights; anonymous MCP limits unused
+extracted text to one character per result. It returns the plain-text search
+output expected by Codex and optional structured result DTOs for Codex clients
+that display search activity.
 
 The original rollout gated automatic configuration on reference-based `open`
 and `find`. That gate is complete: `Configure Codex Settings` writes the
@@ -245,12 +246,14 @@ During design validation, the anonymous hosted endpoint:
 - listed all three explicitly requested tools; and
 - completed an anonymous `web_search_exa` call.
 
-The pinned `web_search_advanced_exa` implementation always requests
-`contents.text`, even when highlights are enabled. Agent Maestro therefore does
-not call that tool for standalone search. Requests needing domain, recency,
-country, or cache-only policy use the Exa Search API with a highlights-only
-`contents` object when an API key is configured. Without a key, they return a
-recoverable `advanced_search_requires_api_key` result.
+The `web_search_advanced_exa` implementation always requests `contents.text`,
+even when highlights are enabled. The original implementation therefore
+required an API key for advanced standalone searches. Validation on 2026-09-05
+confirmed that the anonymous hosted tool accepts `textMaxCharacters: 1` along
+with domain, date, country, and `maxAgeHours: -1` filters, returning useful
+highlights and one character of text per result. Agent Maestro uses this
+bounded request without a key and discards the text when normalizing results.
+With a key, the existing highlights-only Search API request remains in use.
 
 ### Authentication and Rate Limiting
 
@@ -376,12 +379,16 @@ true:
 - there is no location constraint; and
 - no explicit cache-only policy must be enforced.
 
-Otherwise use the authenticated Exa Search API. If no API key is configured,
-return a recoverable unavailable result without dispatching the unsafe advanced
-MCP tool.
+Otherwise use the authenticated Exa Search API when a key is configured, or
+`web_search_advanced_exa` without a key. Both requests preserve the same domain,
+date, country, and cache policy. Missing MCP capability or provider failure
+returns a recoverable error; it does not trigger an unconstrained search.
 
-The advanced request includes only highlights with a bounded character limit.
-It omits `text`, so raw full-page text is not requested during the search phase.
+The authenticated request omits `text` and requests only bounded highlights.
+The anonymous MCP request sets `textMaxCharacters: 1`, `enableHighlights: true`,
+and `highlightsMaxCharacters: 1200`; it requests no summaries, context string,
+or subpages. Its text is discarded before results enter Codex's output or page
+cache. The existing result count and total output budgets apply to both paths.
 
 ### Domain Filters
 
@@ -626,8 +633,8 @@ Responsibilities:
 - MCP initialize and protocol negotiation;
 - lazy MCP initialization so authenticated Search API calls do not depend on
   MCP availability;
-- MCP tool discovery only when a simple search or uncached page fetch will
-  actually call an MCP tool;
+- MCP tool discovery only when a simple search, anonymous advanced search, or
+  uncached page fetch will actually call an MCP tool;
 - session ID propagation;
 - JSON and SSE JSON-RPC response parsing;
 - tool discovery;
