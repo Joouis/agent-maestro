@@ -1295,6 +1295,12 @@ export class CodexStandaloneWebSearch {
       if (searchPlans.some(({ advanced }) => !advanced)) {
         requiredTools.add("web_search_exa");
       }
+      if (
+        !session.authenticated &&
+        searchPlans.some(({ advanced }) => advanced)
+      ) {
+        requiredTools.add("web_search_advanced_exa");
+      }
       if (needsPageFetch) {
         requiredTools.add("web_fetch_exa");
       }
@@ -1328,33 +1334,37 @@ export class CodexStandaloneWebSearch {
         searchPlans,
         concurrency,
         async ({ advanced, allowed, query }) => {
-          if (advanced && !session.authenticated) {
-            return [];
-          }
           stats.providerCalls++;
           if (advanced) {
-            const result = await session.searchAdvanced(
-              {
-                query: query.q,
-                numResults: budget.results,
-                highlightsMaxCharacters: 1_200,
-                ...(allowed?.length && { includeDomains: allowed }),
-                ...(blockedDomains?.length && {
-                  excludeDomains: blockedDomains,
-                }),
-                ...(query.recency !== undefined && {
-                  startPublishedDate: subtractUtcDays(
-                    this.now(),
-                    query.recency,
-                  ),
-                }),
-                ...(country && {
-                  userLocation: normalizeWebSearchCountryCode(country),
-                }),
-                ...(cacheOnly && { maxAgeHours: -1 }),
-              },
-              signal,
-            );
+            const args = {
+              query: query.q,
+              numResults: budget.results,
+              highlightsMaxCharacters: 1_200,
+              ...(allowed?.length && { includeDomains: allowed }),
+              ...(blockedDomains?.length && {
+                excludeDomains: blockedDomains,
+              }),
+              ...(query.recency !== undefined && {
+                startPublishedDate: subtractUtcDays(this.now(), query.recency),
+              }),
+              ...(country && {
+                userLocation: normalizeWebSearchCountryCode(country),
+              }),
+              ...(cacheOnly && { maxAgeHours: -1 }),
+            };
+            const result = session.authenticated
+              ? await session.searchAdvanced(args, signal)
+              : await session.callTool(
+                  "web_search_advanced_exa",
+                  {
+                    ...args,
+                    // MCP cannot disable text extraction; request its minimum
+                    // and retain only highlights in the normalized results.
+                    textMaxCharacters: 1,
+                    enableHighlights: true,
+                  },
+                  signal,
+                );
             return recordResults(
               await this.filterResolvedPublicResults(
                 normalizeHighlightOnlyResults(
@@ -1385,10 +1395,7 @@ export class CodexStandaloneWebSearch {
         (error) => controller.abort(error),
       );
       const merged = roundRobinResults(perQuery, budget.results);
-      const unavailableAdvancedSearch = searchPlans.some(
-        ({ advanced }) => advanced && !session.authenticated,
-      );
-      if (!unavailableAdvancedSearch && merged.length === 0) {
+      if (merged.length === 0) {
         addOutput("No usable web search results were returned.");
       }
       let searchOutput = UNTRUSTED_SEARCH_HEADER;
@@ -1457,11 +1464,6 @@ export class CodexStandaloneWebSearch {
           visibleSearchReferences,
           resultDtos,
           OUTPUT_PRIORITY_EVIDENCE,
-        );
-      }
-      if (unavailableAdvancedSearch) {
-        addOutput(
-          "Web search unavailable: advanced_search_requires_api_key. Configure an Exa API key to apply filters or cache-only search without requesting full-page text.",
         );
       }
     }

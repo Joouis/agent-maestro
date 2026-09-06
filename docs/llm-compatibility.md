@@ -107,7 +107,7 @@ Configure an optional Exa key with **Agent Maestro: Set Exa API Key**. Queries a
 
 Hosted search accepts domain filters and country-level location, but rejects unsupported options. Anthropic allow/block lists are mutually exclusive; Responses permits both. Hosted searches use at most five results and 8,000 characters of evidence; the response output budget is shared across model rounds. Mixed client/server tool calls prioritize client tools, and immediate client-tool-result continuations cannot initiate hosted search. Search synthesis exposes no further tools.
 
-Responses `external_web_access: false` is rejected. Standalone cache-only search is a different contract: it uses authenticated Exa Search API retrieval, and `open`/`find` can use only pages already cached in the current extension process. Domain, recency, country, or cache-only standalone searches require an Exa key; unconstrained searches can use anonymous MCP access.
+Responses `external_web_access: false` is rejected. Standalone cache-only search is a different contract: it sends `maxAgeHours: -1` through anonymous Exa MCP or the authenticated Exa Search API, and `open`/`find` can use only pages already cached in the current extension process. Domain, recency, country, and cache-only standalone searches work without an Exa key, subject to anonymous rate limits. Advanced searches return bounded highlights to the client; anonymous MCP requests limit the unused extracted text to one character per result.
 
 ### Codex Standalone Configuration
 
