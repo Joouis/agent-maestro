@@ -135,7 +135,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.ok(result);
       assert.strictEqual(
         result!.role,
-        vscode.LanguageModelChatMessageRole.User,
+        vscode.LanguageModelChatMessageRole.System,
       );
     });
 
@@ -145,7 +145,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.ok(result);
       assert.strictEqual(
         result!.role,
-        vscode.LanguageModelChatMessageRole.User,
+        vscode.LanguageModelChatMessageRole.System,
       );
     });
 
@@ -486,7 +486,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(result.length, 2);
       assert.strictEqual(
         result[0].role,
-        vscode.LanguageModelChatMessageRole.User,
+        vscode.LanguageModelChatMessageRole.System,
       );
     });
 

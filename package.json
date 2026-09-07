@@ -5,6 +5,9 @@
   "version": "2.14.0",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
+  "enabledApiProposals": [
+    "languageModelSystem"
+  ],
   "repository": "https://github.com/Joouis/agent-maestro",
   "engines": {
     "vscode": "^1.120.0",

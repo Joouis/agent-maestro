@@ -29,7 +29,7 @@ export type ToolHistoryPart =
     };
 
 export interface ToolHistoryMessage {
-  role: "assistant" | "user";
+  role: "assistant" | "user" | "system";
   parts: ToolHistoryPart[];
   /** Instructions and independent request sections cannot share a call turn. */
   boundary?: boolean;
@@ -454,11 +454,16 @@ export function toolHistoryToVSCode(
                   ToolHistoryContent | vscode.LanguageModelToolCallPart
                 >,
               )
-            : vscode.LanguageModelChatMessage.User(
-                parts as Array<
-                  ToolHistoryContent | vscode.LanguageModelToolResultPart
-                >,
-              ),
+            : message.role === "system"
+              ? new vscode.LanguageModelChatMessage(
+                  vscode.LanguageModelChatMessageRole.System,
+                  parts as ToolHistoryContent[],
+                )
+              : vscode.LanguageModelChatMessage.User(
+                  parts as Array<
+                    ToolHistoryContent | vscode.LanguageModelToolResultPart
+                  >,
+                ),
         );
       }
     }

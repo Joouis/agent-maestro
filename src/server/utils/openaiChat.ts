@@ -70,12 +70,12 @@ export const convertOpenAIMessagesToVSCode = (
         // LanguageModelTextPart, mirroring the user-role branch below.
         if (typeof msg.content === "string") {
           return new vscode.LanguageModelChatMessage(
-            vscode.LanguageModelChatMessageRole.User,
+            vscode.LanguageModelChatMessageRole.System,
             msg.content,
           );
         }
         return new vscode.LanguageModelChatMessage(
-          vscode.LanguageModelChatMessageRole.User,
+          vscode.LanguageModelChatMessageRole.System,
           msg.content.map((m) => new vscode.LanguageModelTextPart(m.text)),
         );
 
@@ -157,7 +157,9 @@ export const convertOpenAIMessagesToVSCode = (
       role:
         message.role === vscode.LanguageModelChatMessageRole.Assistant
           ? "assistant"
-          : "user",
+          : message.role === vscode.LanguageModelChatMessageRole.System
+            ? "system"
+            : "user",
       boundary: raw.role === "system" || raw.role === "developer",
       parts: message.content.map((part): ToolHistoryPart => {
         if (

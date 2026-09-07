@@ -12,7 +12,7 @@ Send the complete conversation history on each request. The Responses endpoint d
 
 | Input                                                                             | AM behavior                                                                                                                              |
 | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Text messages and `instructions`                                                  | Converted to VS Code messages; system/developer instructions use the VS Code user-role representation.                                   |
+| Text messages and `instructions`                                                  | Converted to VS Code messages; string instructions and system/developer messages use the proposed VS Code System role.                   |
 | Function tools/calls/results                                                      | Supported with complete-history normalization.                                                                                           |
 | Custom tools/calls/results                                                        | Raw string input is preserved and returned as `custom_tool_call`.                                                                        |
 | Namespace tools                                                                   | Nested function/custom tools are registered under encoded names and decoded to namespace + bare name on output.                          |

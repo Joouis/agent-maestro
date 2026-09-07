@@ -12,7 +12,7 @@ const encode = (value: unknown): Uint8Array =>
 
 suite("OpenAI Conversion Utils Test Suite", () => {
   suite("convertOpenAIMessagesToVSCode", () => {
-    test("should convert system message to User role", () => {
+    test("should convert system message to System role", () => {
       const messages = [
         { role: "system" as const, content: "You are a helpful assistant" },
       ];
@@ -22,11 +22,11 @@ suite("OpenAI Conversion Utils Test Suite", () => {
       assert.strictEqual(result.length, 1);
       assert.strictEqual(
         result[0].role,
-        vscode.LanguageModelChatMessageRole.User,
+        vscode.LanguageModelChatMessageRole.System,
       );
     });
 
-    test("should convert developer message to User role", () => {
+    test("should convert developer message to System role", () => {
       const messages = [
         { role: "developer" as const, content: "System instructions here" },
       ];
@@ -36,7 +36,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
       assert.strictEqual(result.length, 1);
       assert.strictEqual(
         result[0].role,
-        vscode.LanguageModelChatMessageRole.User,
+        vscode.LanguageModelChatMessageRole.System,
       );
     });
 
@@ -60,7 +60,7 @@ suite("OpenAI Conversion Utils Test Suite", () => {
       assert.strictEqual(result.length, 1);
       assert.strictEqual(
         result[0].role,
-        vscode.LanguageModelChatMessageRole.User,
+        vscode.LanguageModelChatMessageRole.System,
       );
       const parts = result[0].content as vscode.LanguageModelTextPart[];
       assert.strictEqual(parts.length, 3);

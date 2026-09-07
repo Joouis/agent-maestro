@@ -75,6 +75,14 @@ Complete inbound snapshots are normalized before dispatch. Calls without results
 
 Normalization does not execute tools, summarize result bodies, rewrite client sessions, or change newly generated response IDs. The [normalization design](2026-09-04-tool-history-normalization-design.md) specifies turn boundaries and conflict rules. Gemini Live/NON_BLOCKING incremental results are outside this finite-history contract.
 
+## Instruction Roles
+
+Agent Maestro is a protocol adapter: it should forward caller-supplied instructions without changing them into ordinary user content. This experimental mapping does not inject progress prompts, synthesize commentary, or modify provider safety/formatting templates. It mitigates missing GPT-6 progress updates in the tested setup; it does not guarantee that every model will emit progress text.
+
+OpenAI Responses string `instructions` and Chat/Responses `system` and `developer` messages are preserved as VS Code System messages, including through history normalization. VS Code exposes only one instruction role, so it cannot preserve a distinction between OpenAI system and developer priorities. User input and assistant/tool history retain their original roles. Array-shaped Responses `instructions` remain a legacy history input: item roles are respected rather than promoting arbitrary user or tool content.
+
+This uses the proposed `languageModelSystem` API, not a stable API in the minimum supported VS Code version. Enable it for a development build with `code --enable-proposed-api=joouis.agent-maestro`. The development launch and test configuration include this flag. Do not publish this build as an ordinary Marketplace extension until a supported distribution path or stable API is available. There is no silent fallback to user messages: that changes instruction priority and can suppress Codex progress updates. Copilot's own safety policies remain in effect.
+
 ## Usage, Context, and Reasoning
 
 | Topic              | AM behavior                                                                                                                                            |

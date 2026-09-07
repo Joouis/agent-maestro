@@ -621,7 +621,10 @@ const convertEasyInputMessage = (
         return vscode.LanguageModelChatMessage.Assistant(msg.content);
       case "system":
       case "developer":
-        return vscode.LanguageModelChatMessage.User(msg.content);
+        return new vscode.LanguageModelChatMessage(
+          vscode.LanguageModelChatMessageRole.System,
+          msg.content,
+        );
       default:
         return vscode.LanguageModelChatMessage.User(msg.content);
     }
@@ -635,7 +638,10 @@ const convertEasyInputMessage = (
       return vscode.LanguageModelChatMessage.Assistant(parts);
     case "system":
     case "developer":
-      return vscode.LanguageModelChatMessage.User(parts);
+      return new vscode.LanguageModelChatMessage(
+        vscode.LanguageModelChatMessageRole.System,
+        parts,
+      );
     default:
       return vscode.LanguageModelChatMessage.User(parts);
   }
@@ -653,7 +659,10 @@ const convertInputMessage = (
       return vscode.LanguageModelChatMessage.User(parts);
     case "system":
     case "developer":
-      return vscode.LanguageModelChatMessage.User(parts);
+      return new vscode.LanguageModelChatMessage(
+        vscode.LanguageModelChatMessageRole.System,
+        parts,
+      );
     default:
       return vscode.LanguageModelChatMessage.User(parts);
   }
@@ -796,7 +805,9 @@ const responseItemToHistory = (
     role:
       converted.role === vscode.LanguageModelChatMessageRole.Assistant
         ? "assistant"
-        : "user",
+        : converted.role === vscode.LanguageModelChatMessageRole.System
+          ? "system"
+          : "user",
     boundary: raw.role === "system" || raw.role === "developer",
     parts: converted.content.map((part): ToolHistoryPart => {
       if (part instanceof vscode.LanguageModelToolCallPart) {
@@ -841,10 +852,13 @@ export const convertResponsesInputToVSCode = (
   instruction?: string | ResponseInput | null,
 ): vscode.LanguageModelChatMessage[] => {
   const history: ToolHistoryMessage[] = [];
-  const appendInput = (value: string | ResponseInput | undefined | null) => {
+  const appendInput = (
+    value: string | ResponseInput | undefined | null,
+    textRole: "user" | "system" = "user",
+  ) => {
     if (typeof value === "string") {
       history.push({
-        role: "user",
+        role: textRole,
         parts: [
           { kind: "content", parts: [new vscode.LanguageModelTextPart(value)] },
         ],
@@ -859,7 +873,7 @@ export const convertResponsesInputToVSCode = (
     }
   };
   if (instruction) {
-    appendInput(instruction);
+    appendInput(instruction, "system");
     history.push({ role: "user", parts: [], boundary: true });
   }
   appendInput(input);
