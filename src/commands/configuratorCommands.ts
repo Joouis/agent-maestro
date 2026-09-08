@@ -18,6 +18,12 @@ import {
 } from "../utils/claudeDesktop";
 import { logger } from "../utils/logger";
 import { updateEnvFile } from "../utils/updateEnvFile";
+import {
+  configureCodexAuthentication,
+  getClientApiKey,
+  quoteGeminiApiKey,
+  writePrivateClientFile,
+} from "./clientAuthentication";
 import { createCommandHandler } from "./commandHandler";
 
 const LOOPBACK_HOST = "127.0.0.1";
@@ -41,7 +47,7 @@ export function registerConfiguratorCommands(
             {
               label: "Project Settings",
               description:
-                "Team-shared project settings in source control (.claude/settings.json)",
+                "Private project settings (.claude/settings.local.json)",
             },
           ],
           {
@@ -79,7 +85,7 @@ export function registerConfiguratorCommands(
             vscode.Uri.file(workspaceRoot),
             ".claude",
           );
-          settingsFile = vscode.Uri.joinPath(claudeDir, "settings.json");
+          settingsFile = vscode.Uri.joinPath(claudeDir, "settings.local.json");
         }
 
         // Check if settings file exists and confirm override
@@ -130,16 +136,22 @@ export function registerConfiguratorCommands(
           return;
         }
 
-        // Preserve existing auth token if it has a meaningful value
-        const currentToken = existingSettings?.env?.ANTHROPIC_AUTH_TOKEN;
-        const authToken = currentToken
-          ? currentToken
-          : "Powered by Agent Maestro";
+        const apiKey = await getClientApiKey(
+          proxy.authentication,
+          "Claude Code",
+          settingsFile.fsPath,
+        );
+        if (apiKey === undefined) {
+          return;
+        }
 
         const proxyPort = proxy.getStatus().port;
         const existingEnv = { ...existingSettings?.env };
         // Remove the deprecated Claude Code small-fast override when rewriting settings.
         delete existingEnv.ANTHROPIC_SMALL_FAST_MODEL;
+        // Blank inherited bearer credentials so x-api-key is the selected gateway credential.
+        existingEnv.ANTHROPIC_AUTH_TOKEN = "";
+        delete existingSettings.apiKeyHelper;
         const autoCompactWindow = selectedDefaultModel.maxInputTokens
           ? String(selectedDefaultModel.maxInputTokens)
           : undefined;
@@ -150,7 +162,7 @@ export function registerConfiguratorCommands(
           env: {
             ...existingEnv,
             ANTHROPIC_BASE_URL: `http://${LOOPBACK_HOST}:${proxyPort}/api/anthropic`,
-            ANTHROPIC_AUTH_TOKEN: authToken,
+            ANTHROPIC_API_KEY: apiKey,
             ANTHROPIC_MODEL: withClaudeCode1mSuffix(
               selectedDefaultModel.modelId,
               selectedDefaultModel.maxInputTokens,
@@ -175,9 +187,9 @@ export function registerConfiguratorCommands(
         }
 
         // Write settings file
-        await vscode.workspace.fs.writeFile(
-          settingsFile,
-          Buffer.from(JSON.stringify(newSettings, null, 2)),
+        writePrivateClientFile(
+          settingsFile.fsPath,
+          JSON.stringify(newSettings, null, 2),
         );
 
         // Ensure Claude config exists with primaryApiKey for seamless compatibility
@@ -252,14 +264,22 @@ export function registerConfiguratorCommands(
           }
         }
 
+        const apiKey = await getClientApiKey(
+          proxy.authentication,
+          "Claude Desktop",
+          settingsPath,
+        );
+        if (apiKey === undefined) {
+          return;
+        }
         const proxyPort = proxy.getStatus().port;
         const updatedSettings = {
           ...existingSettings,
-          ...createClaudeDesktopGatewayConfig(proxyPort),
+          ...createClaudeDesktopGatewayConfig(proxyPort, apiKey),
         };
 
         fs.mkdirSync(configDirectory, { recursive: true });
-        fs.writeFileSync(
+        writePrivateClientFile(
           settingsPath,
           JSON.stringify(updatedSettings, null, 2),
         );
@@ -300,7 +320,7 @@ export function registerConfiguratorCommands(
           } catch (error) {
             parseError = true;
             logger.warn(
-              `Failed to parse existing Codex config: ${error instanceof Error ? error.message : String(error)}`,
+              "Failed to parse existing Codex config. Details omitted because it may contain credentials.",
             );
           }
 
@@ -352,6 +372,14 @@ export function registerConfiguratorCommands(
 
         const proxyPort = proxy.getStatus().port;
 
+        const apiKey = await getClientApiKey(
+          proxy.authentication,
+          "Codex",
+          codexConfigPath,
+        );
+        if (apiKey === undefined) {
+          return;
+        }
         const modelContextWindow = selectedModel.maxInputTokens ?? undefined;
 
         // Build updated config by merging with existing config
@@ -371,7 +399,10 @@ export function registerConfiguratorCommands(
           model_providers: {
             ...existingConfig.model_providers,
             "agent-maestro": {
-              ...existingConfig.model_providers?.["agent-maestro"],
+              ...configureCodexAuthentication(
+                existingConfig.model_providers?.["agent-maestro"] ?? {},
+                apiKey,
+              ),
               name: "Agent Maestro",
               base_url: `http://${LOOPBACK_HOST}:${proxyPort}/api/openai/v1`,
               wire_api: "responses",
@@ -390,7 +421,7 @@ export function registerConfiguratorCommands(
         }
 
         // Write config file using smol-toml stringify
-        fs.writeFileSync(codexConfigPath, stringify(updatedConfig));
+        writePrivateClientFile(codexConfigPath, stringify(updatedConfig));
 
         vscode.window.showInformationMessage(
           `Codex configuration ${fileExists ? "updated" : "created"} successfully! The configuration points to Agent Maestro proxy server for OpenAI-compatible API.`,
@@ -435,7 +466,7 @@ export function registerConfiguratorCommands(
             {
               label: "Project Settings",
               description:
-                "Team-shared project settings in source control (.gemini/.env)",
+                "Project credentials (.gemini/.env; keep out of source control)",
             },
             {
               label: "User Settings",
@@ -518,17 +549,26 @@ export function registerConfiguratorCommands(
 
         const proxyPort = proxy.getStatus().port;
 
-        // Update .env file with the three required variables
-        await updateEnvFile(
+        const apiKey = await getClientApiKey(
+          proxy.authentication,
+          "Gemini CLI",
           envFilePath,
-          {
-            GOOGLE_GEMINI_BASE_URL: `http://${LOOPBACK_HOST}:${proxyPort}/api/gemini`,
-            GEMINI_API_KEY: '"Powered by Agent Maestro"',
-            GEMINI_MODEL: selectedModel.modelId,
-            GEMINI_TELEMETRY_ENABLED: "false",
-          },
-          ["GEMINI_API_KEY"], // Preserve existing GEMINI_API_KEY if it exists
         );
+        if (apiKey === undefined) {
+          return;
+        }
+        const quotedKey = quoteGeminiApiKey(apiKey);
+        if (!fs.existsSync(envFilePath)) {
+          writePrivateClientFile(envFilePath, "");
+        } else if (process.platform !== "win32") {
+          fs.chmodSync(envFilePath, 0o600);
+        }
+        await updateEnvFile(envFilePath, {
+          GOOGLE_GEMINI_BASE_URL: `http://${LOOPBACK_HOST}:${proxyPort}/api/gemini`,
+          GEMINI_API_KEY: quotedKey,
+          GEMINI_MODEL: selectedModel.modelId,
+          GEMINI_TELEMETRY_ENABLED: "false",
+        });
 
         // Create or update settings.json to skip auth selection on first launch
         const geminiDir = path.dirname(envFilePath);
@@ -570,7 +610,7 @@ export function registerConfiguratorCommands(
         );
 
         vscode.window.showInformationMessage(
-          `Gemini CLI settings ${fileExists ? "updated" : "created"} successfully! The settings point to Agent Maestro proxy server for Gemini-compatible API.`,
+          `Gemini CLI settings ${fileExists ? "updated" : "created"} successfully! Restart Gemini CLI; an exported GEMINI_API_KEY or a higher-priority .env can override this file. Keep the credentials file out of source control.`,
         );
 
         logger.info(

@@ -11,13 +11,15 @@ pnpm install
 pnpm dev
 ```
 
+For a trusted local-only demo, explicitly select **Disable HTTP authentication** in AM, or use the authenticated gateway described below.
+
 Open `http://localhost:3000/roo` and connect to the AM HTTP origin, normally `http://127.0.0.1:23333`. The main UI is [src/app/roo/page.tsx](src/app/roo/page.tsx); API and streaming helpers are under [hooks](src/app/roo/hooks/).
 
 ## Remote Access
 
-**Configure authenticated access before publishing a tunnel or opening a firewall port.** AM's LLM API key covers only Anthropic/OpenAI/Gemini routes. It does not protect Roo task actions, filesystem operations, or workspace management under `/api/v1`. Keep the MCP port private unless separately protected.
+**Configure authenticated access before publishing a tunnel or opening a firewall port.** AM's API key protects both control operations under `/api/v1` and LLM routes. First use/upgrades require explicit authentication setup. Keep the MCP port private unless separately protected.
 
-Use an access-controlled tunnel, VPN, or reverse proxy and verify that an unauthenticated request to the AM origin is rejected. Apply the policy to the API origin, not just the frontend deployment. The demo sends no API authentication header and does not opt into cross-origin cookie credentials; an access solution must account for browser authentication, preflight requests, and streaming POSTs. A frontend login alone is insufficient.
+Use an access-controlled tunnel, VPN, or reverse proxy and verify that an unauthenticated request to `/api/v1/info` is rejected. Apply the policy to the API origin, not just the frontend deployment. The demo sends no AM API key and does not opt into cross-origin cookie credentials. When the key is enabled, use an authenticated gateway that adds `Authorization: Bearer <key>` to `/api/v1` requests. Account for browser authentication, preflight requests, and streaming POSTs. A frontend login alone is insufficient.
 
 To host the UI on Vercel, import this directory as the project root and use the checked-in [vercel.json](vercel.json). Enter the protected AM origin in the connection screen after verifying access from the intended browser/device.
 

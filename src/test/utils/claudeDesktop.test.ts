@@ -72,11 +72,15 @@ suite("Claude Desktop Configuration Test Suite", () => {
   });
 
   test("creates the expected gateway settings", () => {
-    assert.deepStrictEqual(createClaudeDesktopGatewayConfig(45678), {
-      inferenceGatewayBaseUrl: "http://127.0.0.1:45678/api/anthropic",
-      inferenceGatewayApiKey: "Powered by Agent Maestro",
-      inferenceProvider: "gateway",
-      inferenceCredentialKind: "static",
-    });
+    assert.deepStrictEqual(
+      createClaudeDesktopGatewayConfig(45678, "verified-key"),
+      {
+        inferenceGatewayBaseUrl: "http://127.0.0.1:45678/api/anthropic",
+        inferenceGatewayApiKey: "verified-key",
+        inferenceGatewayAuthScheme: "x-api-key",
+        inferenceProvider: "gateway",
+        inferenceCredentialKind: "static",
+      },
+    );
   });
 });
