@@ -166,7 +166,7 @@
       },
       {
         "command": "agent-maestro.setLlmApiKey",
-        "title": "Set LLM API Key",
+        "title": "Set API Key",
         "category": "Agent Maestro"
       },
       {

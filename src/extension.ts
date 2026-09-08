@@ -54,14 +54,25 @@ export async function activate(context: vscode.ExtensionContext) {
   const proxyPort = envProxyPort ? envProxyPort : config.proxyServerPort;
   proxy = new ProxyServer(controller, proxyPort, context);
 
-  // Restore LLM API key from secrets storage
-  await proxy.restoreLlmApiKey();
-
   // Register all commands
   registerAllCommands(context, controller, proxy, mcpServer);
 
   await vscode.commands.executeCommand("agent-maestro.startProxyServer");
   await vscode.commands.executeCommand("agent-maestro.startMcpServer");
+
+  if ((await proxy.authentication.getStatus()) === "unavailable") {
+    void vscode.window
+      .showWarningMessage(
+        "Agent Maestro HTTP APIs require setup or recovery. Set an API key, import the previous key, or explicitly disable authentication.",
+        "Set API Key",
+      )
+      .then((action) => {
+        if (action === "Set API Key") {
+          return vscode.commands.executeCommand("agent-maestro.setLlmApiKey");
+        }
+        return undefined;
+      });
+  }
 
   return controller;
 }
