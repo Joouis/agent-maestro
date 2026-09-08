@@ -43,12 +43,12 @@ export async function getClientApiKey(
     prompt: `Enter the current API key. It will be verified and saved as a credential in ${destination}. Keep this file private.`,
     password: true,
     ignoreFocusOut: true,
-    validateInput: validate,
+    validateInput: validateApiKey,
   });
   if (key === undefined) {
     return undefined;
   }
-  // Recheck on submission; input validation can complete before a policy change.
+  // Verify only the submitted value so typing cannot consume the shared KDF queue.
   const invalid = await validate(key);
   if (invalid) {
     throw new Error(invalid);

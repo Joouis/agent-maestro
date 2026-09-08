@@ -370,21 +370,97 @@ name = "Other Provider"
     assert.throws(() => quoteGeminiApiKey("a'`\"b"), /losslessly/);
   });
 
-  test("credential validation is repeated after the input is submitted", async () => {
-    let calls = 0;
+  test("live input checks format only and verifies the submitted key once", async () => {
+    const verified: string[] = [];
+    (vscode.window as any).showInputBox = async (
+      options: vscode.InputBoxOptions,
+    ) => {
+      assert.ok(options.validateInput);
+      const prefixes = Array.from({ length: key.length }, (_, index) =>
+        key.slice(0, index + 1),
+      );
+      const validation = await Promise.all(
+        prefixes.map((value) => options.validateInput!(value)),
+      );
+      assert.ok(validation.every((message) => message === undefined));
+      assert.ok(await options.validateInput!(""));
+      assert.ok(await options.validateInput!(" leading-space"));
+      assert.ok(await options.validateInput!("x".repeat(1025)));
+      assert.deepStrictEqual(verified, []);
+      return key;
+    };
     const result = await getClientApiKey(
       {
         getStatus: async () => "enabled",
-        configure: async () => {},
-        authorize: async () => {
-          calls++;
-          return "denied";
+        configure: async () => {
+          throw new Error("Client setup must not change the server key");
+        },
+        authorize: async (value) => {
+          verified.push(value!);
+          return "allowed";
         },
       },
       "Test",
       "test.json",
-    ).catch((error) => error);
-    assert.match(result.message, /does not match/);
-    assert.strictEqual(calls, 1);
+    );
+    assert.strictEqual(result, key);
+    assert.deepStrictEqual(verified, [key]);
+  });
+
+  test("canceling after typing neither verifies a key nor writes client configuration", async () => {
+    let calls = 0;
+    authentication.authorize = async () => {
+      calls++;
+      return "allowed";
+    };
+    (vscode.window as any).showInputBox = async (
+      options: vscode.InputBoxOptions,
+    ) => {
+      assert.ok(options.validateInput);
+      await Promise.all(
+        Array.from({ length: key.length }, (_, index) =>
+          options.validateInput!(key.slice(0, index + 1)),
+        ),
+      );
+      return undefined;
+    };
+    for (const command of commands) {
+      await run(command);
+    }
+    assert.strictEqual(calls, 0);
+    assert.deepStrictEqual(errors, []);
+    assert.strictEqual(fs.existsSync(join(directory, ".claude")), false);
+    assert.strictEqual(fs.existsSync(join(directory, ".codex")), false);
+    assert.strictEqual(fs.existsSync(join(directory, ".gemini")), false);
+    assert.strictEqual(fs.existsSync(getClaudeDesktopConfigDirectory()), false);
+  });
+
+  test("wrong submitted keys are verified once and never written by any configurator", async () => {
+    const verified: string[] = [];
+    const authorize = authentication.authorize.bind(authentication);
+    authentication.authorize = async (value) => {
+      verified.push(value!);
+      return authorize(value);
+    };
+    (vscode.window as any).showInputBox = async (
+      options: vscode.InputBoxOptions,
+    ) => {
+      assert.ok(options.validateInput);
+      assert.strictEqual(await options.validateInput!("wrong-key"), undefined);
+      return "wrong-key";
+    };
+    for (const command of commands) {
+      await run(command);
+    }
+    assert.deepStrictEqual(
+      verified,
+      commands.map(() => "wrong-key"),
+    );
+    assert.strictEqual(errors.length, commands.length);
+    assert.ok(errors.every((error) => error.includes("does not match")));
+    assert.strictEqual(fs.existsSync(join(directory, ".claude")), false);
+    assert.strictEqual(fs.existsSync(join(directory, ".codex")), false);
+    assert.strictEqual(fs.existsSync(join(directory, ".gemini")), false);
+    assert.strictEqual(fs.existsSync(getClaudeDesktopConfigDirectory()), false);
   });
 });
