@@ -104,6 +104,14 @@ function historyAsContext(
   });
 }
 
+// Preserve the provider contract, including its unknown future stream parts.
+type ResponseStreamPart =
+  Awaited<
+    ReturnType<vscode.LanguageModelChat["sendRequest"]>
+  >["stream"] extends AsyncIterable<infer Part>
+    ? Part
+    : never;
+
 /** Only ordinary Responses requests explicitly opted into recovery use this path. */
 export async function* streamResponsesWithHistoryRecovery(
   client: vscode.LanguageModelChat,
@@ -111,7 +119,7 @@ export async function* streamResponsesWithHistoryRecovery(
   requestOptions: vscode.LanguageModelChatRequestOptions,
   lifecycle: LanguageModelRequestLifecycle,
   enabled: boolean,
-): AsyncGenerator<unknown> {
+): AsyncGenerator<ResponseStreamPart> {
   if (!enabled || client.vendor !== "copilot") {
     const response = await lifecycle.waitFor(
       client.sendRequest(messages, requestOptions, lifecycle.token),

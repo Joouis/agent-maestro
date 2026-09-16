@@ -22,6 +22,17 @@ const mismatch = () =>
   new Error(
     "Request Failed: 400 No tool call found for function call output with call_id call_example.",
   );
+const jsonMismatch = () =>
+  new Error(
+    "Request Failed: 400 " +
+      JSON.stringify({
+        error: {
+          message:
+            "No tool call found for function call output with call_id call_example.",
+          code: "invalid_request_body",
+        },
+      }),
+  );
 const success = () => ({
   stream: (async function* () {
     yield new vscode.LanguageModelTextPart("ok");
@@ -189,6 +200,31 @@ suite("Opt-in Responses history recovery", () => {
     assert.strictEqual((await run(client)).length, 1);
     assert.strictEqual(count, 2);
   });
+  for (const streamedError of [false, true]) {
+    test(
+      "nested JSON error envelope retries: streamedError=" + streamedError,
+      async () => {
+        let count = 0;
+        const client = model(async () => {
+          if (++count !== 1) {
+            return success();
+          }
+          if (!streamedError) {
+            throw jsonMismatch();
+          }
+          return {
+            stream: (async function* () {
+              throw jsonMismatch();
+            })(),
+            text: (async function* () {})(),
+          };
+        });
+        const parts = await run(client);
+        assert.deepStrictEqual(parts, [new vscode.LanguageModelTextPart("ok")]);
+        assert.strictEqual(count, 2);
+      },
+    );
+  }
   test("no retry after text, tool call, metadata, or unknown output", async () => {
     for (const part of [
       new vscode.LanguageModelTextPart("partial"),
@@ -327,7 +363,7 @@ suite("Opt-in Responses history recovery", () => {
       const app = new OpenAPIHono();
       const client = model(async () => {
         if (++count % 2 === 1) {
-          throw mismatch();
+          throw jsonMismatch();
         }
         return success();
       });
