@@ -123,6 +123,18 @@ const rejectUnknownFields = (
   }
 };
 
+const validateExternalWebAccess = (tool: RawRecord): boolean => {
+  const value = tool.external_web_access;
+  if (value !== undefined && typeof value !== "boolean") {
+    invalidRequest(
+      "external_web_access must be a boolean",
+      "tools.external_web_access",
+      "unsupported_parameter",
+    );
+  }
+  return value !== false;
+};
+
 const validateDomains = (
   value: unknown,
   field: string,
@@ -254,17 +266,6 @@ const validateWebSearchTool = (
     }
   }
 
-  if (
-    Object.hasOwn(tool, "external_web_access") &&
-    tool.external_web_access !== undefined &&
-    tool.external_web_access !== true
-  ) {
-    invalidRequest(
-      "external_web_access supports only true",
-      "tools.external_web_access",
-      "unsupported_parameter",
-    );
-  }
   if (
     Object.hasOwn(tool, "return_token_budget") &&
     tool.return_token_budget !== undefined &&
@@ -417,6 +418,8 @@ export function prepareOpenAIResponsesTools({
   serverWebSearchAvailable: boolean;
 }): PreparedOpenAIResponsesTools {
   const clientTools: unknown[] = [];
+  let externalWebAccess = true;
+  let hasWebSearchDeclaration = false;
   let webSearch:
     | Omit<OpenAIResponsesWebSearchConfiguration, "includeSources">
     | undefined;
@@ -429,14 +432,18 @@ export function prepareOpenAIResponsesTools({
     const tool = value as RawRecord;
     const type = typeof tool.type === "string" ? tool.type : "";
     if (SUPPORTED_WEB_SEARCH_TYPES.has(type)) {
-      if (webSearch) {
+      if (hasWebSearchDeclaration) {
         invalidRequest(
           "Only one OpenAI web search declaration is supported",
           "tools",
           "invalid_tool_definition",
         );
       }
-      webSearch = validateWebSearchTool(tool);
+      hasWebSearchDeclaration = true;
+      externalWebAccess = validateExternalWebAccess(tool);
+      if (externalWebAccess) {
+        webSearch = validateWebSearchTool(tool);
+      }
       continue;
     }
     if (type.startsWith("web_search")) {
@@ -447,6 +454,17 @@ export function prepareOpenAIResponsesTools({
       );
     }
     clientTools.push(value);
+  }
+
+  if (!externalWebAccess) {
+    if (isSearchChoice(toolChoice)) {
+      invalidRequest(
+        "The requested web search tool is unavailable",
+        "tool_choice",
+        "tool_unavailable",
+      );
+    }
+    return prepareLegacyTools(clientTools as Tool[], toolChoice);
   }
 
   if (!webSearch) {

@@ -345,7 +345,6 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
             user_location: { type: "approximate", city: "Miami" },
           }),
         ],
-        [webSearchTool({ external_web_access: false })],
         [webSearchTool({ external_web_access: null })],
         [webSearchTool({ return_token_budget: "unlimited" })],
         [webSearchTool({ search_content_types: ["image"] })],
@@ -431,6 +430,45 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
       const prepared = prepareSearch({ parallelToolCalls: false });
       assert.strictEqual(prepared.usesWebSearchLoop, true);
       assert.strictEqual(prepared.tools?.length, 1);
+    });
+
+    test("disables hosted search while preserving client tools", () => {
+      const prepared = prepareSearch({
+        tools: [
+          webSearchTool({
+            external_web_access: false,
+            search_content_types: ["text", "image"],
+          }),
+          clientTool(),
+        ],
+      });
+
+      assert.strictEqual(prepared.usesWebSearchLoop, false);
+      assert.deepStrictEqual(
+        prepared.tools?.map(({ name }) => name),
+        ["get_weather"],
+      );
+      assert.strictEqual(
+        prepared.toolMode,
+        vscode.LanguageModelChatToolMode.Auto,
+      );
+    });
+
+    test("rejects forced search when external web access is disabled", () => {
+      assert.throws(
+        () =>
+          prepareSearch({
+            tools: [
+              webSearchTool({ external_web_access: false }),
+              clientTool(),
+            ],
+            toolChoice: { type: "web_search" },
+          }),
+        (error: unknown) =>
+          error instanceof OpenAIResponsesRequestValidationError &&
+          error.param === "tool_choice" &&
+          error.code === "tool_unavailable",
+      );
     });
 
     test("rejects non-boolean parallel_tool_calls values", () => {
@@ -1121,14 +1159,26 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
   });
 
   suite("route and streaming protocol", () => {
-    test("rejects invalid search options before resolving the model", async () => {
-      let modelResolutions = 0;
+    test("disables hosted search without affecting client tools", async () => {
+      const requests: Array<{
+        messages: readonly vscode.LanguageModelChatMessage[];
+        options: vscode.LanguageModelChatRequestOptions;
+      }> = [];
+      let providerCalls = 0;
       const app = createTestApp({
-        rounds: [],
-        provider: createProvider(async () => []),
-        onResolve: () => {
-          modelResolutions++;
-        },
+        requests,
+        rounds: [
+          {
+            chunks: [
+              new vscode.LanguageModelTextPart("Search disabled."),
+              usagePart(),
+            ],
+          },
+        ],
+        provider: createProvider(async () => {
+          providerCalls++;
+          return [];
+        }),
       });
       const response = await app.request("/v1/responses", {
         method: "POST",
@@ -1136,16 +1186,24 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
         body: JSON.stringify({
           model: "gpt-5.6-test",
           input: "Search",
-          tools: [webSearchTool({ external_web_access: false })],
+          tools: [
+            webSearchTool({
+              external_web_access: false,
+              search_content_types: ["text", "image"],
+            }),
+            clientTool(),
+          ],
         }),
       });
+      const body = (await response.json()) as any;
 
-      assert.strictEqual(response.status, 400);
-      assert.strictEqual(modelResolutions, 0);
-      assert.strictEqual(
-        ((await response.json()) as any).error.type,
-        "invalid_request_error",
+      assert.strictEqual(response.status, 200);
+      assert.strictEqual(providerCalls, 0);
+      assert.deepStrictEqual(
+        requests[0].options.tools?.map(({ name }) => name),
+        ["get_weather"],
       );
+      assert.strictEqual(body.output[0].content[0].text, "Search disabled.");
     });
 
     test("rejects invalid parallel_tool_calls before resolving the model", async () => {
