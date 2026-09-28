@@ -34,8 +34,8 @@ importers:
         specifier: ^4.8.9
         version: 4.8.9
       image-size:
-        specifier: ^2.0.2
-        version: 2.0.2
+        specifier: ^2.0.4
+        version: 2.0.4
       openai:
         specifier: ^6.46.0
         version: 6.46.0(ws@8.18.3)(zod@4.0.10)
@@ -3181,12 +3181,12 @@ packages:
       }
     engines: { node: ">= 4" }
 
-  image-size@2.0.2:
+  image-size@2.0.4:
     resolution:
       {
-        integrity: sha512-IRqXKlaXwgSMAMtpNzZa1ZAe8m+Sa1770Dhk8VkSsP9LS+iHD62Zd8FQKs8fbPiagBE7BzoFX23cxFnwshpV6w==,
+        integrity: sha512-QRUkFFsRV/6fuESxb9Vkq+a0LkSrgKXuc2NEqfikiXxxN/G3tjWt5EVUlMaImRBZRZK/jRBEbYvpPYZL8t08Zw==,
       }
-    engines: { node: ">=16.x" }
+    engines: { node: ">=18" }
     hasBin: true
 
   immediate@3.0.6:
@@ -8197,7 +8197,7 @@ snapshots:
 
   ignore@7.0.5: {}
 
-  image-size@2.0.2: {}
+  image-size@2.0.4: {}
 
   immediate@3.0.6: {}
 
