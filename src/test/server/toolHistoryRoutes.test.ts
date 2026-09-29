@@ -14,6 +14,124 @@ import { registerOpenaiChatRoutes } from "../../server/routes/openai/openaiChatR
 import { registerOpenaiResponsesRoutes } from "../../server/routes/openai/openaiResponsesRoutes";
 
 suite("Normalized history through official SDKs", () => {
+  for (const stream of [false, true] as const) {
+    test(`Responses custom tools retain their input contract (stream=${stream})`, async () => {
+      const source = 'const message = "quoted";\ntext(message);';
+      let requestCount = 0;
+      const model = {
+        id: "gpt-test",
+        name: "Test",
+        family: "gpt",
+        vendor: "copilot",
+        version: "test",
+        maxInputTokens: 200000,
+        capabilities: { supportsToolCalling: true, supportsImageToText: false },
+        countTokens: async () => 1,
+        sendRequest: async (messages, options) => {
+          requestCount++;
+          const tool = options?.tools?.[0];
+          assert.strictEqual(tool?.name, "functions__exec");
+          assert.strictEqual(
+            tool.description,
+            "Discover tools through ALL_TOOLS.\n\nRun JavaScript",
+          );
+          const schema = tool.inputSchema as {
+            required: string[];
+            properties: { input: { type: string } };
+          };
+          assert.deepStrictEqual(schema.required, ["input"]);
+          assert.strictEqual(schema.properties.input.type, "string");
+          const replay = messages
+            .flatMap((message) => message.content)
+            .find((part) => part instanceof vscode.LanguageModelToolCallPart);
+          assert.ok(replay instanceof vscode.LanguageModelToolCallPart);
+          assert.strictEqual(replay.name, tool.name);
+          assert.deepStrictEqual(replay.input, { input: "text(ALL_TOOLS);" });
+          return {
+            stream: (async function* () {
+              yield new vscode.LanguageModelToolCallPart(
+                "new-exec-call",
+                tool.name,
+                { input: source },
+              );
+            })(),
+            text: (async function* () {})(),
+          };
+        },
+      } as vscode.LanguageModelChat;
+      const app = new OpenAPIHono();
+      registerOpenaiResponsesRoutes(app, {
+        requestTimeoutMs: 2000,
+        resolveChatModelClient: async () => ({ client: model }),
+      });
+      const client = new OpenAI({
+        apiKey: "test",
+        baseURL: "http://localhost/v1",
+        maxRetries: 0,
+        fetch: async (input, init) => app.request(new Request(input, init)),
+      });
+      const response = await client.responses.create({
+        model: model.id,
+        stream,
+        tools: [
+          {
+            type: "namespace",
+            name: "functions",
+            description: "Discover tools through ALL_TOOLS.",
+            tools: [
+              {
+                type: "custom",
+                name: "exec",
+                description: "Run JavaScript",
+                format: { type: "text" },
+              },
+            ],
+          },
+        ],
+        input: [
+          { role: "user", content: "Inspect available tools." },
+          {
+            type: "custom_tool_call",
+            call_id: "previous-exec-call",
+            name: "exec",
+            namespace: "functions",
+            input: "text(ALL_TOOLS);",
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "previous-exec-call",
+            output: "[]",
+          },
+        ],
+      });
+      let output: OpenAI.Responses.ResponseOutputItem[] = [];
+      if ("output" in response) {
+        output = response.output;
+      } else {
+        const deltas: string[] = [];
+        for await (const event of response) {
+          if (event.type === "response.custom_tool_call_input.delta") {
+            deltas.push(event.delta);
+          }
+          if (event.type === "response.completed") {
+            output = event.response.output;
+          }
+        }
+        assert.strictEqual(deltas.join(""), source);
+      }
+      assert.strictEqual(requestCount, 1);
+      assert.strictEqual(output.length, 1);
+      const call = output[0];
+      if (call.type !== "custom_tool_call") {
+        assert.fail("Expected a custom tool call");
+      }
+      assert.strictEqual(call.name, "exec");
+      assert.strictEqual(call.namespace, "functions");
+      assert.strictEqual(call.call_id, "new-exec-call");
+      assert.strictEqual(call.input, source);
+    });
+  }
+
   test("all four routes preserve newly generated IDs while normalizing input", async () => {
     const captured: vscode.LanguageModelChatMessage[][] = [];
     const model = {

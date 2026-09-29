@@ -986,7 +986,18 @@ export const convertResponsesToolsToVSCode = (
       name: encodedName,
       description: description ?? "",
       inputSchema: info.isCustom
-        ? undefined
+        ? {
+            type: "object",
+            properties: {
+              input: {
+                type: "string",
+                description:
+                  "The complete raw input for the custom tool, as a string.",
+              },
+            },
+            required: ["input"],
+            additionalProperties: false,
+          }
         : ((inputSchema as object | null | undefined) ?? undefined),
     });
     toolMap.set(encodedName, mappedInfo);
@@ -1011,17 +1022,20 @@ export const convertResponsesToolsToVSCode = (
       const ns = tool as NamespaceTool;
       for (const nested of ns.tools ?? []) {
         const encoded = encodeNamespacedName(ns.name, nested.name);
+        const description = [ns.description, nested.description]
+          .filter(Boolean)
+          .join("\n\n");
         if (nested.type === "custom") {
           push(
             encoded,
             { namespace: ns.name, name: nested.name, isCustom: true },
-            nested.description,
+            description,
           );
         } else {
           push(
             encoded,
             { namespace: ns.name, name: nested.name, isCustom: false },
-            nested.description,
+            description,
             nested.parameters,
           );
         }
