@@ -873,9 +873,9 @@ export const convertResponsesInputToVSCode = (
  * (name/description/inputSchema). Codex injects richer tool shapes via
  * `additional_tools`, so we flatten them here:
  *  - `function`: passed through directly.
- *  - `custom`: exposed as a schema-less tool (freeform/grammar input the model
- *    supplies as a raw string). The grammar/format hint cannot be represented
- *    in VSCode LM and is dropped, but the tool stays callable by name.
+ *  - `custom`: exposed with a required `{ input: string }` object schema,
+ *    matching replayed history. The raw string is unwrapped on output.
+ *    Format grammars are not enforced by this VSCode LM schema.
  *  - `namespace`: expanded into its nested function/custom tools. VSCode LM's
  *    tool-call shape has no namespace slot, so each nested tool is registered
  *    under an *encoded* name `<namespace>__<name>` to keep it unique across
