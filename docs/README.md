@@ -13,6 +13,7 @@ Start with the [project README](../README.md) for installation and client setup.
 | [Context-window handling](claude-code-context-window.md) | Copilot prompt budgets and Claude Code compaction                                      |
 | [SSE heartbeats](2026-08-11-sse-heartbeats.md)           | Authoritative heartbeat formats and serializer constraints                             |
 | [Image MIME workaround](vscode-image-mime-defect.md)     | Top-level resize workaround and Anthropic tool-result exception                        |
+| [GPT prompt cache](copilot-gpt-prompt-cache.md)          | Copilot explicit cache mode causing GPT cache misses, and the setting that fixes it    |
 
 The running `/openapi.json` supplies route schemas. It complements these guides; permissive LLM body schemas do not imply support for every upstream option.
 

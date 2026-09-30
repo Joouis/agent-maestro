@@ -7,6 +7,7 @@ import { ProxyServer } from "./server/ProxyServer";
 import { chatModelsCache } from "./utils/chatModels";
 import { performClaudeCodeSelfCheck } from "./utils/claude";
 import { readConfiguration } from "./utils/config";
+import { checkCopilotPromptCacheSetting } from "./utils/copilotPromptCache";
 import { logger } from "./utils/logger";
 
 let controller: ExtensionController;
@@ -28,6 +29,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Perform self-check to add additional settings for seamless Claude Code native extension compatibility
   performClaudeCodeSelfCheck();
+
+  // Not awaited: the notification must not block activation.
+  void checkCopilotPromptCacheSetting(context);
 
   // Initialize the extension controller
   controller = new ExtensionController();

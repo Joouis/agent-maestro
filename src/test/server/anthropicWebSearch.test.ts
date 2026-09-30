@@ -538,6 +538,50 @@ suite("Anthropic Server Web Search Test Suite", () => {
       assert.strictEqual(result.stopReason, "end_turn");
     });
 
+    test("preserves tool_use when text follows a client tool call", async () => {
+      const prepared = prepareServerSearch([serverTool(), clientTool()]);
+      const requests: Array<{
+        messages: readonly vscode.LanguageModelChatMessage[];
+        options: vscode.LanguageModelChatRequestOptions;
+      }> = [];
+      const model = createRoundModel(
+        [
+          {
+            chunks: [
+              new vscode.LanguageModelToolCallPart("call-1", "get_weather", {
+                city: "Paris",
+              }),
+              new vscode.LanguageModelTextPart("Checking the weather."),
+              usagePart(),
+            ],
+          },
+        ],
+        requests,
+      );
+      const lifecycle = new LanguageModelRequestLifecycle(
+        new AbortController().signal,
+        1_000,
+      );
+
+      const result = await runAnthropicWebSearchLoop({
+        client: model,
+        messages: [vscode.LanguageModelChatMessage.User("Weather?")],
+        baseRequestOptions: {},
+        preparedTools: prepared,
+        provider: { search: async () => [] },
+        lifecycle,
+        maxTokens: 100,
+      });
+      lifecycle.dispose();
+
+      assert.strictEqual(requests.length, 1);
+      assert.deepStrictEqual(
+        result.content.map((block) => block.type),
+        ["tool_use", "text"],
+      );
+      assert.strictEqual(result.stopReason, "tool_use");
+    });
+
     test("executes one search and a tool-free synthesis with aggregated usage", async () => {
       const prepared = prepareServerSearch();
       const requests: Array<{

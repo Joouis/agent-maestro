@@ -170,13 +170,14 @@ Use these Command Palette actions to manage the extension:
 
 ## Troubleshooting and Diagnostics
 
-| Symptom                                       | First check                                                                                            |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Connection refused                            | Keep the VS Code window open; check **Get API Server Status** and the client's configured port.        |
-| No models in the setup picker                 | Check Copilot sign-in, model access, and model-discovery messages in AM Output.                        |
-| HTTP 401                                      | Match the server key and provider-specific header; see the Claude Code authentication note above.      |
-| Client answers but AM has no matching request | Start a new client session and inspect its active provider/base URL and project/environment overrides. |
-| MCP unavailable with Kilo                     | Select Kilo as the default Roo extension and reload; check the generated MCP URL for custom ports.     |
+| Symptom                                       | First check                                                                                                                                                                      |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Connection refused                            | Keep the VS Code window open; check **Get API Server Status** and the client's configured port.                                                                                  |
+| No models in the setup picker                 | Check Copilot sign-in, model access, and model-discovery messages in AM Output.                                                                                                  |
+| HTTP 401                                      | Match the server key and provider-specific header; see the Claude Code authentication note above.                                                                                |
+| Client answers but AM has no matching request | Start a new client session and inspect its active provider/base URL and project/environment overrides.                                                                           |
+| MCP unavailable with Kilo                     | Select Kilo as the default Roo extension and reload; check the generated MCP URL for custom ports.                                                                               |
+| GPT requests always show `cache_read: 0`      | On VS Code 1.139, upgrade to 1.140 or set `github.copilot.chat.responsesApi.promptCacheBreakpoint.enabled` to `false`; see [GPT prompt cache](docs/copilot-gpt-prompt-cache.md). |
 
 Start with the **Agent Maestro** Output channel. Supported LLM request failures also append diagnostics to a timestamped `*-debug.log` in the first workspace folder when file logging succeeds; the error response includes the path when available.
 

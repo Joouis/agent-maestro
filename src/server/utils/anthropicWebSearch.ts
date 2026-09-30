@@ -572,7 +572,10 @@ const collectModelRound = async ({
         : 1,
     } satisfies AnthropicTokenUsage);
 
-  if (stopReason !== "max_tokens" && blocks.at(-1)?.type === "tool_use") {
+  if (
+    stopReason !== "max_tokens" &&
+    blocks.some((block) => block.type === "tool_use")
+  ) {
     stopReason = "tool_use";
   }
   return { blocks, parts, stopReason, usage };
