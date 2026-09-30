@@ -866,6 +866,18 @@ export const convertResponsesInputToVSCode = (
   return toolHistoryToVSCode(history, "Responses");
 };
 
+export const CUSTOM_TOOL_INPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    input: {
+      type: "string",
+      description: "The complete raw input for the custom tool, as a string.",
+    },
+  },
+  required: ["input"],
+  additionalProperties: false,
+} as const;
+
 /**
  * Convert Responses API tools to VSCode LM tools.
  *
@@ -986,18 +998,7 @@ export const convertResponsesToolsToVSCode = (
       name: encodedName,
       description: description ?? "",
       inputSchema: info.isCustom
-        ? {
-            type: "object",
-            properties: {
-              input: {
-                type: "string",
-                description:
-                  "The complete raw input for the custom tool, as a string.",
-              },
-            },
-            required: ["input"],
-            additionalProperties: false,
-          }
+        ? CUSTOM_TOOL_INPUT_SCHEMA
         : ((inputSchema as object | null | undefined) ?? undefined),
     });
     toolMap.set(encodedName, mappedInfo);

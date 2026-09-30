@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 
 import { extractOpenAIResponsesUsage } from "../../server/utils/openai";
 import {
+  CUSTOM_TOOL_INPUT_SCHEMA,
   buildResponseOutput,
   convertInputContentToVSCodePart,
   convertResponsesInputToVSCode,
@@ -944,18 +945,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(result.length, 1);
       assert.strictEqual(result[0].name, "exec");
       assert.strictEqual(result[0].description, "Run JavaScript");
-      assert.deepStrictEqual(result[0].inputSchema, {
-        type: "object",
-        properties: {
-          input: {
-            type: "string",
-            description:
-              "The complete raw input for the custom tool, as a string.",
-          },
-        },
-        required: ["input"],
-        additionalProperties: false,
-      });
+      assert.deepStrictEqual(result[0].inputSchema, CUSTOM_TOOL_INPUT_SCHEMA);
     });
 
     test("should encode namespace tools as <ns>__<name> with a toolMap", () => {
