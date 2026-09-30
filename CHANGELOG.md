@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.14.1 - 2026.09.29
+
+- Forward OpenAI `prompt_cache_key` to Copilot so GPT models can reuse the prompt cache and report non-zero `cached_tokens`. Cache hits require Copilot's `chat.responsesApi.promptCacheKey.enabled` experiment to be active.
+- Fix Codex custom tools, such as code execution, receiving JSON instead of raw input by advertising their input schema to VS Code language models, and preserve namespace instructions when flattening tool declarations.
+- Keep Claude Code's tool loop running when a model emits text after a tool call, including when Anthropic web search is enabled.
+- Update `image-size` to 2.0.4 to fix denial-of-service vulnerabilities where crafted JXL, HEIF, or ICNS images could hang image processing in the proxy (GHSA-5p2g-fcmc-qvqq, GHSA-w3rx-r6r6-pgpr).
+
 ## v2.14.0 - 2026.09.06
 
 - Add experimental Codex standalone search at `/api/openai/v1/alpha/search`, with search queries, page `open`/`find`, and domain, date, country, and cache-only controls. Rerun **Agent Maestro: Configure Codex Settings** to add the required configuration; existing `web_search = "disabled"` settings are preserved.
