@@ -32,6 +32,13 @@ Send the complete conversation history on each request. The Responses endpoint d
 
 The capability table concerns this endpoint. Chat Completions has its own representation and supports function/custom call histories and `reasoning_effort`; it is not limited to the old function-only format.
 
+Custom tools are presented to VS Code LM with a JSON object schema requiring a
+string `input` containing the complete raw tool input. This matches replayed
+custom-call history; responses unwrap the string into `custom_tool_call.input`.
+When namespaces are flattened, namespace instructions are prepended to each
+child tool's description so they remain available to the model. Custom-tool
+`format` grammars are not enforced by this JSON wrapper.
+
 ## Tool Choice
 
 | Choice                                      | Behavior                                                             |

@@ -931,7 +931,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(result[0].description, "");
     });
 
-    test("should convert custom tool to a schema-less tool", () => {
+    test("should declare the raw input wrapper for custom tools", () => {
       const tools = [
         {
           type: "custom" as const,
@@ -944,7 +944,18 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(result.length, 1);
       assert.strictEqual(result[0].name, "exec");
       assert.strictEqual(result[0].description, "Run JavaScript");
-      assert.strictEqual(result[0].inputSchema, undefined);
+      assert.deepStrictEqual(result[0].inputSchema, {
+        type: "object",
+        properties: {
+          input: {
+            type: "string",
+            description:
+              "The complete raw input for the custom tool, as a string.",
+          },
+        },
+        required: ["input"],
+        additionalProperties: false,
+      });
     });
 
     test("should encode namespace tools as <ns>__<name> with a toolMap", () => {
@@ -968,6 +979,16 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         tools as any,
       );
       assert.strictEqual(result.length, 2);
+      assert.strictEqual(result[0].description, "Sub-agent tools\n\nSpawn");
+      assert.strictEqual(result[1].description, "Sub-agent tools\n\nRaw");
+      assert.deepStrictEqual(result[0].inputSchema, {
+        type: "object",
+        properties: {},
+      });
+      assert.deepStrictEqual(
+        (result[1].inputSchema as { required: string[] }).required,
+        ["input"],
+      );
       assert.deepStrictEqual(
         result.map((t) => t.name),
         ["collaboration__spawn_agent", "collaboration__raw_helper"],
@@ -983,6 +1004,84 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         name: "raw_helper",
         isCustom: true,
       });
+    });
+
+    test("should preserve whichever namespace descriptions are available", () => {
+      for (const [namespaceDescription, toolDescription, expected] of [
+        ["Namespace instructions", undefined, "Namespace instructions"],
+        [undefined, "Tool instructions", "Tool instructions"],
+        [undefined, undefined, ""],
+        ["", "Tool instructions", "Tool instructions"],
+      ]) {
+        const { tools } = convertResponsesToolsToVSCode([
+          {
+            type: "namespace",
+            name: "utilities",
+            description: namespaceDescription,
+            tools: [
+              {
+                type: "custom",
+                name: "exec",
+                description: toolDescription,
+              },
+            ],
+          },
+        ] as any);
+        assert.strictEqual(tools[0].description, expected);
+      }
+    });
+
+    test("should round-trip namespaced custom code using the declared wrapper", () => {
+      const declarations = [
+        {
+          type: "namespace",
+          name: "functions",
+          description:
+            "Discover tools through ALL_TOOLS and call tools by name.",
+          tools: [
+            {
+              type: "custom",
+              name: "exec",
+              description: "Run JavaScript",
+              format: { type: "text" },
+            },
+          ],
+        },
+      ];
+      const snapshot = JSON.stringify(declarations);
+      const { tools, toolMap } = convertResponsesToolsToVSCode(
+        declarations as any,
+      );
+      const source = 'const message = "quoted";\ntext(message);';
+      const wrappedInput = JSON.parse(JSON.stringify({ input: source }));
+      const schema = tools[0].inputSchema as {
+        properties: { input: { type: string } };
+        required: string[];
+      };
+      assert.strictEqual(schema.properties.input.type, "string");
+      assert.deepStrictEqual(schema.required, ["input"]);
+      assert.strictEqual(
+        tools[0].description,
+        "Discover tools through ALL_TOOLS and call tools by name.\n\nRun JavaScript",
+      );
+      const [output] = buildResponseOutput(
+        "",
+        [{ callId: "call_exec", name: tools[0].name, input: wrappedInput }],
+        toolMap,
+      );
+      assert.strictEqual(output.type, "custom_tool_call");
+      if (output.type !== "custom_tool_call") {
+        assert.fail("Expected a custom tool call");
+      }
+      assert.strictEqual(output.input, source);
+      assert.strictEqual(output.name, "exec");
+      assert.strictEqual(output.namespace, "functions");
+      const replay = convertResponsesItemToVSCode(output);
+      const part = replay?.content[0];
+      assert.ok(part instanceof vscode.LanguageModelToolCallPart);
+      assert.strictEqual(part.name, tools[0].name);
+      assert.deepStrictEqual(part.input, wrappedInput);
+      assert.strictEqual(JSON.stringify(declarations), snapshot);
     });
 
     test("should expose Codex collaboration messages as plaintext", () => {
