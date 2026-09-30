@@ -538,7 +538,7 @@ export function registerAnthropicRoutes(
           stop_reason:
             stopReason === "max_tokens"
               ? "max_tokens"
-              : content.at(-1)?.type === "tool_use"
+              : content.some((block) => block.type === "tool_use")
                 ? "tool_use"
                 : "end_turn",
           stop_sequence: null,
@@ -738,7 +738,7 @@ export function registerAnthropicRoutes(
               stop_reason:
                 stopReason === "max_tokens"
                   ? "max_tokens"
-                  : contentBlocks.at(-1)?.type === "tool_use"
+                  : contentBlocks.some((block) => block.type === "tool_use")
                     ? "tool_use"
                     : "end_turn",
               stop_sequence: null,

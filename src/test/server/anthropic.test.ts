@@ -1,6 +1,8 @@
+import { OpenAPIHono } from "@hono/zod-openapi";
 import * as assert from "assert";
 import * as vscode from "vscode";
 
+import { registerAnthropicRoutes } from "../../server/routes/anthropicRoutes";
 import {
   convertAnthropicMessageToVSCode,
   convertAnthropicMessagesToVSCode,
@@ -1012,5 +1014,71 @@ suite("Anthropic Conversion Utils Test Suite", () => {
         output_tokens: 10,
       });
     });
+  });
+});
+
+suite("Anthropic response stop reason", () => {
+  const createGptToolThenTextApp = () => {
+    const app = new OpenAPIHono();
+    registerAnthropicRoutes(app, {
+      requestTimeoutMs: 1_000,
+      resolveChatModelClient: async () => ({
+        client: createMockModel({
+          id: "gpt-6-astra",
+          name: "GPT-6 Astra",
+          family: "gpt-6",
+          sendRequest: async () => ({
+            stream: (async function* () {
+              yield new vscode.LanguageModelToolCallPart(
+                "call-1",
+                "read_file",
+                { path: "/test" },
+              );
+              yield new vscode.LanguageModelTextPart("Reading the file now.");
+            })(),
+            text: (async function* () {})(),
+          }),
+        }),
+      }),
+    });
+    return app;
+  };
+
+  const requestBody = {
+    model: "gpt-6-astra",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Read a file" }],
+  };
+
+  test("preserves tool_use when text follows a tool call", async () => {
+    const response = await createGptToolThenTextApp().request("/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const body = (await response.json()) as Record<string, any>;
+
+    assert.strictEqual(response.status, 200);
+    assert.deepStrictEqual(
+      body.content.map((block: Record<string, unknown>) => block.type),
+      ["tool_use", "text"],
+    );
+    assert.strictEqual(body.stop_reason, "tool_use");
+  });
+
+  test("preserves tool_use in a stream when text follows a tool call", async () => {
+    const response = await createGptToolThenTextApp().request("/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...requestBody, stream: true }),
+    });
+    const events = (await response.text())
+      .split("\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => JSON.parse(line.slice(6)));
+    const messageDelta = events.find((event) => event.type === "message_delta");
+
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(messageDelta?.delta.stop_reason, "tool_use");
   });
 });
