@@ -13,6 +13,7 @@ import {
   getChatModelClient,
   getCopilotModelConfiguration,
   withCopilotConfiguration,
+  withCopilotConversationId,
 } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
@@ -200,8 +201,7 @@ export function registerOpenaiResponsesRoutes(
         include,
         background: _background,
         prompt: _prompt,
-        // Copilot manages prompt caching internally instead of using prompt_cache_key
-        prompt_cache_key: _cacheKey,
+        prompt_cache_key: promptCacheKey,
         service_tier: _serviceTier,
         user: _user,
         safety_identifier: _safetyId,
@@ -215,7 +215,10 @@ export function registerOpenaiResponsesRoutes(
 
       requestedModelId = model ?? "";
 
-      const modelOptions = otherParams as Record<string, unknown>;
+      const modelOptions = withCopilotConversationId(
+        otherParams as Record<string, unknown>,
+        promptCacheKey,
+      );
       if (max_output_tokens !== null && max_output_tokens !== undefined) {
         modelOptions.maxTokens = max_output_tokens;
       }

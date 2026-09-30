@@ -77,15 +77,15 @@ Normalization does not execute tools, summarize result bodies, rewrite client se
 
 ## Usage, Context, and Reasoning
 
-| Topic              | AM behavior                                                                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Usage              | Prefer Copilot-provided input/output/cache/reasoning counters when available; use local counting otherwise. Fallback cache counters are zero.          |
-| Counting endpoints | Anthropic `count_tokens` and Gemini `countTokens` estimate the serialized request body with `client.countTokens`; they do not resolve provider caches. |
-| Cache hints        | Anthropic `cache_control`, OpenAI `prompt_cache_key`, and Gemini `cachedContent` do not create provider cache entries through AM.                      |
-| Context window     | Copilot request configuration uses the selected model's `maxInputTokens`. The Claude Code/Codex configurators also use that metadata.                  |
-| OpenAI effort      | Chat `reasoning_effort` and Responses `reasoning.effort` enter Copilot configuration; application depends on the selected model/provider.              |
-| Anthropic effort   | `output_config.effort` is forwarded, but the last verified Copilot Anthropic path did not apply it.                                                    |
-| Gemini thinking    | AM does not map `thinkingConfig.thinkingLevel` into an effective Copilot reasoning-effort setting.                                                     |
+| Topic              | AM behavior                                                                                                                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Usage              | Prefer Copilot-provided input/output/cache/reasoning counters when available; use local counting otherwise. Fallback cache counters are zero.                                                                                                                         |
+| Counting endpoints | Anthropic `count_tokens` and Gemini `countTokens` estimate the serialized request body with `client.countTokens`; they do not resolve provider caches.                                                                                                                |
+| Cache hints        | OpenAI `prompt_cache_key` is forwarded to Copilot as the conversation ID; cache hits depend on Copilot's `chat.responsesApi.promptCacheKey.enabled` experiment. Anthropic `cache_control` and Gemini `cachedContent` do not create provider cache entries through AM. |
+| Context window     | Copilot request configuration uses the selected model's `maxInputTokens`. The Claude Code/Codex configurators also use that metadata.                                                                                                                                 |
+| OpenAI effort      | Chat `reasoning_effort` and Responses `reasoning.effort` enter Copilot configuration; application depends on the selected model/provider.                                                                                                                             |
+| Anthropic effort   | `output_config.effort` is forwarded, but the last verified Copilot Anthropic path did not apply it.                                                                                                                                                                   |
+| Gemini thinking    | AM does not map `thinkingConfig.thinkingLevel` into an effective Copilot reasoning-effort setting.                                                                                                                                                                    |
 
 Local estimates may differ from provider usage. Claude Code compaction settings and the 1M marker are documented in [context-window handling](claude-code-context-window.md). Provider behavior can change independently of AM; recheck model-specific effort handling when updating compatibility claims.
 
