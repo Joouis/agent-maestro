@@ -260,8 +260,9 @@ export function withCopilotConversationId(
   modelOptions: Record<string, unknown>,
   promptCacheKey: unknown,
 ): Record<string, unknown> {
+  // The key is an opaque client identifier, so forward it verbatim.
   if (typeof promptCacheKey === "string" && promptCacheKey.trim()) {
-    modelOptions._conversationId = promptCacheKey.trim();
+    modelOptions._conversationId = promptCacheKey;
   }
   return modelOptions;
 }

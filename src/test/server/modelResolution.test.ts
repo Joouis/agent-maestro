@@ -261,8 +261,8 @@ suite("Model Resolution Test Suite", () => {
   suite("withCopilotConversationId", () => {
     test("maps prompt_cache_key to Copilot _conversationId", () => {
       assert.deepStrictEqual(
-        withCopilotConversationId({ temperature: 1 }, " session-1 "),
-        { temperature: 1, _conversationId: "session-1" },
+        withCopilotConversationId({ temperature: 1 }, "session-1 "),
+        { temperature: 1, _conversationId: "session-1 " },
       );
     });
 

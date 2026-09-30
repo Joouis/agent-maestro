@@ -602,6 +602,71 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     );
   });
 
+  test("forwards prompt_cache_key as Copilot _conversationId", async () => {
+    const capturedOptions: vscode.LanguageModelChatRequestOptions[] = [];
+    const model = {
+      id: "gpt-5.6-test",
+      name: "GPT 5.6 Test",
+      family: "gpt-5.6",
+      version: "test",
+      vendor: "copilot",
+      maxInputTokens: 200000,
+      capabilities: { supportsImageToText: false, supportsToolCalling: true },
+      sendRequest: async (
+        _messages: readonly vscode.LanguageModelChatMessage[],
+        options?: vscode.LanguageModelChatRequestOptions,
+      ) => {
+        capturedOptions.push(options!);
+        return {
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart("ok");
+          })(),
+          text: (async function* () {
+            yield "ok";
+          })(),
+        };
+      },
+      countTokens: async () => 1,
+    } as unknown as vscode.LanguageModelChat;
+
+    const chatResponse = await createOpenaiChatTestApp(model).request(
+      "/v1/chat/completions",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-5.6-test",
+          messages: [{ role: "user", content: "Hello" }],
+          prompt_cache_key: "chat-session",
+        }),
+      },
+    );
+    const responsesResponse = await createOpenaiResponsesTestApp(model).request(
+      "/v1/responses",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-5.6-test",
+          input: "Hello",
+          prompt_cache_key: "responses-session",
+        }),
+      },
+    );
+
+    assert.strictEqual(chatResponse.status, 200);
+    assert.strictEqual(responsesResponse.status, 200);
+    assert.deepStrictEqual(
+      capturedOptions.map((options) => options.modelOptions?._conversationId),
+      ["chat-session", "responses-session"],
+    );
+    assert.ok(
+      capturedOptions.every(
+        (options) => !("prompt_cache_key" in (options.modelOptions ?? {})),
+      ),
+    );
+  });
+
   test("handles an unavailable Responses web search provider", async () => {
     let capturedOptions: vscode.LanguageModelChatRequestOptions | undefined;
     const model = {
