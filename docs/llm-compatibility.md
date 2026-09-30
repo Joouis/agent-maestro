@@ -24,14 +24,14 @@ The running [`/openapi.json`](http://127.0.0.1:23333/openapi.json) lists routes.
 
 ## Request Examples
 
-Replace each example model with an available Copilot model. `YOUR_LLM_API_KEY` means the key set with **Agent Maestro: Set LLM API Key**; omit that header if server authentication is disabled. These requests generate model output and consume model quota.
+Replace each example model with an available Copilot model. `YOUR_API_KEY` means the key set with **Agent Maestro: Set API Key**; omit that header only after explicitly disabling server authentication. New installations and upgrades return HTTP 503 until setup is completed; see [authentication setup](../README.md#access-and-authentication). These requests generate model output and consume model quota.
 
 ### Anthropic
 
 ```bash
 curl --fail-with-body http://127.0.0.1:23333/api/anthropic/v1/messages \
   -H 'Content-Type: application/json' \
-  -H 'x-api-key: YOUR_LLM_API_KEY' \
+  -H 'x-api-key: YOUR_API_KEY' \
   -d '{"model":"claude-sonnet-4.6","max_tokens":64,"messages":[{"role":"user","content":"Reply with OK."}]}'
 ```
 
@@ -40,7 +40,7 @@ curl --fail-with-body http://127.0.0.1:23333/api/anthropic/v1/messages \
 ```bash
 curl --fail-with-body http://127.0.0.1:23333/api/openai/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_LLM_API_KEY' \
+  -H 'Authorization: Bearer YOUR_API_KEY' \
   -d '{"model":"gpt-5.5","messages":[{"role":"user","content":"Reply with OK."}]}'
 ```
 
@@ -49,7 +49,7 @@ curl --fail-with-body http://127.0.0.1:23333/api/openai/v1/chat/completions \
 ```bash
 curl --fail-with-body http://127.0.0.1:23333/api/openai/v1/responses \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_LLM_API_KEY' \
+  -H 'Authorization: Bearer YOUR_API_KEY' \
   -d '{"model":"gpt-5.5","input":"Reply with OK.","max_output_tokens":64}'
 ```
 
@@ -58,7 +58,7 @@ curl --fail-with-body http://127.0.0.1:23333/api/openai/v1/responses \
 ```bash
 curl --fail-with-body http://127.0.0.1:23333/api/gemini/v1beta/models/gemini-3.5-flash:generateContent \
   -H 'Content-Type: application/json' \
-  -H 'x-goog-api-key: YOUR_LLM_API_KEY' \
+  -H 'x-goog-api-key: YOUR_API_KEY' \
   -d '{"contents":[{"role":"user","parts":[{"text":"Reply with OK."}]}]}'
 ```
 

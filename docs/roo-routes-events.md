@@ -4,7 +4,7 @@ Current AM contract, reviewed on 2026-09-05. This describes `/api/v1/roo` HTTP r
 
 ## Access and Endpoints
 
-The default origin is `http://127.0.0.1:23333`. These routes require an active Roo-compatible extension. **The optional LLM API key does not authenticate `/api/v1/roo/*`.** Use authenticated network access before exposing the server remotely; see the [demo requirements](../examples/demo-site/README.md#remote-access).
+The default origin is `http://127.0.0.1:23333`. These routes require an active Roo-compatible extension. When an API key is configured, `/api/v1/roo/*` requires `Authorization: Bearer <key>`. Complete [authentication setup](../README.md#access-and-authentication) before using these endpoints. Use authenticated network access before exposing the server remotely; see the [demo requirements](../examples/demo-site/README.md#remote-access).
 
 | Method             | Path below `/api/v1`               | Purpose                                                             |
 | ------------------ | ---------------------------------- | ------------------------------------------------------------------- |

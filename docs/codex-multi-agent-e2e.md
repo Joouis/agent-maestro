@@ -12,7 +12,7 @@ Copilot session inside VS Code Insiders and consumes model quota.
   messages (`encrypted_function_args: []`).
 - Run **Agent Maestro: Configure Codex Settings** first so the `agent-maestro`
   provider exists. Use a trusted local test instance; the examples below assume
-  its optional LLM authentication is disabled. If enabled, supply its key to
+  HTTP authentication has been explicitly disabled using **Set API Key**. If enabled, supply its key to
   both curl and Codex before testing.
 - Free local ports for an isolated Agent Maestro instance. The examples use
   `24333` and `24334` to avoid replacing a normal installation on the default

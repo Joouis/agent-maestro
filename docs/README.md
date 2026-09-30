@@ -24,6 +24,8 @@ The running `/openapi.json` supplies route schemas. It complements these guides;
 - [Contributor instructions](../AGENTS.md), [release procedure](../.claude/commands/release.md), and [issue tracker](agents/issue-tracker.md).
 - [Code-review workflow](../.github/skills/code-review/SKILL.md).
 
+- [HTTP authentication design and validation](2026-09-08-http-api-authentication-design.md): shared policy, setup, migration, and failure boundaries.
+
 ## Design Records
 
 These explain why a feature was built or deferred. Their status blocks identify the baseline and current guide; historical proposals are not instructions to restore old code.

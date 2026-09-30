@@ -1,120 +1,83 @@
 import type { Context, Next } from "hono";
 
-import { constantTimeEqual } from "../../utils/crypto";
-import { logger } from "../../utils/logger";
+import { HttpAuthentication } from "../httpAuthentication";
 
-/**
- * Creates Anthropic authentication middleware.
- * Validates the `x-api-key` header against the configured LLM API key.
- */
-export function createAnthropicAuthMiddleware(
-  getLlmApiKey: () => string | null,
+export type ApiProtocol = "control" | "anthropic" | "openai" | "gemini";
+
+export function createApiAuthMiddleware(
+  authentication: Pick<HttpAuthentication, "authorize">,
+  protocol: ApiProtocol,
 ): (c: Context, next: Next) => Promise<Response | void> {
-  return async (c: Context, next: Next) => {
-    const configuredKey = getLlmApiKey();
-
-    // If no key is configured, skip authentication
-    if (!configuredKey) {
+  return async (c, next) => {
+    const key =
+      protocol === "anthropic"
+        ? c.req.header("x-api-key")
+        : protocol === "gemini"
+          ? c.req.header("x-goog-api-key")
+          : /^Bearer ([^\s].*)$/i.exec(
+              c.req.header("Authorization") ?? "",
+            )?.[1];
+    let result;
+    try {
+      result = await authentication.authorize(key);
+    } catch {
+      result = "unavailable";
+    }
+    if (result === "allowed") {
       return next();
     }
-
-    const providedKey = c.req.header("x-api-key");
-
-    if (!providedKey || !constantTimeEqual(providedKey, configuredKey)) {
-      logger.warn(
-        `Anthropic API authentication failed: ${providedKey ? "invalid key" : "missing key"}`,
-      );
-      return c.json(
-        {
-          type: "error",
-          error: {
-            type: "authentication_error",
-            message: "Invalid API key",
+    const status = result === "denied" ? 401 : 503;
+    if (result === "busy") {
+      c.header("Retry-After", "1");
+    }
+    const message =
+      result === "busy"
+        ? "API authentication is busy. Retry after one second."
+        : status === 401
+          ? "Invalid API key"
+          : "API authentication unavailable. Run Agent Maestro: Set API Key in VS Code to configure or recover access, then retry.";
+    switch (protocol) {
+      case "anthropic":
+        return c.json(
+          {
+            type: "error",
+            error: {
+              type: status === 401 ? "authentication_error" : "api_error",
+              message,
+            },
           },
-        },
-        401,
-      );
-    }
-
-    return next();
-  };
-}
-
-/**
- * Creates OpenAI authentication middleware.
- * Validates the `Authorization: Bearer <token>` header against the configured LLM API key.
- */
-export function createOpenAIAuthMiddleware(
-  getLlmApiKey: () => string | null,
-): (c: Context, next: Next) => Promise<Response | void> {
-  return async (c: Context, next: Next) => {
-    const configuredKey = getLlmApiKey();
-
-    // If no key is configured, skip authentication
-    if (!configuredKey) {
-      return next();
-    }
-
-    const authHeader = c.req.header("Authorization");
-    let providedKey: string | undefined;
-
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      providedKey = authHeader.slice(7); // Remove "Bearer " prefix
-    }
-
-    if (!providedKey || !constantTimeEqual(providedKey, configuredKey)) {
-      logger.warn(
-        `OpenAI API authentication failed: ${providedKey ? "invalid key" : "missing key"}`,
-      );
-      return c.json(
-        {
-          error: {
-            message: "Incorrect API key provided",
-            type: "invalid_request_error",
-            code: "invalid_api_key",
+          status,
+        );
+      case "openai":
+        return c.json(
+          {
+            error: {
+              message,
+              type: status === 401 ? "invalid_request_error" : "server_error",
+              code:
+                status === 401
+                  ? "invalid_api_key"
+                  : "authentication_unavailable",
+            },
           },
-        },
-        401,
-      );
-    }
-
-    return next();
-  };
-}
-
-/**
- * Creates Gemini authentication middleware.
- * Validates the `x-goog-api-key` header against the configured LLM API key.
- */
-export function createGeminiAuthMiddleware(
-  getLlmApiKey: () => string | null,
-): (c: Context, next: Next) => Promise<Response | void> {
-  return async (c: Context, next: Next) => {
-    const configuredKey = getLlmApiKey();
-
-    // If no key is configured, skip authentication
-    if (!configuredKey) {
-      return next();
-    }
-
-    const providedKey = c.req.header("x-goog-api-key");
-
-    if (!providedKey || !constantTimeEqual(providedKey, configuredKey)) {
-      logger.warn(
-        `Gemini API authentication failed: ${providedKey ? "invalid key" : "missing key"}`,
-      );
-      return c.json(
-        {
-          error: {
-            code: 401,
-            message: "API key not valid. Please pass a valid API key.",
-            status: "UNAUTHENTICATED",
+          status,
+        );
+      case "gemini":
+        return c.json(
+          {
+            error: {
+              code: status,
+              message,
+              status: status === 401 ? "UNAUTHENTICATED" : "UNAVAILABLE",
+            },
           },
-        },
-        401,
-      );
+          status,
+        );
+      case "control":
+        if (status === 401) {
+          c.header("WWW-Authenticate", 'Bearer realm="Agent Maestro API"');
+        }
+        return c.json({ message }, status);
     }
-
-    return next();
   };
 }

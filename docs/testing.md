@@ -41,3 +41,11 @@ Unit tests do not prove UI behavior or live provider compatibility. Record the A
 - Use the [Codex collaboration runbook](codex-multi-agent-e2e.md) for Responses namespace/plaintext collaboration changes.
 - Recheck [image MIME behavior](vscode-image-mime-defect.md) when changing the VS Code engine.
 - For documentation-only edits, check links, anchors, examples, and diagrams. Build the website if its source changes; model requests and a full extension-host run are unnecessary unless behavior also changes.
+
+## HTTP authentication across windows
+
+After `pnpm build-tests`, run `node scripts/test-http-auth-windows.mjs <absolute-vscode-executable>`. It opens two isolated profiles, uses a temporary policy and dummy keys, and exercises the actual configuration command and ProxyServer admission. Quick-pick/input answers and the explicit disable confirmation are supplied by the harness; it does not verify visual command-palette layout. SecretStorage is deliberately in-memory to verify that it does not control the policy.
+
+The harness verifies setup, key rotation, explicit disable, deleted/corrupt policy, and permission recovery, then closes its test windows. It prints the location of logs and JSON results. It does not configure the normal user's authentication file or consume model quota.
+
+Client-configuration tests in `src/test/server/clientConfigurators.test.ts` invoke each real configurator with temporary user/project paths and a real verifier policy. They validate emitted credentials, rejection/cancellation, stale-key replacement, and unrelated settings preservation. `src/test/utils/portUtils.test.ts` exercises legacy detection and monitored takeover. They do not launch the four external clients or exercise enterprise-managed overrides.

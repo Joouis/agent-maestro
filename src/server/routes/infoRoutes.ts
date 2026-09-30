@@ -5,7 +5,33 @@ import { logger } from "../../utils/logger";
 import { getSystemInfo } from "../../utils/systemInfo";
 import { ErrorResponseSchema, SystemInfoSchema } from "../schemas/common";
 
-// OpenAPI route definition
+export function registerHealthRoute(app: OpenAPIHono): void {
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/health",
+      tags: ["System"],
+      summary: "Public listener health check",
+      responses: {
+        200: {
+          description:
+            "HTTP listener is running; does not imply API or model readiness",
+          content: {
+            "application/json": {
+              schema: z.object({
+                name: z.literal("Agent Maestro"),
+                status: z.literal("ok"),
+              }),
+            },
+          },
+        },
+      },
+    }),
+    (c) =>
+      c.json({ name: "Agent Maestro" as const, status: "ok" as const }, 200),
+  );
+}
+
 const systemInfoRoute = createRoute({
   method: "get",
   path: "/info",

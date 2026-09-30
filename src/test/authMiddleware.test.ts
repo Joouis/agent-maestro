@@ -1,325 +1,164 @@
+import { OpenAPIHono } from "@hono/zod-openapi";
 import * as assert from "assert";
-import type { Context, Next } from "hono";
+import { mkdtemp, rm } from "fs/promises";
+import { cors } from "hono/cors";
+import { tmpdir } from "os";
+import { join } from "path";
+import * as vscode from "vscode";
 
+import { ExtensionController } from "../core/controller";
+import { ProxyServer } from "../server/ProxyServer";
+import { FileHttpAuthentication } from "../server/httpAuthentication";
 import {
-  createAnthropicAuthMiddleware,
-  createGeminiAuthMiddleware,
-  createOpenAIAuthMiddleware,
+  ApiProtocol,
+  createApiAuthMiddleware,
 } from "../server/middleware/authMiddleware";
 
-// Mock Context for testing
-function createMockContext(
-  headers: Record<string, string> = {},
-  query: Record<string, string> = {},
-): Context {
-  const mockResponse = {
-    status: 200,
-    body: null as any,
-  };
-
-  return {
-    req: {
-      header: (name: string) => headers[name.toLowerCase()],
-      query: (name: string) => query[name],
-    },
-    json: (body: any, status: number) => {
-      mockResponse.status = status;
-      mockResponse.body = body;
-      return mockResponse as any;
-    },
-  } as any as Context;
-}
-
-// Mock Next function
-const createMockNext = (): Next => {
-  let called = false;
-  const next = (() => {
-    called = true;
-    return Promise.resolve();
-  }) as Next;
-  (next as any).wasCalled = () => called;
-  return next;
-};
-
-suite("Authentication Middleware Test Suite", () => {
-  suite("createAnthropicAuthMiddleware", () => {
-    test("should allow request when no LLM API key is configured", async () => {
-      const getLlmApiKey = () => null;
-      const middleware = createAnthropicAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext();
-      const next = createMockNext();
-
-      await middleware(ctx, next);
-
-      assert.strictEqual((next as any).wasCalled(), true);
-    });
-
-    test("should allow request with valid LLM API key", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createAnthropicAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({ "x-api-key": validKey });
-      const next = createMockNext();
-
-      await middleware(ctx, next);
-
-      assert.strictEqual((next as any).wasCalled(), true);
-    });
-
-    test("should reject request with invalid LLM API key", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createAnthropicAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({ "x-api-key": "invalid-key" });
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
-      assert.strictEqual(response.body.type, "error");
-      assert.strictEqual(response.body.error.type, "authentication_error");
-      assert.strictEqual(response.body.error.message, "Invalid API key");
-    });
-
-    test("should reject request with missing LLM API key", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createAnthropicAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext();
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
-      assert.strictEqual(response.body.type, "error");
-      assert.strictEqual(response.body.error.type, "authentication_error");
-    });
-
-    test("should reject request when LLM API key differs by case", async () => {
-      const validKey = "ValidLlmApiKey123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createAnthropicAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({ "x-api-key": "validllmapikey123" });
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
-    });
+suite("HTTP API authentication boundary", () => {
+  let directory: string;
+  let authentication: FileHttpAuthentication;
+  setup(async () => {
+    directory = await mkdtemp(join(tmpdir(), "am-route-auth-"));
+    authentication = new FileHttpAuthentication(join(directory, "auth.json"));
+  });
+  teardown(async () => {
+    await rm(directory, { recursive: true, force: true });
   });
 
-  suite("createOpenAIAuthMiddleware", () => {
-    test("should allow request when no LLM API key is configured", async () => {
-      const getLlmApiKey = () => null;
-      const middleware = createOpenAIAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext();
-      const next = createMockNext();
-
-      await middleware(ctx, next);
-
-      assert.strictEqual((next as any).wasCalled(), true);
-    });
-
-    test("should allow request with valid Bearer token", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createOpenAIAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({ authorization: `Bearer ${validKey}` });
-      const next = createMockNext();
-
-      await middleware(ctx, next);
-
-      assert.strictEqual((next as any).wasCalled(), true);
-    });
-
-    test("should reject request with invalid Bearer token", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createOpenAIAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({ authorization: "Bearer invalid-key" });
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
-      assert.strictEqual(
-        response.body.error.message,
-        "Incorrect API key provided",
-      );
-      assert.strictEqual(response.body.error.type, "invalid_request_error");
-      assert.strictEqual(response.body.error.code, "invalid_api_key");
-    });
-
-    test("should reject request with missing Authorization header", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createOpenAIAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext();
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
-    });
-
-    test("should reject request with malformed Authorization header", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createOpenAIAuthMiddleware(getLlmApiKey);
-
-      // Missing "Bearer " prefix
-      const ctx = createMockContext({ authorization: validKey });
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
-    });
-
-    test("should handle Bearer token with extra spaces", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createOpenAIAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({
-        authorization: `Bearer  ${validKey}`,
+  const protocols: Array<[ApiProtocol, string]> = [
+    ["control", "Authorization"],
+    ["openai", "Authorization"],
+    ["anthropic", "x-api-key"],
+    ["gemini", "x-goog-api-key"],
+  ];
+  for (const [protocol, header] of protocols) {
+    test(`${protocol}: setup, key validation, and disabled policy`, async () => {
+      const app = new OpenAPIHono();
+      app.use(cors());
+      app.use("/protected", createApiAuthMiddleware(authentication, protocol));
+      app.post("/protected", (c) => c.json({ ok: true }));
+      let response = await app.request("/protected", { method: "POST" });
+      assert.strictEqual(response.status, 503);
+      const error = await response.json();
+      if (protocol === "gemini") {
+        assert.strictEqual(error.error.status, "UNAVAILABLE");
+      }
+      if (protocol === "anthropic") {
+        assert.strictEqual(error.type, "error");
+      }
+      await authentication.configure("test-key");
+      for (const key of [undefined, "wrong-key", "x".repeat(1025)]) {
+        response = await app.request("/protected", {
+          method: "POST",
+          headers: key
+            ? { [header]: header === "Authorization" ? `Bearer ${key}` : key }
+            : {},
+        });
+        assert.strictEqual(response.status, 401);
+        if (protocol === "control") {
+          assert.ok(response.headers.get("www-authenticate"));
+        }
+      }
+      response = await app.request("/protected", {
+        method: "POST",
+        headers: {
+          [header]: header === "Authorization" ? "bearer test-key" : "test-key",
+        },
       });
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      // Should fail because of extra space
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
-    });
-  });
-
-  suite("createGeminiAuthMiddleware", () => {
-    test("should allow request when no LLM API key is configured", async () => {
-      const getLlmApiKey = () => null;
-      const middleware = createGeminiAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext();
-      const next = createMockNext();
-
-      await middleware(ctx, next);
-
-      assert.strictEqual((next as any).wasCalled(), true);
-    });
-
-    test("should allow request with valid x-goog-api-key header", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createGeminiAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({ "x-goog-api-key": validKey });
-      const next = createMockNext();
-
-      await middleware(ctx, next);
-
-      assert.strictEqual((next as any).wasCalled(), true);
-    });
-
-    test("should reject request with invalid LLM API key in header", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createGeminiAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext({ "x-goog-api-key": "invalid-key" });
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
-      assert.strictEqual(response.body.error.code, 401);
+      assert.strictEqual(response.status, 200);
+      const preflight = await app.request("/protected", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "https://client.example",
+          "Access-Control-Request-Method": "POST",
+          "Access-Control-Request-Headers": header,
+        },
+      });
+      assert.strictEqual(preflight.status, 204);
+      await authentication.configure(null);
       assert.strictEqual(
-        response.body.error.message,
-        "API key not valid. Please pass a valid API key.",
+        (await app.request("/protected", { method: "POST" })).status,
+        200,
       );
-      assert.strictEqual(response.body.error.status, "UNAUTHENTICATED");
     });
+  }
 
-    test("should reject request with missing LLM API key", async () => {
-      const validKey = "valid-llm-api-key-123";
-      const getLlmApiKey = () => validKey;
-      const middleware = createGeminiAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext();
-      const next = createMockNext();
-
-      const response = (await middleware(ctx, next)) as any;
-
-      assert.strictEqual((next as any).wasCalled(), false);
-      assert.strictEqual(response.status, 401);
-    });
+  test("overload returns Retry-After without directing users to reset authentication", async () => {
+    for (const [protocol] of protocols) {
+      const app = new OpenAPIHono();
+      app.use(
+        "*",
+        createApiAuthMiddleware({ authorize: async () => "busy" }, protocol),
+      );
+      app.get("/", (c) => c.json({ ok: true }));
+      const response = await app.request("/");
+      assert.strictEqual(response.status, 503);
+      assert.strictEqual(response.headers.get("Retry-After"), "1");
+      const body = await response.text();
+      assert.match(body, /busy/);
+      assert.ok(!body.includes("Set API Key"));
+    }
   });
 
-  suite("Integration Tests", () => {
-    test("should handle empty string as disabled authentication", async () => {
-      const getLlmApiKey = () => "";
-      const middleware = createAnthropicAuthMiddleware(getLlmApiKey);
-
-      const ctx = createMockContext();
-      const next = createMockNext();
-
-      await middleware(ctx, next);
-
-      // Empty string is falsy, so should allow through
-      assert.strictEqual((next as any).wasCalled(), true);
+  test("all registered API handlers require authentication while discovery stays public", async () => {
+    const proxy = new ProxyServer(
+      { getExtensionStatus: () => ({}) } as unknown as ExtensionController,
+      0,
+      {
+        secrets: { get: async () => undefined },
+      } as unknown as vscode.ExtensionContext,
+      authentication,
+    );
+    const app = (proxy as unknown as { app: OpenAPIHono }).app;
+    const routes = [
+      ...new Map(
+        app.routes
+          .filter((r) => r.path.startsWith("/api/") && r.method !== "ALL")
+          .map((r) => [r.method + r.path, r]),
+      ).values(),
+    ];
+    assert.ok(routes.length >= 30);
+    for (const r of routes) {
+      assert.strictEqual(
+        (
+          await app.request(r.path.replace(/:[^/]+/g, "test"), {
+            method: r.method,
+          })
+        ).status,
+        503,
+        r.path,
+      );
+    }
+    assert.deepStrictEqual(await (await app.request("/health")).json(), {
+      name: "Agent Maestro",
+      status: "ok",
     });
-
-    test("should handle LLM API key changes at runtime", async () => {
-      let currentKey: string | null = "initial-key";
-      const getLlmApiKey = () => currentKey;
-
-      const middleware = createAnthropicAuthMiddleware(getLlmApiKey);
-
-      // First request with matching key
-      const ctx1 = createMockContext({ "x-api-key": "initial-key" });
-      const next1 = createMockNext();
-      await middleware(ctx1, next1);
-      assert.strictEqual((next1 as any).wasCalled(), true);
-
-      // Change the key
-      currentKey = "new-key";
-
-      // Old key should now fail
-      const ctx2 = createMockContext({ "x-api-key": "initial-key" });
-      const next2 = createMockNext();
-      const response2 = (await middleware(ctx2, next2)) as any;
-      assert.strictEqual((next2 as any).wasCalled(), false);
-      assert.strictEqual(response2.status, 401);
-
-      // New key should work
-      const ctx3 = createMockContext({ "x-api-key": "new-key" });
-      const next3 = createMockNext();
-      await middleware(ctx3, next3);
-      assert.strictEqual((next3 as any).wasCalled(), true);
-
-      // Disable authentication
-      currentKey = null;
-
-      // Should allow any request now
-      const ctx4 = createMockContext({ "x-api-key": "any-key" });
-      const next4 = createMockNext();
-      await middleware(ctx4, next4);
-      assert.strictEqual((next4 as any).wasCalled(), true);
-    });
+    assert.strictEqual((await app.request("/openapi.json")).status, 200);
+    await authentication.configure("test-key");
+    for (const r of routes) {
+      assert.strictEqual(
+        (
+          await app.request(r.path.replace(/:[^/]+/g, "test"), {
+            method: r.method,
+          })
+        ).status,
+        401,
+        r.path,
+      );
+    }
+    assert.strictEqual(
+      (
+        await app.request("/api/v1/info", {
+          headers: { Authorization: "Bearer test-key" },
+        })
+      ).status,
+      200,
+    );
+    const spec = await (await app.request("/openapi.json")).json();
+    assert.deepStrictEqual(spec.paths["/api/v1/info"].get.security, [
+      { bearerAuth: [] },
+    ]);
+    assert.ok(spec.paths["/api/v1/info"].get.responses["503"]);
+    assert.strictEqual(spec.paths["/health"].get.security, undefined);
   });
 });

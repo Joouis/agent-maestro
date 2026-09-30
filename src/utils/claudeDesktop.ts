@@ -17,6 +17,7 @@ export interface ClaudeDesktopConfigMetadata {
 export interface ClaudeDesktopGatewayConfig {
   inferenceCredentialKind: "static";
   inferenceGatewayApiKey: string;
+  inferenceGatewayAuthScheme: "x-api-key";
   inferenceGatewayBaseUrl: string;
   inferenceProvider: "gateway";
 }
@@ -81,10 +82,12 @@ export function updateClaudeDesktopMetadata(
 
 export function createClaudeDesktopGatewayConfig(
   proxyPort: number,
+  apiKey: string,
 ): ClaudeDesktopGatewayConfig {
   return {
     inferenceGatewayBaseUrl: `http://127.0.0.1:${proxyPort}/api/anthropic`,
-    inferenceGatewayApiKey: "Powered by Agent Maestro",
+    inferenceGatewayApiKey: apiKey,
+    inferenceGatewayAuthScheme: "x-api-key",
     inferenceProvider: "gateway",
     inferenceCredentialKind: "static",
   };

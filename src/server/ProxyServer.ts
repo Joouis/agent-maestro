@@ -9,21 +9,20 @@ import { DEFAULT_CONFIG } from "../utils/config";
 import {
   ANOTHER_INSTANCE_RUNNING_MESSAGE,
   EXA_API_KEY_SECRET_KEY,
-  LLM_API_KEY_SECRET_KEY,
   PORT_MONITOR_INTERVAL_MS,
 } from "../utils/constant";
 import { logger } from "../utils/logger";
 import { analyzePortUsage } from "../utils/portUtils";
 import {
-  createAnthropicAuthMiddleware,
-  createGeminiAuthMiddleware,
-  createOpenAIAuthMiddleware,
-} from "./middleware/authMiddleware";
+  FileHttpAuthentication,
+  HttpAuthentication,
+} from "./httpAuthentication";
+import { createApiAuthMiddleware } from "./middleware/authMiddleware";
 import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
 import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerGeminiRoutes } from "./routes/geminiRoutes";
-import { registerInfoRoutes } from "./routes/infoRoutes";
+import { registerHealthRoute, registerInfoRoutes } from "./routes/infoRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
 import { registerOpenaiRoutes } from "./routes/openai/openaiRoutes";
 import { registerRooRoutes } from "./routes/rooRoutes";
@@ -40,7 +39,6 @@ export class ProxyServer {
   private port: number;
   private server?: ServerType;
   private portMonitorInterval?: NodeJS.Timeout;
-  private llmApiKey: string | null = null;
   private readonly codexSearch: CodexStandaloneWebSearch;
   private readonly webSearchProvider: ExaMcpWebSearchProvider;
 
@@ -48,6 +46,7 @@ export class ProxyServer {
     controller: ExtensionController,
     port = DEFAULT_CONFIG.proxyServerPort,
     context: vscode.ExtensionContext,
+    public readonly authentication: HttpAuthentication = new FileHttpAuthentication(),
   ) {
     this.controller = controller;
     this.context = context;
@@ -73,19 +72,25 @@ export class ProxyServer {
       await next();
     });
 
-    // Register authentication middleware for API routes
+    // Register authentication before route validators or handlers.
+    this.app.use(
+      "/api/v1/*",
+      createApiAuthMiddleware(this.authentication, "control"),
+    );
     this.app.use(
       "/api/anthropic/*",
-      createAnthropicAuthMiddleware(this.getLlmApiKey.bind(this)),
+      createApiAuthMiddleware(this.authentication, "anthropic"),
     );
     this.app.use(
       "/api/openai/*",
-      createOpenAIAuthMiddleware(this.getLlmApiKey.bind(this)),
+      createApiAuthMiddleware(this.authentication, "openai"),
     );
     this.app.use(
       "/api/gemini/*",
-      createGeminiAuthMiddleware(this.getLlmApiKey.bind(this)),
+      createApiAuthMiddleware(this.authentication, "gemini"),
     );
+
+    registerHealthRoute(this.app);
 
     // Register routes under the /api/v1 namespace
     this.app.route("/api/v1", this.getApiV1Routes());
@@ -100,7 +105,56 @@ export class ProxyServer {
     this.app.route("/api/gemini", this.getApiGeminiRoutes());
 
     // GET /openapi.json - OpenAPI specification
-    this.app.doc("/openapi.json", this.getOpenApiDocTpl());
+    for (const [name, header] of [
+      ["bearerAuth", undefined],
+      ["anthropicAuth", "x-api-key"],
+      ["geminiAuth", "x-goog-api-key"],
+    ] as const) {
+      this.app.openAPIRegistry.registerComponent(
+        "securitySchemes",
+        name,
+        header
+          ? { type: "apiKey", in: "header", name: header }
+          : { type: "http", scheme: "bearer" },
+      );
+    }
+    this.app.get("/openapi.json", async (c) => {
+      const document = this.app.getOpenAPIDocument(this.getOpenApiDocTpl());
+      const disabled = (await this.authentication.getStatus()) === "disabled";
+      for (const [path, item] of Object.entries(document.paths)) {
+        if (!path.startsWith("/api/") || !item) {
+          continue;
+        }
+        const scheme = path.startsWith("/api/anthropic/")
+          ? "anthropicAuth"
+          : path.startsWith("/api/gemini/")
+            ? "geminiAuth"
+            : "bearerAuth";
+        for (const method of [
+          "get",
+          "post",
+          "put",
+          "patch",
+          "delete",
+          "head",
+          "options",
+          "trace",
+        ] as const) {
+          const operation = item[method];
+          if (operation) {
+            operation.security = disabled ? [] : [{ [scheme]: [] }];
+            operation.responses["401"] ??= {
+              description: "Missing or invalid API key",
+            };
+            operation.responses["503"] ??= {
+              description:
+                "Authentication is unconfigured, unavailable, or busy; retry after configuring or recovering access",
+            };
+          }
+        }
+      }
+      return c.json(document);
+    });
   }
 
   private getApiV1Routes(): OpenAPIHono {
@@ -243,6 +297,10 @@ export class ProxyServer {
         }
 
       case "skip":
+        if (analysis.legacy) {
+          logger.warn(analysis.message);
+          void vscode.window.showWarningMessage(analysis.message);
+        }
         // Another instance of our server is already running, start monitoring
         logger.info(
           `${analysis.message}. API available at http://0.0.0.0:${this.port}/openapi.json`,
@@ -352,46 +410,6 @@ export class ProxyServer {
     if (this.portMonitorInterval) {
       clearInterval(this.portMonitorInterval);
       this.portMonitorInterval = undefined;
-    }
-  }
-
-  /**
-   * Sets the LLM API key for authentication.
-   * Pass null or empty string to disable authentication.
-   */
-  setLlmApiKey(key: string | null): void {
-    this.llmApiKey = key && key.trim() ? key.trim() : null;
-    if (this.llmApiKey) {
-      logger.info("LLM API key has been configured for authentication");
-    } else {
-      logger.info("LLM API key authentication has been disabled");
-    }
-  }
-
-  /**
-   * Gets the current LLM API key.
-   */
-  getLlmApiKey(): string | null {
-    return this.llmApiKey;
-  }
-
-  /**
-   * Restores the LLM API key from secrets storage.
-   * Should be called during extension activation.
-   * Errors are logged but do not throw to prevent extension activation failure.
-   */
-  async restoreLlmApiKey(): Promise<void> {
-    try {
-      const storedKey = await this.context.secrets.get(LLM_API_KEY_SECRET_KEY);
-      if (storedKey) {
-        this.setLlmApiKey(storedKey);
-        logger.info("LLM API key restored from secrets storage");
-      }
-    } catch (error) {
-      logger.error(
-        "Failed to restore LLM API key from secrets storage. Authentication will be disabled until manually configured:",
-        error,
-      );
     }
   }
 }

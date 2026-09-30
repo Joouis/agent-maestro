@@ -1,7 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import * as assert from "assert";
 
-import { createOpenAIAuthMiddleware } from "../../server/middleware/authMiddleware";
+import { createApiAuthMiddleware } from "../../server/middleware/authMiddleware";
 import { registerCodexSearchRoutes } from "../../server/routes/openai/codexSearchRoutes";
 import {
   CodexSearchRequestValidationError,
@@ -1839,7 +1839,12 @@ suite("Codex standalone web search", () => {
       const app = new OpenAPIHono();
       app.use(
         "*",
-        createOpenAIAuthMiddleware(() => "secret"),
+        createApiAuthMiddleware(
+          {
+            authorize: async (key) => (key === "secret" ? "allowed" : "denied"),
+          },
+          "openai",
+        ),
       );
       registerCodexSearchRoutes(app, {
         codexSearch: createStandaloneSearch({

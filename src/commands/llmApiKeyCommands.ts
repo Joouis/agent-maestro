@@ -1,76 +1,94 @@
 import * as vscode from "vscode";
 
-import { ProxyServer } from "../server/ProxyServer";
+import {
+  HttpAuthentication,
+  validateApiKey,
+} from "../server/httpAuthentication";
 import { LLM_API_KEY_SECRET_KEY } from "../utils/constant";
-import { logger } from "../utils/logger";
 import { createCommandHandler } from "./commandHandler";
 
 export function registerLlmApiKeyCommands(
-  proxy: ProxyServer,
+  authentication: HttpAuthentication,
   context: vscode.ExtensionContext,
-) {
+): void {
   const disposable = vscode.commands.registerCommand(
     "agent-maestro.setLlmApiKey",
     createCommandHandler(async () => {
-      const currentKey = proxy.getLlmApiKey();
-      const hasKey = !!currentKey;
-
-      const input = await vscode.window.showInputBox({
-        title: "Set LLM API Key",
-        prompt: hasKey
-          ? "Enter a new LLM API key, or leave empty to disable authentication"
-          : "Enter an LLM API key to enable authentication (leave empty to skip)",
-        placeHolder: "Enter your LLM API key",
-        password: true,
+      const status = await authentication.getStatus();
+      const choices: Array<
+        vscode.QuickPickItem & { action: "set" | "disable" | "import" }
+      > = [
+        {
+          label: "Set or replace API key",
+          description: "Protect control and LLM APIs for this OS user",
+          action: "set",
+        },
+        {
+          label: "Disable HTTP authentication",
+          description: "Allow requests without a key in a trusted environment",
+          action: "disable",
+        },
+      ];
+      if (status === "unavailable") {
+        choices.push({
+          label: "Import previous LLM API key",
+          description: "Read the old key from VS Code secure storage",
+          action: "import",
+        });
+      }
+      const choice = await vscode.window.showQuickPick(choices, {
+        title: "Agent Maestro: Set API Key",
+        placeHolder:
+          "Shared by all AM windows and VS Code installations for this OS user",
         ignoreFocusOut: true,
       });
-
-      // User cancelled the input
-      if (input === undefined) {
+      if (!choice) {
         return;
       }
 
-      const trimmedInput = input.trim();
-
-      if (trimmedInput === "") {
-        // User wants to clear/disable the key
-        proxy.setLlmApiKey(null);
-        try {
-          await context.secrets.delete(LLM_API_KEY_SECRET_KEY);
-        } catch (error) {
-          logger.error(
-            "Failed to delete LLM API key from secrets storage:",
-            error,
-          );
-          vscode.window.showWarningMessage(
-            "LLM API key cleared from memory, but failed to remove from secure storage. The old key may be restored on restart.",
-          );
+      let key: string | null;
+      if (choice.action === "disable") {
+        const confirmed = await vscode.window.showWarningMessage(
+          "Disable HTTP authentication?",
+          {
+            modal: true,
+            detail:
+              "This allows any client that can reach the HTTP port to use file, workspace, task, and LLM APIs without a key. The server listens on all network interfaces. This change applies to all Agent Maestro windows and VS Code installations for this OS user.",
+          },
+          "Disable authentication",
+        );
+        if (confirmed !== "Disable authentication") {
           return;
         }
-        vscode.window.showInformationMessage(
-          "LLM API key has been cleared. Authentication is now disabled.",
-        );
+        key = null;
+      } else if (choice.action === "import") {
+        key = (await context.secrets.get(LLM_API_KEY_SECRET_KEY))?.trim() ?? "";
+        if (validateApiKey(key)) {
+          throw new Error(
+            "The previous key could not be recovered. Use Set or replace API key.",
+          );
+        }
       } else {
-        // User provided a key
-        proxy.setLlmApiKey(trimmedInput);
-        try {
-          await context.secrets.store(LLM_API_KEY_SECRET_KEY, trimmedInput);
-        } catch (error) {
-          logger.error(
-            "Failed to store LLM API key in secrets storage:",
-            error,
-          );
-          vscode.window.showWarningMessage(
-            "LLM API key set for this session, but failed to save to secure storage. The key will not persist after restart.",
-          );
+        const input = await vscode.window.showInputBox({
+          title: "Set API Key",
+          prompt: "Choose a strong key and use the same key in your clients.",
+          password: true,
+          ignoreFocusOut: true,
+          validateInput: validateApiKey,
+        });
+        if (input === undefined) {
           return;
         }
-        vscode.window.showInformationMessage(
-          "LLM API key has been set. All LLM API requests now require authentication.",
-        );
+        key = input;
       }
-    }, "Failed to set LLM API key"),
-  );
 
+      await authentication.configure(key);
+      void vscode.window.showInformationMessage(
+        key === null
+          ? "HTTP authentication is disabled for this OS user. New requests in all AM windows use this policy."
+          : "API key saved. New control and LLM requests in all AM windows require this key. Configure the same key in your clients.",
+      );
+    }, "Failed to configure HTTP authentication"),
+  );
   context.subscriptions.push(disposable);
 }

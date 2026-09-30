@@ -22,6 +22,6 @@ export function registerAllCommands(
   registerConfiguratorCommands(proxy, context);
   registerModelCommands(context);
   registerStatusCommands(controller, context);
-  registerLlmApiKeyCommands(proxy, context);
+  registerLlmApiKeyCommands(proxy.authentication, context);
   registerWebSearchCommands(context);
 }
