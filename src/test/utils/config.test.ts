@@ -21,6 +21,7 @@ suite("Config Test Suite", () => {
       assert.strictEqual(DEFAULT_CONFIG.mcpServerPort, 23334);
       assert.strictEqual(DEFAULT_CONFIG.allowOutsideWorkspaceAccess, false);
       assert.strictEqual(DEFAULT_CONFIG.fallbackModelId, "");
+      assert.strictEqual(DEFAULT_CONFIG.responsesToolHistoryRecovery, false);
     });
   });
 
@@ -56,6 +57,7 @@ suite("Config Test Suite", () => {
   suite("readConfiguration", () => {
     test("should return configuration object with all required fields", () => {
       const config = readConfiguration();
+      assert.strictEqual(typeof config.responsesToolHistoryRecovery, "boolean");
 
       // Check that all fields exist
       assert.ok(

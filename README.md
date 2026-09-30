@@ -116,6 +116,27 @@ Use VS Code settings for the following options. Port and default-Roo settings ca
 
 `AGENT_MAESTRO_PROXY_PORT` and `AGENT_MAESTRO_MCP_PORT` environment variables override the corresponding settings. Restart the extension host after changing ports or extension identifiers.
 
+### Experimental Responses history recovery
+
+The application-scoped setting **agent-maestro.experimental.responsesToolHistoryRecovery**
+is **false by default**. Enable it only if you accept a change in how completed
+tool history is presented to the model. It applies to ordinary OpenAI Responses
+requests through Copilot, not hosted web-search loops or other API routes.
+
+When Copilot rejects a completely paired history with the specific missing-tool-call
+error, AM may retry once, only before any model stream part has been received.
+The retry replaces completed structured tool calls/results with labelled text/data
+context, preserving their content and leaving new tool definitions unchanged.
+This changes semantics and may affect model behavior, latency, usage, and caching.
+It does not guarantee recovery or prevent downstream context pruning. Other errors,
+partial responses, and invalid converted histories are not retried this way.
+The Output channel reports each recovery attempt without logging history content.
+
+The setting is read for each new request; disabling it restores normal forwarding.
+No recovery state or rewritten history is persisted. Prefer client compaction or a
+fresh session when possible. This is an opt-in workaround for upstream pruning,
+not a repair to Copilot's renderer or a reason to increase the advertised window.
+
 ### Roo/Kilo and MCP Setup
 
 The MCP server normally uses port `23334` and requires the configured default Roo extension to provide a task manager. If only Kilo Code is installed, set `agent-maestro.defaultRooIdentifier` to `kilocode.kilo-code` and reload VS Code before starting MCP. HTTP task requests can also select an installed variant explicitly with `extensionId`.
