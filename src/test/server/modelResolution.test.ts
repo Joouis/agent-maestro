@@ -8,6 +8,7 @@ import {
   getCopilotModelConfiguration,
   jaccardSimilarity,
   withCopilotConfiguration,
+  withCopilotConversationId,
 } from "../../utils/chatModels";
 import { withClaudeCode1mSuffix } from "../../utils/claude";
 
@@ -254,6 +255,21 @@ suite("Model Resolution Test Suite", () => {
         getCopilotModelConfiguration({ reasoningEffort: 1 }),
         {},
       );
+    });
+  });
+
+  suite("withCopilotConversationId", () => {
+    test("maps prompt_cache_key to Copilot _conversationId", () => {
+      assert.deepStrictEqual(
+        withCopilotConversationId({ temperature: 1 }, " session-1 "),
+        { temperature: 1, _conversationId: "session-1" },
+      );
+    });
+
+    test("ignores missing, empty, or non-string cache keys", () => {
+      assert.deepStrictEqual(withCopilotConversationId({}, undefined), {});
+      assert.deepStrictEqual(withCopilotConversationId({}, "  "), {});
+      assert.deepStrictEqual(withCopilotConversationId({}, 42), {});
     });
   });
 });

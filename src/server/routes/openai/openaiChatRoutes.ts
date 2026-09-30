@@ -8,6 +8,7 @@ import {
   getChatModelClient,
   getCopilotModelConfiguration,
   withCopilotConfiguration,
+  withCopilotConversationId,
 } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
@@ -139,12 +140,14 @@ export function registerOpenaiChatRoutes(
         tools,
         tool_choice,
         reasoning_effort: reasoningEffort,
-        // Copilot manages prompt caching internally instead of using prompt_cache_key
-        prompt_cache_key: _cacheKey,
+        prompt_cache_key: promptCacheKey,
         ...otherParams
       } = requestBody;
 
-      const modelOptions = otherParams as Record<string, unknown>;
+      const modelOptions = withCopilotConversationId(
+        otherParams as Record<string, unknown>,
+        promptCacheKey,
+      );
       const copilotConfiguration = getCopilotModelConfiguration({
         reasoningEffort,
       });

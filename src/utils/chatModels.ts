@@ -252,6 +252,21 @@ export function getCopilotModelConfiguration({
 }
 
 /**
+ * Copilot derives the upstream `prompt_cache_key` from
+ * `modelOptions._conversationId`; without it, requests from the same client
+ * session are not routed to a shared prompt cache.
+ */
+export function withCopilotConversationId(
+  modelOptions: Record<string, unknown>,
+  promptCacheKey: unknown,
+): Record<string, unknown> {
+  if (typeof promptCacheKey === "string" && promptCacheKey.trim()) {
+    modelOptions._conversationId = promptCacheKey.trim();
+  }
+  return modelOptions;
+}
+
+/**
  * VS Code stores provider-specific model configuration separately from public
  * `modelOptions`. Copilot reads this bag for settings like context size and
  * reasoning effort.
