@@ -14,6 +14,7 @@ For automation, Agent Maestro also exposes Roo Code tasks through REST and MCP: 
 
 - **Choose your client and model.** Connect through Anthropic Messages, OpenAI Chat Completions/Responses, or Gemini-compatible endpoints, with setup commands for four clients and a picker of available Copilot models.
 - **Work with tools and images.** Supported tool histories and image inputs are converted to VS Code messages. Ordinary client tools still execute in the client; AM does not run them on its behalf.
+- **Replay Responses reasoning on compatible hosts.** Agent Maestro detects the host's optional thinking runtime and preserves encrypted state across tool continuations without enabling proposed APIs. See [reasoning compatibility](docs/openai-responses-api-design.md#reasoning-state).
 - **Search for current information.** Exa-backed search supports declared Anthropic/Responses web-search tools and experimental Codex standalone search, with source links and protocol-specific limits.
 - **Configure longer conversations.** Claude Code and Codex setup uses the selected model's advertised context window. Streaming heartbeats keep supported clients connected while a response is pending.
 - **Automate Roo tasks.** Use HTTP/SSE for task progress and interaction, or the MCP task tool for up to 20 concurrent tasks.
@@ -29,6 +30,8 @@ This README and the [documentation index](docs/README.md) describe this checkout
 - Install Roo Code or a compatible variant such as Kilo Code only if you need task orchestration. Cline is optional and currently supports task creation only.
 
 For source development, use Node.js 22 or newer and the pnpm version specified in [package.json](package.json).
+
+For Responses reasoning replay, VS Code **1.141.2 or newer is recommended**; the verified combination is VS Code 1.141.2 / Copilot 0.69.0. Availability depends on the host runtime and provider, so Agent Maestro checks the capability at runtime.
 
 ### 1. Install and Start the Proxy
 

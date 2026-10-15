@@ -6,6 +6,11 @@ import * as vscode from "vscode";
 import { registerOpenaiResponsesRoutes } from "../../server/routes/openai/openaiResponsesRoutes";
 import { LanguageModelRequestLifecycle } from "../../server/utils/languageModelRequestLifecycle";
 import {
+  ThinkingPart,
+  getThinkingRuntime,
+} from "../../server/utils/languageModelThinking";
+import { convertResponsesInputToVSCode } from "../../server/utils/openaiResponses";
+import {
   OpenAIResponsesRequestValidationError,
   PreparedOpenAIResponsesTools,
   isImmediateResponsesToolContinuation,
@@ -16,6 +21,7 @@ import { WebSearchProvider } from "../../server/webSearch/webSearchProvider";
 
 type ModelChunk =
   | vscode.LanguageModelTextPart
+  | ThinkingPart
   | vscode.LanguageModelToolCallPart
   | vscode.LanguageModelDataPart;
 
@@ -228,6 +234,184 @@ const parseSseData = (body: string): Record<string, any>[] =>
     .map((line) => JSON.parse(line.slice("data: ".length)));
 
 suite("OpenAI Responses Server Web Search Test Suite", () => {
+  test("reports provider reasoning conflicts when the hosted-search route returns client output", async () => {
+    for (const stream of [false, true]) {
+      const runtime = getThinkingRuntime()!;
+      const app = createTestApp({
+        rounds: [
+          {
+            chunks: [
+              new runtime.Thinking("", "same-id", {
+                encrypted_content: "one",
+                vscode_thinking_origin_api: "responses",
+              }),
+              new runtime.Thinking("", "same-id", {
+                encrypted_content: "two",
+                vscode_thinking_origin_api: "responses",
+              }),
+              new vscode.LanguageModelTextPart("ready"),
+              usagePart(),
+            ],
+          },
+        ],
+        provider: createProvider(async () => []),
+      });
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-5.6-test",
+          input: "Check",
+          tools: [webSearchTool()],
+          stream,
+        }),
+      });
+      if (stream) {
+        assert.strictEqual(response.status, 200);
+        const events = parseSseData(await response.text());
+        assert.strictEqual(events.at(-1)!.type, "response.failed");
+        assert.strictEqual(
+          events.at(-1)!.response.error.code,
+          "invalid_provider_reasoning",
+        );
+        assert.ok(!events.some((event) => event.type === "response.completed"));
+      } else {
+        assert.strictEqual(response.status, 502);
+        const body = (await response.json()) as any;
+        assert.strictEqual(body.error.code, "invalid_provider_reasoning");
+        assert.strictEqual(body.error.param, null);
+      }
+    }
+  });
+  test("preserves encrypted reasoning in internal search synthesis and JSON/SSE output", async () => {
+    for (const stream of [false, true]) {
+      const requests: Array<{
+        messages: readonly vscode.LanguageModelChatMessage[];
+        options: vscode.LanguageModelChatRequestOptions;
+      }> = [];
+      const thinking = (id: string) =>
+        new (getThinkingRuntime()!.Thinking)("", id, {
+          encrypted_content: `opaque-${id}`,
+          vscode_thinking_origin_api: "responses",
+        });
+      const app = createTestApp({
+        requests,
+        rounds: [
+          {
+            chunks: [
+              thinking("rs_search"),
+              new vscode.LanguageModelToolCallPart(
+                "search",
+                "agent_maestro_web_search",
+                { query: "latest result" },
+              ),
+              usagePart(),
+            ],
+          },
+          {
+            chunks: [
+              thinking("rs_synthesis"),
+              new vscode.LanguageModelTextPart("ready"),
+              usagePart(),
+            ],
+          },
+          {
+            chunks: [
+              new vscode.LanguageModelTextPart("follow-up"),
+              usagePart(),
+            ],
+          },
+        ],
+        provider: createProvider(async () => []),
+      });
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-5.6-test",
+          input: "Search",
+          tools: [webSearchTool()],
+          stream,
+        }),
+      });
+      assert.strictEqual(response.status, 200);
+      const body = await response.text();
+      const output = stream
+        ? parseSseData(body).find(
+            (event) => event.type === "response.completed",
+          )!.response.output
+        : JSON.parse(body).output;
+      assert.deepStrictEqual(
+        output.map(({ type }: { type: string }) => type),
+        ["web_search_call", "reasoning", "message"],
+      );
+      assert.strictEqual(output[1].id, "rs_synthesis");
+      const restored = convertResponsesInputToVSCode([output[1]])[0]
+        .content[0] as unknown as ThinkingPart;
+      assert.strictEqual(
+        restored.metadata?.encrypted_content,
+        "opaque-rs_synthesis",
+      );
+      assert.strictEqual(requests.length, 2);
+      assert.strictEqual(
+        (requests[0].options as { includeEncryptedThinking?: boolean })
+          .includeEncryptedThinking,
+        true,
+      );
+      const replay = requests[1].messages
+        .flatMap(({ content }) => content)
+        .find(
+          (part) => part instanceof getThinkingRuntime()!.Thinking,
+        ) as unknown as ThinkingPart;
+      assert.strictEqual(replay.id, "rs_search");
+      assert.strictEqual(
+        replay.metadata?.encrypted_content,
+        "opaque-rs_search",
+      );
+      if (stream) {
+        const done = parseSseData(body)
+          .filter((event) => event.type === "response.output_item.done")
+          .map((event) => event.item);
+        assert.deepStrictEqual(done, output);
+      }
+      const replayInput = [
+        { role: "user", content: "Search" },
+        ...output,
+        { role: "user", content: "Continue using the search result" },
+      ];
+      const converted = convertResponsesInputToVSCode(replayInput);
+      const expectedThinking = converted
+        .flatMap(({ content }) => content)
+        .filter(
+          (part) => part instanceof getThinkingRuntime()!.Thinking,
+        ) as unknown as ThinkingPart[];
+      assert.deepStrictEqual(
+        expectedThinking.map(({ id }) => id),
+        ["rs_synthesis"],
+      );
+      const next = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-5.6-test",
+          input: replayInput,
+          stream,
+        }),
+      });
+      assert.strictEqual(next.status, 200);
+      await next.text();
+      assert.strictEqual(requests.length, 3);
+      const replayed = requests[2].messages
+        .flatMap(({ content }) => content)
+        .filter(
+          (part) => part instanceof getThinkingRuntime()!.Thinking,
+        ) as unknown as ThinkingPart[];
+      assert.deepStrictEqual(
+        replayed.map(({ id }) => id),
+        ["rs_synthesis"],
+      );
+    }
+  });
   suite("classification and validation", () => {
     test("exposes the private tool with decision guidance and query description", () => {
       const prepared = prepareSearch();
@@ -1210,7 +1394,7 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
       }
     });
 
-    test("preserves legacy non-streaming text and client-call ordering when search is skipped", async () => {
+    test("preserves non-streaming text and client-call source order when search is skipped", async () => {
       const app = createTestApp({
         rounds: [
           {
@@ -1240,9 +1424,10 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
       assert.strictEqual(response.status, 200);
       assert.deepStrictEqual(
         body.output.map(({ type }: { type: string }) => type),
-        ["message", "function_call"],
+        ["message", "function_call", "message"],
       );
-      assert.strictEqual(body.output[0].content[0].text, "Before. After.");
+      assert.strictEqual(body.output[0].content[0].text, "Before. ");
+      assert.strictEqual(body.output[2].content[0].text, "After.");
     });
 
     test("omits nullable tool controls from fallback model options", async () => {

@@ -14,6 +14,7 @@ import {
   ResponseInputItem,
   ResponseOutputMessage,
   ResponseOutputText,
+  ResponseReasoningItem,
   ResponseUsage,
   Tool,
   ToolChoiceAllowed,
@@ -29,6 +30,13 @@ import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
 import { mimeForVscodeLm } from "./imageMime";
+import {
+  ThinkingPart,
+  createModelMessage,
+  getThinkingRuntime,
+  hasEncryptedThinking,
+  isThinkingPart,
+} from "./languageModelThinking";
 import { SSE_HEARTBEAT_INTERVAL_MS } from "./sseHeartbeat";
 import {
   type ToolHistoryMessage,
@@ -60,7 +68,198 @@ export type OutputItem =
   | ResponseOutputMessage
   | PlaintextResponseFunctionToolCall
   | ResponseCustomToolCall
+  | ResponseReasoningItem
   | ResponseFunctionWebSearch;
+
+export type ResponsesModelPart =
+  | vscode.LanguageModelTextPart
+  | vscode.LanguageModelToolCallPart
+  | ThinkingPart;
+
+export class ResponsesReasoningError extends Error {
+  readonly param = "input";
+  constructor(
+    message: string,
+    readonly code: "reasoning_unavailable" | "invalid_reasoning",
+  ) {
+    super(message);
+  }
+}
+
+export class ProviderReasoningError extends Error {
+  readonly code = "invalid_provider_reasoning";
+}
+
+export class ReasoningItems {
+  private readonly seen = new Map<string, string>();
+  constructor(private readonly source: "input" | "provider") {}
+
+  accept(id: string, encrypted: string): boolean {
+    const previous = this.seen.get(id);
+    if (previous !== undefined) {
+      if (previous !== encrypted) {
+        logger.warn(
+          "Rejecting Responses reasoning: conflicting state for duplicate ID",
+        );
+        const message = "Conflicting encrypted reasoning for the same ID";
+        if (this.source === "provider") {
+          throw new ProviderReasoningError(message);
+        }
+        throw new ResponsesReasoningError(message, "invalid_reasoning");
+      }
+      return false;
+    }
+    this.seen.set(id, encrypted);
+    return true;
+  }
+}
+
+const REASONING_STATE_PREFIX = "am_reasoning_v1:";
+
+function decodeReasoningState(item: Record<string, unknown>): {
+  id: string;
+  encrypted: string;
+} {
+  const encrypted = item.encrypted_content as string;
+  if (!encrypted.startsWith(REASONING_STATE_PREFIX)) {
+    if (typeof item.id === "string" && item.id) {
+      return { id: item.id, encrypted };
+    }
+    logger.warn(
+      "Rejecting Responses reasoning: provider ID missing from raw state",
+    );
+    throw new ResponsesReasoningError(
+      "Encrypted reasoning without its provider ID must use AM's opaque replay state",
+      "invalid_reasoning",
+    );
+  }
+  try {
+    const state: unknown = JSON.parse(
+      Buffer.from(
+        encrypted.slice(REASONING_STATE_PREFIX.length),
+        "base64url",
+      ).toString("utf8"),
+    );
+    if (
+      state &&
+      typeof state === "object" &&
+      "id" in state &&
+      typeof state.id === "string" &&
+      state.id &&
+      "encrypted" in state &&
+      typeof state.encrypted === "string" &&
+      state.encrypted
+    ) {
+      return { id: state.id, encrypted: state.encrypted };
+    }
+  } catch {
+    /* Invalid state is reported without retaining its contents. */
+  }
+  logger.warn("Rejecting Responses reasoning: malformed opaque replay state");
+  throw new ResponsesReasoningError(
+    "Invalid AM reasoning replay state",
+    "invalid_reasoning",
+  );
+}
+
+export function restoreReasoningPart(
+  item: ResponseReasoningItem,
+  runtime: ReturnType<typeof getThinkingRuntime>,
+): ThinkingPart {
+  if (!runtime) {
+    logger.warn(
+      "Rejecting Responses reasoning: host cannot replay encrypted state",
+    );
+    throw new ResponsesReasoningError(
+      "This VS Code host does not expose the thinking runtime needed to replay encrypted reasoning. Try updating VS Code and GitHub Copilot, or start a new session without this reasoning history. Verified combination: VS Code 1.141.2 / Copilot 0.69.0; availability in other versions is not guaranteed.",
+      "reasoning_unavailable",
+    );
+  }
+  return new runtime.Thinking("", item.id, {
+    encrypted_content: item.encrypted_content,
+    vscode_thinking_origin_api: "responses",
+  });
+}
+
+export const thinkingToResponseReasoning = (
+  part: ThinkingPart,
+): (ResponseReasoningItem & { encrypted_content: string }) | undefined => {
+  if (!hasEncryptedThinking(part)) {
+    return undefined;
+  }
+  const encrypted = part.metadata.encrypted_content;
+  return {
+    type: "reasoning",
+    id: part.id,
+    // Codex drops item IDs on replay. Preserve the provider's ID inside the
+    // client-opaque field so both values survive without server-side storage.
+    encrypted_content:
+      REASONING_STATE_PREFIX +
+      Buffer.from(JSON.stringify({ id: part.id, encrypted })).toString(
+        "base64url",
+      ),
+    summary: [],
+  };
+};
+
+export const buildResponseOutputFromParts = (
+  parts: readonly ResponsesModelPart[],
+  toolMap: ToolMap,
+): OutputItem[] => {
+  const output: OutputItem[] = [];
+  const reasoning = new ReasoningItems("provider");
+  let text = "";
+  const flushText = () => {
+    if (text) {
+      output.push(...buildResponseOutput(text, [], toolMap));
+      text = "";
+    }
+  };
+  for (const part of parts) {
+    if (part instanceof vscode.LanguageModelTextPart) {
+      text += part.value;
+    } else if (isThinkingPart(part)) {
+      const item = thinkingToResponseReasoning(part);
+      if (item && reasoning.accept(item.id, item.encrypted_content)) {
+        flushText();
+        output.push(item);
+      }
+    } else {
+      flushText();
+      output.push(
+        ...buildResponseOutput(
+          "",
+          [{ callId: part.callId, name: part.name, input: part.input }],
+          toolMap,
+        ),
+      );
+    }
+  }
+  flushText();
+  return output;
+};
+
+export const writeReasoningOutputItem = async (
+  writeSSE: ResponseSSEWriter,
+  item: ResponseReasoningItem,
+  outputIndex: number,
+  sequenceNumberRef: { value: number },
+): Promise<void> => {
+  for (const event of [
+    "response.output_item.added",
+    "response.output_item.done",
+  ]) {
+    await writeSSE({
+      event,
+      data: JSON.stringify({
+        type: event,
+        output_index: outputIndex,
+        item,
+        sequence_number: sequenceNumberRef.value++,
+      }),
+    });
+  }
+};
 
 export type OpenAIResponsesStatus =
   | "completed"
@@ -504,10 +703,10 @@ const convertInputImageToVSCodePart = (
 export const convertInputContentToVSCodePart = (
   content: ResponseInputContent | ResponseOutputText,
 ): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
-  // `encrypted_content` is an opaque encrypted reasoning blob (Codex/OpenAI
-  // round-trips it back to the provider). It's not in the SDK content union.
-  // VSCode LM can't decrypt or use it, and dumping the ciphertext into the
-  // prompt is harmful, so drop it.
+  // Encrypted reasoning belongs to top-level reasoning items, not message
+  // text content. Never put ciphertext into the model's ordinary prompt.
+  // TODO: Remove this legacy guard once clients no longer send encrypted_content
+  // as a message content part.
   if ((content as { type?: string }).type === "encrypted_content") {
     logger.debug("Dropping encrypted_content part (not usable by VSCode LM)");
     return new vscode.LanguageModelTextPart("");
@@ -671,6 +870,42 @@ export const convertResponsesItemToVSCode = (
 
   const typedItem = item as unknown as Record<string, unknown>;
 
+  if (typedItem.type === "reasoning") {
+    if (
+      typedItem.encrypted_content === undefined ||
+      typedItem.encrypted_content === null
+    ) {
+      logger.debug("Skipping Responses reasoning: summary-only item");
+      return null;
+    }
+    if (
+      (typedItem.id !== undefined &&
+        (typeof typedItem.id !== "string" || !typedItem.id)) ||
+      typeof typedItem.encrypted_content !== "string" ||
+      !typedItem.encrypted_content
+    ) {
+      logger.warn(
+        "Rejecting Responses reasoning: invalid ID or encrypted state",
+      );
+      throw new ResponsesReasoningError(
+        "Reasoning requires encrypted_content and a valid ID when provided",
+        "invalid_reasoning",
+      );
+    }
+    const { id, encrypted } = decodeReasoningState(typedItem);
+    return createModelMessage(vscode.LanguageModelChatMessageRole.Assistant, [
+      restoreReasoningPart(
+        {
+          type: "reasoning",
+          id,
+          encrypted_content: encrypted,
+          summary: [],
+        },
+        getThinkingRuntime(),
+      ),
+    ]);
+  }
+
   // Handle function_call (ResponseFunctionToolCall)
   if (typedItem.type === "function_call") {
     const fc = item as ResponseFunctionToolCall;
@@ -731,6 +966,13 @@ export const convertResponsesItemToVSCode = (
   // These carry no message content; their tools are merged separately via
   // extractAdditionalTools, so there is nothing to convert into a message.
   if (typedItem.type === "additional_tools") {
+    return null;
+  }
+
+  if (typedItem.type === "web_search_call") {
+    logger.debug(
+      "Skipping hosted-search item: replay uses its final message and synthesis reasoning",
+    );
     return null;
   }
 
@@ -799,6 +1041,9 @@ const responseItemToHistory = (
         : "user",
     boundary: raw.role === "system" || raw.role === "developer",
     parts: converted.content.map((part): ToolHistoryPart => {
+      if (isThinkingPart(part)) {
+        return { kind: "reasoning", part };
+      }
       if (part instanceof vscode.LanguageModelToolCallPart) {
         let value: unknown = raw.input;
         if (toolType === "function") {
@@ -841,6 +1086,7 @@ export const convertResponsesInputToVSCode = (
   instruction?: string | ResponseInput | null,
 ): vscode.LanguageModelChatMessage[] => {
   const history: ToolHistoryMessage[] = [];
+  const reasoning = new ReasoningItems("input");
   const appendInput = (value: string | ResponseInput | undefined | null) => {
     if (typeof value === "string") {
       history.push({
@@ -853,7 +1099,31 @@ export const convertResponsesInputToVSCode = (
       for (const item of value) {
         const message = responseItemToHistory(item);
         if (message) {
-          history.push(message);
+          const originalLength = message.parts.length;
+          message.parts = message.parts.filter((part) => {
+            if (part.kind !== "reasoning") {
+              return true;
+            }
+            if (!hasEncryptedThinking(part.part)) {
+              logger.warn(
+                "Skipping Responses reasoning: unsupported host state metadata",
+              );
+              return false;
+            }
+            if (
+              !reasoning.accept(
+                part.part.id,
+                part.part.metadata.encrypted_content,
+              )
+            ) {
+              logger.debug("Skipping Responses reasoning: duplicate ID");
+              return false;
+            }
+            return true;
+          });
+          if (message.parts.length || originalLength === 0) {
+            history.push(message);
+          }
         }
       }
     }

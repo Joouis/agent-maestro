@@ -2,12 +2,19 @@ import { isDeepStrictEqual } from "node:util";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import {
+  ModelInputPart,
+  ThinkingPart,
+  createModelMessage,
+  isThinkingPart,
+} from "./languageModelThinking";
 
 export type ToolHistoryContent =
   | vscode.LanguageModelTextPart
   | vscode.LanguageModelDataPart;
 export type ToolHistoryPart =
   | { kind: "content"; parts: ToolHistoryContent[] }
+  | { kind: "reasoning"; part: ThinkingPart }
   | {
       kind: "call";
       id?: unknown;
@@ -95,7 +102,10 @@ export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
   const reservedIds = new Set<string>();
   for (const message of messages) {
     for (const part of message.parts) {
-      if (part.kind !== "content" && validId(part.id)) {
+      if (
+        (part.kind === "call" || part.kind === "result") &&
+        validId(part.id)
+      ) {
         reservedIds.add(part.id);
       }
     }
@@ -338,9 +348,13 @@ export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
       message.parts.some((p) => p.kind === "call");
     const hasResults =
       message.role === "user" && message.parts.some((p) => p.kind === "result");
+    const reasoningOnly =
+      message.role === "assistant" &&
+      message.parts.length > 0 &&
+      message.parts.every((part) => part.kind === "reasoning");
     if (
       message.boundary ||
-      (!hasCalls && !hasResults) ||
+      (!hasCalls && !hasResults && !reasoningOnly) ||
       (hasCalls && phase === "results")
     ) {
       finalizeTurn();
@@ -406,18 +420,20 @@ export function toolHistoryToVSCode(
     const hasCalls =
       message.role === "assistant" &&
       message.parts.some((part) => part.kind === "call");
+    const reasoningOnly =
+      message.role === "assistant" &&
+      message.parts.length > 0 &&
+      message.parts.every((part) => part.kind === "reasoning");
     const hasResults =
       message.role === "user" &&
       message.parts.some((part) => part.kind === "result");
-    const parts: Array<
-      | ToolHistoryContent
-      | vscode.LanguageModelToolCallPart
-      | vscode.LanguageModelToolResultPart
-    > = [];
+    const parts: ModelInputPart[] = [];
     for (const part of message.parts) {
       const decision = decisions.get(index++);
       if (part.kind === "content") {
         parts.push(...part.parts);
+      } else if (part.kind === "reasoning") {
+        parts.push(part.part);
       } else if (decision?.kind === "context") {
         parts.push(...decision.parts);
       } else if (decision?.kind === "call") {
@@ -442,39 +458,43 @@ export function toolHistoryToVSCode(
       // Otherwise that text-only message can split a surviving call/result pair.
       if (
         ((hasResults && previousHadResults) ||
-          (hasCalls && previousHadCalls)) &&
+          ((hasCalls || reasoningOnly) && previousHadCalls)) &&
         !message.boundary
       ) {
-        output.at(-1)!.content.push(...parts);
+        const previous = output.at(-1)!;
+        const content: ModelInputPart[] = previous.content;
+        content.push(...parts);
+        if (parts.some(isThinkingPart)) {
+          output[output.length - 1] = createModelMessage(
+            previous.role,
+            content,
+          );
+        }
       } else {
         output.push(
-          message.role === "assistant"
-            ? vscode.LanguageModelChatMessage.Assistant(
-                parts as Array<
-                  ToolHistoryContent | vscode.LanguageModelToolCallPart
-                >,
-              )
-            : vscode.LanguageModelChatMessage.User(
-                parts as Array<
-                  ToolHistoryContent | vscode.LanguageModelToolResultPart
-                >,
-              ),
+          createModelMessage(
+            message.role === "assistant"
+              ? vscode.LanguageModelChatMessageRole.Assistant
+              : vscode.LanguageModelChatMessageRole.User,
+            parts,
+          ),
         );
       }
     }
     previousHadResults = hasResults && !message.boundary;
-    previousHadCalls = hasCalls && !message.boundary;
+    previousHadCalls = (hasCalls || reasoningOnly) && !message.boundary;
   }
   const { retainedPairs: _pairs, ...recoveries } = diagnostics;
   // Copilot rejects ordinary content interleaved between parallel tool results.
-  // Keep formal parts contiguous within each role message, preserving both orders.
+  // Keep formal parts contiguous unless reasoning makes their original positions
+  // significant. Responses keeps ordinary assistant text in separate messages.
   for (const message of output) {
     const tools = message.content.filter(
       (part) =>
         part instanceof vscode.LanguageModelToolCallPart ||
         part instanceof vscode.LanguageModelToolResultPart,
     );
-    if (tools.length > 1) {
+    if (tools.length > 1 && !message.content.some(isThinkingPart)) {
       const context = message.content.filter(
         (part) =>
           !(part instanceof vscode.LanguageModelToolCallPart) &&

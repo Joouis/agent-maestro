@@ -23,12 +23,18 @@ import {
   LanguageModelRequestLifecycle,
   interruptibleLanguageModelStream,
 } from "./languageModelRequestLifecycle";
+import {
+  createModelMessage,
+  hasEncryptedThinking,
+  isThinkingPart,
+} from "./languageModelThinking";
 import { extractOpenAIResponsesUsage } from "./openai";
 import {
   OutputItem,
+  ResponsesModelPart,
   ToolChoice,
   ToolMap,
-  buildResponseOutput,
+  buildResponseOutputFromParts,
   convertResponsesToolsToVSCode,
   convertToolChoice,
   generateMessageId,
@@ -635,7 +641,7 @@ export function prepareOpenAIResponsesTools({
 
 interface CollectedModelRound {
   incomplete: boolean;
-  parts: Array<vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart>;
+  parts: ResponsesModelPart[];
   usage: ResponseUsage;
 }
 
@@ -704,9 +710,7 @@ const collectModelRound = async ({
   const response = await lifecycle.waitFor(
     client.sendRequest(messages, requestOptions, lifecycle.token),
   );
-  const parts: Array<
-    vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
-  > = [];
+  const parts: ResponsesModelPart[] = [];
   let usage: ResponseUsage | undefined;
   let incomplete = false;
 
@@ -724,6 +728,10 @@ const collectModelRound = async ({
         }
       } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
         parts.push(chunk);
+      } else if (isThinkingPart(chunk)) {
+        if (hasEncryptedThinking(chunk)) {
+          parts.push(chunk);
+        }
       } else if (chunk instanceof vscode.LanguageModelDataPart) {
         usage = extractOpenAIResponsesUsage(chunk) ?? usage;
       }
@@ -740,11 +748,13 @@ const collectModelRound = async ({
       .map((part) =>
         part instanceof vscode.LanguageModelTextPart
           ? part.value
-          : JSON.stringify({
-              callId: part.callId,
-              name: part.name,
-              input: part.input,
-            }),
+          : isThinkingPart(part)
+            ? ""
+            : JSON.stringify({
+                callId: part.callId,
+                name: part.name,
+                input: part.input,
+              }),
       )
       .join("");
     const [inputTokens, outputTokens] = await lifecycle.waitFor(
@@ -767,38 +777,11 @@ const collectModelRound = async ({
 };
 
 const buildOutputFromParts = (
-  parts: readonly (
-    | vscode.LanguageModelTextPart
-    | vscode.LanguageModelToolCallPart
-  )[],
+  parts: readonly ResponsesModelPart[],
   toolMap: ToolMap,
   incomplete: boolean,
 ): OutputItem[] => {
-  const output: OutputItem[] = [];
-  let text = "";
-  const flushText = () => {
-    if (!text) {
-      return;
-    }
-    output.push(...buildResponseOutput(text, [], toolMap));
-    text = "";
-  };
-
-  for (const part of parts) {
-    if (part instanceof vscode.LanguageModelTextPart) {
-      text += part.value;
-      continue;
-    }
-    flushText();
-    output.push(
-      ...buildResponseOutput(
-        "",
-        [{ callId: part.callId, name: part.name, input: part.input }],
-        toolMap,
-      ),
-    );
-  }
-  flushText();
+  const output = buildResponseOutputFromParts(parts, toolMap);
   if (incomplete) {
     for (let index = output.length - 1; index >= 0; index--) {
       const item = output[index];
@@ -807,34 +790,6 @@ const buildOutputFromParts = (
         break;
       }
     }
-  }
-  return output;
-};
-
-const buildLegacyOutputFromParts = (
-  parts: readonly (
-    | vscode.LanguageModelTextPart
-    | vscode.LanguageModelToolCallPart
-  )[],
-  toolMap: ToolMap,
-  incomplete: boolean,
-): OutputItem[] => {
-  const text = parts
-    .filter(
-      (part): part is vscode.LanguageModelTextPart =>
-        part instanceof vscode.LanguageModelTextPart,
-    )
-    .map(({ value }) => value)
-    .join("");
-  const toolCalls = parts
-    .filter(
-      (part): part is vscode.LanguageModelToolCallPart =>
-        part instanceof vscode.LanguageModelToolCallPart,
-    )
-    .map(({ callId, name, input }) => ({ callId, name, input }));
-  const output = buildResponseOutput(text, toolCalls, toolMap);
-  if (incomplete && output[0]?.type === "message") {
-    output[0].status = "incomplete";
   }
   return output;
 };
@@ -1006,7 +961,6 @@ export async function runOpenAIResponsesWebSearchLoop({
   lifecycle,
   maxOutputTokens,
   providerTimeoutMs,
-  preserveLegacyNonStreamingOutput = false,
   callbacks = {},
 }: {
   client: vscode.LanguageModelChat;
@@ -1017,7 +971,6 @@ export async function runOpenAIResponsesWebSearchLoop({
   lifecycle: LanguageModelRequestLifecycle;
   maxOutputTokens?: number;
   providerTimeoutMs: number;
-  preserveLegacyNonStreamingOutput?: boolean;
   callbacks?: OpenAIResponsesSearchLoopCallbacks;
 }): Promise<OpenAIResponsesSearchLoopResult> {
   if (
@@ -1062,17 +1015,11 @@ export async function runOpenAIResponsesWebSearchLoop({
       firstRound.usage.output_tokens >= maxOutputTokens);
   if (internalCalls.length === 0) {
     return {
-      output: preserveLegacyNonStreamingOutput
-        ? buildLegacyOutputFromParts(
-            visibleParts,
-            preparedTools.toolMap,
-            firstRoundIncomplete,
-          )
-        : buildOutputFromParts(
-            visibleParts,
-            preparedTools.toolMap,
-            firstRoundIncomplete,
-          ),
+      output: buildOutputFromParts(
+        visibleParts,
+        preparedTools.toolMap,
+        firstRoundIncomplete,
+      ),
       incomplete: firstRoundIncomplete,
       usage:
         maxOutputTokens !== undefined &&
@@ -1227,7 +1174,10 @@ export async function runOpenAIResponsesWebSearchLoop({
     client,
     messages: [
       ...messages,
-      vscode.LanguageModelChatMessage.Assistant(firstRound.parts),
+      createModelMessage(
+        vscode.LanguageModelChatMessageRole.Assistant,
+        firstRound.parts,
+      ),
       vscode.LanguageModelChatMessage.User(toolResults),
     ],
     lifecycle,
@@ -1271,6 +1221,12 @@ export async function runOpenAIResponsesWebSearchLoop({
   usage = cited.usage;
   incomplete ||= cited.exhausted;
   const output: OutputItem[] = [completedSearchItem];
+  output.push(
+    ...buildResponseOutputFromParts(
+      synthesisRound.parts.filter(isThinkingPart),
+      preparedTools.toolMap,
+    ),
+  );
   output.push(createMessageOutput(cited.text, cited.annotations, incomplete));
 
   return {

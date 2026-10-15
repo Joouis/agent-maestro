@@ -16,6 +16,7 @@ import {
   OpenAIResponsesEnvelope,
   OpenAIResponsesStatus,
   OutputItem,
+  ProviderReasoningError,
   ResponseSSEWriter,
   buildOpenAIResponsesEnvelope,
   closeMessageOutputItem,
@@ -26,6 +27,7 @@ import {
   writeCustomToolCallOutputItem,
   writeFunctionToolCallOutputItem,
   writeMessageOutputTextDelta,
+  writeReasoningOutputItem,
 } from "../../utils/openaiResponses";
 import {
   OpenAIResponsesSearchLoopCallbacks,
@@ -109,7 +111,6 @@ export async function handleOpenAIResponsesWebSearch({
       lifecycle,
       maxOutputTokens,
       providerTimeoutMs,
-      preserveLegacyNonStreamingOutput: !shouldStream,
       callbacks,
     });
 
@@ -275,6 +276,15 @@ export async function handleOpenAIResponsesWebSearch({
               outputIndex++;
               continue;
             }
+            if (item.type === "reasoning") {
+              await writeReasoningOutputItem(
+                writeSSE,
+                item,
+                outputIndex++,
+                sequenceNumberRef,
+              );
+              continue;
+            }
 
             await writeFunctionToolCallOutputItem(
               writeSSE,
@@ -324,7 +334,9 @@ export async function handleOpenAIResponsesWebSearch({
               code:
                 error instanceof LanguageModelRequestTimeoutError
                   ? "request_timeout"
-                  : "server_error",
+                  : error instanceof ProviderReasoningError
+                    ? error.code
+                    : "server_error",
               message: error instanceof Error ? error.message : String(error),
             }),
           }),
