@@ -296,8 +296,12 @@ suite("Unified tool history", () => {
         );
         assert.match(text(actual), /Execution status is unknown/);
       });
-      test("does not match through independent user input or assistant text", () => {
-        for (const boundary of [U(T("new instruction")), M(T("explanation"))]) {
+      test("does not match through independent message boundaries", () => {
+        const boundaries = [U(T("new instruction"))];
+        if (name !== "Responses") {
+          boundaries.push(M(T("explanation")));
+        }
+        for (const boundary of boundaries) {
           const actual = convert([M(C("x")), boundary, U(R("x"))]);
           paired(actual, 0);
           assert.match(text(actual), /Execution status is unknown/);

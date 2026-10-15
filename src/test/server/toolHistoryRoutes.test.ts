@@ -228,6 +228,57 @@ suite("Normalized history through official SDKs", () => {
     );
     assert.strictEqual(requests, 0);
   });
+  test("Responses rejects metadata-discarding hosts before dispatch in JSON and SSE", async () => {
+    const runtime = getThinkingRuntime()!;
+    const originalThinking = runtime.Thinking;
+    runtime.Thinking = class {
+      readonly metadata = {};
+      constructor(
+        readonly value: string | string[],
+        readonly id?: string,
+      ) {}
+    };
+    let requests = 0;
+    const model = {
+      ...modelMetadata,
+      sendRequest: async () => {
+        requests++;
+        throw new Error("Unexpected dispatch");
+      },
+    } as vscode.LanguageModelChat;
+    const app = responsesApp(model);
+    try {
+      for (const stream of [false, true]) {
+        for (const conflicting of [false, true]) {
+          const response = await app.request("/v1/responses", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              model: model.id,
+              stream,
+              input: ["first", conflicting ? "second" : "first"].map(
+                (encrypted_content) => ({
+                  type: "reasoning",
+                  id: "same-id",
+                  summary: [],
+                  encrypted_content,
+                }),
+              ),
+            }),
+          });
+          assert.strictEqual(response.status, 400);
+          const result = (await response.json()) as {
+            error: { code: string; param: string };
+          };
+          assert.strictEqual(result.error.code, "reasoning_unavailable");
+          assert.strictEqual(result.error.param, "input");
+          assert.strictEqual(requests, 0);
+        }
+      }
+    } finally {
+      runtime.Thinking = originalThinking;
+    }
+  });
   for (const stream of [false, true] as const) {
     for (const custom of [false, true]) {
       test(`Responses reasoning survives SDK tool continuation (stream=${stream}, custom=${custom})`, async () => {
@@ -283,11 +334,13 @@ suite("Normalized history through official SDKs", () => {
                   },
                 );
                 if (requestCount === 1) {
+                  yield new vscode.LanguageModelTextPart("Before lookup");
                   yield new vscode.LanguageModelToolCallPart(
                     "lookup-call",
                     "lookup",
                     custom ? { input: "lookup()" } : {},
                   );
+                  yield new vscode.LanguageModelTextPart("After lookup");
                 } else {
                   yield new vscode.LanguageModelTextPart("ready");
                 }
@@ -343,7 +396,12 @@ suite("Normalized history through official SDKs", () => {
         const output = await collect();
         assert.deepStrictEqual(
           output.map(({ type }) => type),
-          ["reasoning", custom ? "custom_tool_call" : "function_call"],
+          [
+            "reasoning",
+            "message",
+            custom ? "custom_tool_call" : "function_call",
+            "message",
+          ],
         );
         assert.ok(!JSON.stringify(output).includes("private-text"));
         history.push(

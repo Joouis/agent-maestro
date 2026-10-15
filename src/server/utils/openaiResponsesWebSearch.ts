@@ -1,6 +1,7 @@
 import {
   ResponseFunctionWebSearch,
   ResponseOutputMessage,
+  ResponseOutputText,
   ResponseUsage,
   Tool,
 } from "openai/resources/responses/responses";
@@ -31,6 +32,7 @@ import {
 import { extractOpenAIResponsesUsage } from "./openai";
 import {
   OutputItem,
+  ReasoningItems,
   ResponsesModelPart,
   ToolChoice,
   ToolMap,
@@ -711,6 +713,7 @@ const collectModelRound = async ({
     client.sendRequest(messages, requestOptions, lifecycle.token),
   );
   const parts: ResponsesModelPart[] = [];
+  const reasoning = new ReasoningItems("provider");
   let usage: ResponseUsage | undefined;
   let incomplete = false;
 
@@ -729,7 +732,10 @@ const collectModelRound = async ({
       } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
         parts.push(chunk);
       } else if (isThinkingPart(chunk)) {
-        if (hasEncryptedThinking(chunk)) {
+        if (
+          hasEncryptedThinking(chunk) &&
+          reasoning.accept(chunk.id, chunk.metadata.encrypted_content)
+        ) {
           parts.push(chunk);
         }
       } else if (chunk instanceof vscode.LanguageModelDataPart) {
@@ -857,31 +863,28 @@ const findSourceUrlOccurrences = (
 };
 
 const appendSourcesAndBuildCitations = async ({
-  text,
+  textParts,
   results,
   usage,
   maxOutputTokens,
   client,
   lifecycle,
 }: {
-  text: string;
+  textParts: ResponseOutputText[];
   results: readonly WebSearchResult[];
   usage: ResponseUsage;
   maxOutputTokens?: number;
   client: vscode.LanguageModelChat;
   lifecycle: LanguageModelRequestLifecycle;
 }): Promise<{
-  annotations: UrlCitation[];
   exhausted: boolean;
-  text: string;
   usage: ResponseUsage;
 }> => {
-  let finalText = text;
   let finalUsage = usage;
   let exhausted = false;
   const citedUrls = new Set(
-    findSourceUrlOccurrences(finalText, results).map(
-      ({ result }) => result.url,
+    textParts.flatMap(({ text }) =>
+      findSourceUrlOccurrences(text, results).map(({ result }) => result.url),
     ),
   );
   let addedSource = false;
@@ -900,7 +903,7 @@ const appendSourcesAndBuildCitations = async ({
       exhausted = true;
       break;
     }
-    finalText += entry;
+    textParts[textParts.length - 1].text += entry;
     finalUsage = withOutputTokens(
       finalUsage,
       finalUsage.output_tokens + entryTokens,
@@ -909,20 +912,19 @@ const appendSourcesAndBuildCitations = async ({
     addedSource = true;
   }
 
-  const annotations: UrlCitation[] = findSourceUrlOccurrences(
-    finalText,
-    results,
-  ).map(({ startIndex, endIndex, result }) => ({
-    type: "url_citation",
-    start_index: startIndex,
-    end_index: endIndex,
-    url: result.url,
-    title: result.title,
-  }));
+  for (const part of textParts) {
+    part.annotations = findSourceUrlOccurrences(part.text, results).map(
+      ({ startIndex, endIndex, result }) => ({
+        type: "url_citation",
+        start_index: startIndex,
+        end_index: endIndex,
+        url: result.url,
+        title: result.title,
+      }),
+    );
+  }
   return {
-    annotations,
     exhausted,
-    text: finalText,
     usage: finalUsage,
   };
 };
@@ -1195,39 +1197,37 @@ export async function runOpenAIResponsesWebSearchLoop({
     usage = withOutputTokens(usage, maxOutputTokens);
   }
 
-  const synthesisText = synthesisRound.parts
-    .filter(
-      (part): part is vscode.LanguageModelTextPart =>
-        part instanceof vscode.LanguageModelTextPart,
-    )
-    .map(({ value }) => value)
-    .join("");
-  const cited =
-    searchSucceeded && results.length > 0
-      ? await appendSourcesAndBuildCitations({
-          text: synthesisText,
-          results,
-          usage,
-          maxOutputTokens,
-          client,
-          lifecycle,
-        })
-      : {
-          annotations: [],
-          exhausted: false,
-          text: synthesisText,
-          usage,
-        };
-  usage = cited.usage;
-  incomplete ||= cited.exhausted;
-  const output: OutputItem[] = [completedSearchItem];
-  output.push(
+  const output: OutputItem[] = [
+    completedSearchItem,
     ...buildResponseOutputFromParts(
-      synthesisRound.parts.filter(isThinkingPart),
+      synthesisRound.parts.filter(
+        (part) => !(part instanceof vscode.LanguageModelToolCallPart),
+      ),
       preparedTools.toolMap,
     ),
-  );
-  output.push(createMessageOutput(cited.text, cited.annotations, incomplete));
+  ];
+  let finalMessage = output.at(-1);
+  if (finalMessage?.type !== "message") {
+    finalMessage = createMessageOutput("", [], false);
+    output.push(finalMessage);
+  }
+  if (searchSucceeded && results.length > 0) {
+    const cited = await appendSourcesAndBuildCitations({
+      textParts: output.flatMap((item) =>
+        item.type === "message"
+          ? item.content.filter((part) => part.type === "output_text")
+          : [],
+      ),
+      results,
+      usage,
+      maxOutputTokens,
+      client,
+      lifecycle,
+    });
+    usage = cited.usage;
+    incomplete ||= cited.exhausted;
+  }
+  finalMessage.status = incomplete ? "incomplete" : "completed";
 
   return {
     output,

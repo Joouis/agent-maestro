@@ -175,10 +175,24 @@ export function restoreReasoningPart(
       "reasoning_unavailable",
     );
   }
-  return new runtime.Thinking("", item.id, {
+  const part = new runtime.Thinking("", item.id, {
     encrypted_content: item.encrypted_content,
     vscode_thinking_origin_api: "responses",
   });
+  if (
+    !hasEncryptedThinking(part) ||
+    part.id !== item.id ||
+    part.metadata.encrypted_content !== item.encrypted_content
+  ) {
+    logger.warn(
+      "Rejecting Responses reasoning: host cannot preserve encrypted state metadata",
+    );
+    throw new ResponsesReasoningError(
+      "This VS Code host cannot preserve encrypted reasoning state. Try updating VS Code and GitHub Copilot, or start a new session without this reasoning history.",
+      "reasoning_unavailable",
+    );
+  }
+  return part;
 }
 
 export const thinkingToResponseReasoning = (
@@ -1040,6 +1054,7 @@ const responseItemToHistory = (
         ? "assistant"
         : "user",
     boundary: raw.role === "system" || raw.role === "developer",
+    continuesAssistantTurn: raw.role === "assistant",
     parts: converted.content.map((part): ToolHistoryPart => {
       if (isThinkingPart(part)) {
         return { kind: "reasoning", part };
@@ -1106,9 +1121,12 @@ export const convertResponsesInputToVSCode = (
             }
             if (!hasEncryptedThinking(part.part)) {
               logger.warn(
-                "Skipping Responses reasoning: unsupported host state metadata",
+                "Rejecting Responses reasoning: unsupported host state metadata",
               );
-              return false;
+              throw new ResponsesReasoningError(
+                "This VS Code host cannot preserve encrypted reasoning state metadata.",
+                "reasoning_unavailable",
+              );
             }
             if (
               !reasoning.accept(

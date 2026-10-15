@@ -290,8 +290,74 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       );
     });
 
+    test("round-trips source-ordered output with assistant text between pending tool calls", () => {
+      for (const includeThinking of [false, true]) {
+        const thinking = new (getThinkingRuntime()!.Thinking)(
+          "",
+          "rs_roundtrip",
+          {
+            encrypted_content: "opaque-roundtrip",
+            vscode_thinking_origin_api: "responses",
+          },
+        );
+        const output = buildResponseOutputFromParts(
+          [
+            new vscode.LanguageModelTextPart("Before"),
+            new vscode.LanguageModelToolCallPart("first", "lookup", {}),
+            ...(includeThinking ? [thinking] : []),
+            new vscode.LanguageModelTextPart("Between"),
+            new vscode.LanguageModelToolCallPart("second", "lookup", {}),
+            new vscode.LanguageModelTextPart("After"),
+          ],
+          new Map(),
+        );
+        const input = [
+          ...output,
+          {
+            type: "function_call_output" as const,
+            call_id: "second",
+            output: "B",
+          },
+          {
+            type: "function_call_output" as const,
+            call_id: "first",
+            output: "A",
+          },
+        ];
+        const snapshot = structuredClone(input);
+        const messages = convertResponsesInputToVSCode(input);
+        assert.deepStrictEqual(
+          messages.flatMap(({ content }) =>
+            content.map((part) => {
+              if (part instanceof vscode.LanguageModelToolCallPart) {
+                return `call:${part.callId}`;
+              }
+              if (part instanceof vscode.LanguageModelToolResultPart) {
+                return `result:${part.callId}`;
+              }
+              if (part instanceof vscode.LanguageModelTextPart) {
+                return part.value;
+              }
+              return (part as unknown as ThinkingPart).id;
+            }),
+          ),
+          [
+            "Before",
+            "call:first",
+            ...(includeThinking ? ["rs_roundtrip"] : []),
+            "Between",
+            "call:second",
+            "After",
+            "result:second",
+            "result:first",
+          ],
+        );
+        assert.deepStrictEqual(input, snapshot);
+      }
+    });
+
     test("does not pair reasoning tool history across empty independent messages", () => {
-      for (const role of ["user", "developer"] as const) {
+      for (const role of ["user", "developer", "system"] as const) {
         const messages = convertResponsesInputToVSCode([
           {
             type: "reasoning",
@@ -473,34 +539,61 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(history[0].content.length, 1);
     });
 
-    test("diagnoses unexpected host metadata without a non-null assertion failure", () => {
+    test("rejects hosts that discard or rewrite encrypted reasoning state", () => {
       const runtime = getThinkingRuntime()!;
       const originalThinking = runtime.Thinking;
       const originalWarn = logger.warn;
       const warnings: string[] = [];
-      runtime.Thinking = class {
-        readonly metadata = {};
-        constructor(
-          readonly value: string | string[],
-          readonly id?: string,
-        ) {}
-      };
       logger.warn = (message) => {
         warnings.push(message);
       };
       try {
-        const messages = convertResponsesInputToVSCode([
-          {
-            type: "reasoning",
-            id: "provider-id",
-            summary: [],
-            encrypted_content: "private-ciphertext",
-          },
-        ]);
-        assert.deepStrictEqual(messages, []);
-        assert.strictEqual(warnings.length, 1);
-        assert.match(warnings[0], /unsupported host state metadata/);
-        assert.ok(!warnings[0].includes("private-ciphertext"));
+        for (const failure of ["metadata", "id", "ciphertext", "origin"]) {
+          runtime.Thinking = class {
+            readonly id?: string;
+            readonly metadata: Readonly<Record<string, unknown>>;
+            constructor(
+              readonly value: string | string[],
+              id?: string,
+              metadata?: Readonly<Record<string, unknown>>,
+            ) {
+              this.id = failure === "id" ? "rewritten" : id;
+              this.metadata =
+                failure === "metadata"
+                  ? {}
+                  : {
+                      ...metadata,
+                      ...(failure === "ciphertext" && {
+                        encrypted_content: "rewritten",
+                      }),
+                      ...(failure === "origin" && {
+                        vscode_thinking_origin_api: "messages",
+                      }),
+                    };
+            }
+          };
+          assert.throws(
+            () =>
+              convertResponsesInputToVSCode([
+                {
+                  type: "reasoning",
+                  id: "provider-id",
+                  summary: [],
+                  encrypted_content: "private-ciphertext",
+                },
+              ]),
+            (error: unknown) => {
+              assert.ok(error instanceof ResponsesReasoningError);
+              assert.strictEqual(error.code, "reasoning_unavailable");
+              assert.ok(!error.message.includes("private-ciphertext"));
+              return true;
+            },
+          );
+        }
+        assert.strictEqual(warnings.length, 4);
+        assert.ok(
+          warnings.every((message) => !message.includes("private-ciphertext")),
+        );
       } finally {
         runtime.Thinking = originalThinking;
         logger.warn = originalWarn;

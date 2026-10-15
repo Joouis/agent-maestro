@@ -40,6 +40,8 @@ export interface ToolHistoryMessage {
   parts: ToolHistoryPart[];
   /** Instructions and independent request sections cannot share a call turn. */
   boundary?: boolean;
+  /** Responses can split one assistant tool turn across multiple output items. */
+  continuesAssistantTurn?: boolean;
 }
 
 export interface ToolHistoryDiagnostics {
@@ -354,7 +356,10 @@ export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
       message.parts.every((part) => part.kind === "reasoning");
     if (
       message.boundary ||
-      (!hasCalls && !hasResults && !reasoningOnly) ||
+      (!hasCalls &&
+        !hasResults &&
+        !reasoningOnly &&
+        !(message.continuesAssistantTurn && phase === "calls")) ||
       (hasCalls && phase === "results")
     ) {
       finalizeTurn();
