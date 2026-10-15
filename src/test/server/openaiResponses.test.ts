@@ -202,6 +202,142 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       );
     });
 
+    test("frames large reasoning state with constant additive overhead", () => {
+      for (const size of [10_000, 100_000]) {
+        const encrypted = "A".repeat(size);
+        const part = new (getThinkingRuntime()!.Thinking)("", "rs_provider_1", {
+          encrypted_content: encrypted,
+          vscode_thinking_origin_api: "responses",
+        });
+        const output = thinkingToResponseReasoning(part)!;
+        assert.strictEqual(
+          output.encrypted_content,
+          "am_reasoning_v1:13:rs_provider_1" + encrypted,
+        );
+        assert.strictEqual(
+          Buffer.byteLength(output.encrypted_content, "utf8"),
+          size + 32,
+        );
+        const restored = convertResponsesItemToVSCode(output)!
+          .content[0] as unknown as ThinkingPart;
+        assert.strictEqual(restored.id, part.id);
+        assert.strictEqual(restored.metadata?.encrypted_content, encrypted);
+      }
+    });
+
+    test("preserves UTF-8 IDs and delimiter-bearing ciphertext without re-encoding", () => {
+      const encrypted = 'cipher:___:am_reasoning_v1:quotes"\\\n\0状态🧠';
+      for (const id of [
+        "rs:provider:123",
+        "rs___provider",
+        "rs:状态:🧠",
+        'rs_\0"\\\n',
+        "\uFFFD",
+      ]) {
+        const part = new (getThinkingRuntime()!.Thinking)("", id, {
+          encrypted_content: encrypted,
+          vscode_thinking_origin_api: "responses",
+        });
+        const output = thinkingToResponseReasoning(part)!;
+        assert.strictEqual(
+          output.encrypted_content,
+          `am_reasoning_v1:${Buffer.byteLength(id, "utf8")}:${id}${encrypted}`,
+        );
+        const replay = { ...output, id: "rewritten-outer-id" };
+        const restored = convertResponsesItemToVSCode(replay)!
+          .content[0] as unknown as ThinkingPart;
+        assert.strictEqual(restored.id, id);
+        assert.strictEqual(restored.metadata?.encrypted_content, encrypted);
+        const history = convertResponsesInputToVSCode([
+          output,
+          replay,
+          { ...output, encrypted_content: encrypted },
+        ]);
+        assert.strictEqual(history.length, 1);
+        assert.strictEqual(history[0].content.length, 1);
+      }
+    });
+
+    test("rejects malformed byte-length framing without exposing private state", () => {
+      const warnings: string[] = [];
+      const originalWarn = logger.warn;
+      logger.warn = (message) => {
+        warnings.push(message);
+      };
+      const malformed = [
+        "",
+        "broken",
+        ":private-ciphertext",
+        "0:private-ciphertext",
+        "-1:private-ciphertext",
+        "+1:private-ciphertext",
+        "01:private-ciphertext",
+        "1.0:private-ciphertext",
+        "1e0:private-ciphertext",
+        "0x10:private-ciphertext",
+        " 1:private-ciphertext",
+        "1 :private-ciphertext",
+        "1\n:private-ciphertext",
+        "1\r:private-ciphertext",
+        "1\u2028:private-ciphertext",
+        "1\u2029:private-ciphertext",
+        "Infinity:private-ciphertext",
+        "NaN:private-ciphertext",
+        "9007199254740992:private-ciphertext",
+        "9007199254740991:private-ciphertext",
+        "15:rs",
+        "3:abc",
+        "2:é",
+        "1:éprivate-ciphertext",
+        "1:🧠private-ciphertext",
+        "3:🧠private-ciphertext",
+        Buffer.from(
+          JSON.stringify({ id: "rs", encrypted: "private-ciphertext" }),
+        ).toString("base64url"),
+      ];
+      try {
+        for (const state of malformed) {
+          assert.throws(
+            () =>
+              convertResponsesInputToVSCode([
+                {
+                  type: "reasoning",
+                  id: "outer-id",
+                  summary: [],
+                  encrypted_content: "am_reasoning_v1:" + state,
+                },
+              ]),
+            (error: unknown) => {
+              assert.ok(error instanceof ResponsesReasoningError);
+              assert.strictEqual(error.code, "invalid_reasoning");
+              assert.strictEqual(error.param, "input");
+              assert.ok(!error.message.includes("private-ciphertext"));
+              return true;
+            },
+          );
+        }
+        assert.strictEqual(warnings.length, malformed.length);
+        assert.ok(
+          warnings.every((message) => !message.includes("private-ciphertext")),
+        );
+      } finally {
+        logger.warn = originalWarn;
+      }
+    });
+
+    test("rejects provider IDs that cannot round-trip through UTF-8", () => {
+      for (const id of ["\uD800", "\uDC00", "rs_\uD800"]) {
+        const part = new (getThinkingRuntime()!.Thinking)("", id, {
+          encrypted_content: "private-ciphertext",
+          vscode_thinking_origin_api: "responses",
+        });
+        assert.throws(
+          () => thinkingToResponseReasoning(part),
+          ProviderReasoningError,
+        );
+      }
+    });
+
     test("reasoning between parallel calls does not break call/result pairing", () => {
       const result = convertResponsesInputToVSCode([
         { type: "function_call", call_id: "a", name: "first", arguments: "{}" },

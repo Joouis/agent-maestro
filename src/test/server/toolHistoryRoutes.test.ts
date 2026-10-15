@@ -70,9 +70,9 @@ suite("Normalized history through official SDKs", () => {
         body: JSON.stringify({ model: model.id, input: "Check", stream }),
       });
       const body = await response.text();
-      assert.ok(!body.includes("first-private-state"));
       assert.ok(!body.includes("second-private-state"));
       if (!stream) {
+        assert.ok(!body.includes("first-private-state"));
         assert.strictEqual(response.status, 502);
         const result = JSON.parse(body);
         assert.strictEqual(result.error.type, "upstream_error");
@@ -89,6 +89,9 @@ suite("Normalized history through official SDKs", () => {
           events.at(-1).response.error.code,
           "invalid_provider_reasoning",
         );
+        assert.ok(
+          !JSON.stringify(events.at(-1)).includes("first-private-state"),
+        );
         assert.ok(!events.some((event) => event.type === "response.completed"));
         const reasoningDone = events.filter(
           (event) =>
@@ -96,6 +99,10 @@ suite("Normalized history through official SDKs", () => {
             event.item.type === "reasoning",
         );
         assert.strictEqual(reasoningDone.length, 1);
+        assert.strictEqual(
+          reasoningDone[0].item.encrypted_content,
+          "am_reasoning_v1:16:same-provider-idfirst-private-state",
+        );
       }
     });
   }
@@ -211,22 +218,33 @@ suite("Normalized history through official SDKs", () => {
       },
     } as unknown as vscode.LanguageModelChat;
     const app = responsesApp(model);
-    const response = await app.request("/v1/responses", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: model.id,
-        input: [
-          { type: "reasoning", id: "rs", encrypted_content: 42, summary: [] },
-        ],
-      }),
-    });
-    assert.strictEqual(response.status, 400);
-    assert.strictEqual(
-      ((await response.json()) as any).error.code,
-      "invalid_reasoning",
-    );
-    assert.strictEqual(requests, 0);
+    for (const stream of [false, true]) {
+      for (const encrypted_content of [
+        42,
+        "am_reasoning_v1:9007199254740992:private-state",
+        "am_reasoning_v1:3:🧠private-state",
+        "am_reasoning_v1:3:abc",
+      ]) {
+        const response = await app.request("/v1/responses", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: model.id,
+            stream,
+            input: [
+              { type: "reasoning", id: "rs", encrypted_content, summary: [] },
+            ],
+          }),
+        });
+        assert.strictEqual(response.status, 400);
+        const result = (await response.json()) as {
+          error: { code: string; param: string };
+        };
+        assert.strictEqual(result.error.code, "invalid_reasoning");
+        assert.strictEqual(result.error.param, "input");
+        assert.strictEqual(requests, 0);
+      }
+    }
   });
   test("Responses rejects metadata-discarding hosts before dispatch in JSON and SSE", async () => {
     const runtime = getThinkingRuntime()!;
@@ -282,6 +300,8 @@ suite("Normalized history through official SDKs", () => {
   for (const stream of [false, true] as const) {
     for (const custom of [false, true]) {
       test(`Responses reasoning survives SDK tool continuation (stream=${stream}, custom=${custom})`, async () => {
+        const reasoningId = "rs:tool:状态:🧠";
+        const encryptedState = "opaque:tool___state:".repeat(1_000);
         let requestCount = 0;
         const model = {
           ...modelMetadata,
@@ -297,9 +317,9 @@ suite("Normalized history through official SDKs", () => {
               const thinking = parts.find(
                 (part) => part instanceof getThinkingRuntime()!.Thinking,
               ) as unknown as ThinkingPart;
-              assert.strictEqual(thinking.id, "rs_tool");
+              assert.strictEqual(thinking.id, reasoningId);
               assert.deepStrictEqual(thinking.metadata, {
-                encrypted_content: "opaque-tool-state",
+                encrypted_content: encryptedState,
                 vscode_thinking_origin_api: "responses",
               });
               assert.strictEqual(thinking.value, "");
@@ -324,11 +344,11 @@ suite("Normalized history through official SDKs", () => {
                 );
                 yield new (getThinkingRuntime()!.Thinking)(
                   "",
-                  requestCount === 1 ? "rs_tool" : "rs_final",
+                  requestCount === 1 ? reasoningId : "rs_final",
                   {
                     encrypted_content:
                       requestCount === 1
-                        ? "opaque-tool-state"
+                        ? encryptedState
                         : "opaque-final-state",
                     vscode_thinking_origin_api: "responses",
                   },
@@ -402,6 +422,14 @@ suite("Normalized history through official SDKs", () => {
             custom ? "custom_tool_call" : "function_call",
             "message",
           ],
+        );
+        const reasoning = output[0];
+        if (reasoning.type !== "reasoning") {
+          assert.fail("Expected reasoning before tool output");
+        }
+        assert.strictEqual(
+          reasoning.encrypted_content,
+          `am_reasoning_v1:${Buffer.byteLength(reasoningId, "utf8")}:${reasoningId}${encryptedState}`,
         );
         assert.ok(!JSON.stringify(output).includes("private-text"));
         history.push(

@@ -133,27 +133,28 @@ function decodeReasoningState(item: Record<string, unknown>): {
       "invalid_reasoning",
     );
   }
-  try {
-    const state: unknown = JSON.parse(
-      Buffer.from(
-        encrypted.slice(REASONING_STATE_PREFIX.length),
-        "base64url",
-      ).toString("utf8"),
-    );
+  const state = encrypted.slice(REASONING_STATE_PREFIX.length);
+  const separator = state.indexOf(":");
+  const lengthText = state.slice(0, separator);
+  const idByteLength = Number(lengthText);
+  if (
+    separator > 0 &&
+    Number.isSafeInteger(idByteLength) &&
+    idByteLength > 0 &&
+    String(idByteLength) === lengthText
+  ) {
+    const payload = state.slice(separator + 1);
+    const idBytes = Buffer.from(payload, "utf8").subarray(0, idByteLength);
+    const id = idBytes.toString("utf8");
+    // Check UTF-8 boundaries, then slice the original string to leave ciphertext untouched.
     if (
-      state &&
-      typeof state === "object" &&
-      "id" in state &&
-      typeof state.id === "string" &&
-      state.id &&
-      "encrypted" in state &&
-      typeof state.encrypted === "string" &&
-      state.encrypted
+      idBytes.length === idByteLength &&
+      Buffer.byteLength(id, "utf8") === idByteLength &&
+      payload.startsWith(id) &&
+      id.length < payload.length
     ) {
-      return { id: state.id, encrypted: state.encrypted };
+      return { id, encrypted: payload.slice(id.length) };
     }
-  } catch {
-    /* Invalid state is reported without retaining its contents. */
   }
   logger.warn("Rejecting Responses reasoning: malformed opaque replay state");
   throw new ResponsesReasoningError(
@@ -201,17 +202,19 @@ export const thinkingToResponseReasoning = (
   if (!hasEncryptedThinking(part)) {
     return undefined;
   }
+  const idBytes = Buffer.from(part.id, "utf8");
+  if (idBytes.toString("utf8") !== part.id) {
+    logger.warn("Rejecting Responses reasoning: invalid provider ID encoding");
+    throw new ProviderReasoningError("Invalid provider reasoning ID encoding");
+  }
   const encrypted = part.metadata.encrypted_content;
   return {
     type: "reasoning",
     id: part.id,
-    // Codex drops item IDs on replay. Preserve the provider's ID inside the
-    // client-opaque field so both values survive without server-side storage.
+    // Codex can drop item IDs on replay. Length framing preserves the provider's
+    // ID without re-encoding the ciphertext or adding server-side storage.
     encrypted_content:
-      REASONING_STATE_PREFIX +
-      Buffer.from(JSON.stringify({ id: part.id, encrypted })).toString(
-        "base64url",
-      ),
+      REASONING_STATE_PREFIX + idBytes.length + ":" + part.id + encrypted,
     summary: [],
   };
 };
