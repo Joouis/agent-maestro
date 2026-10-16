@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.15.0 - 2026.10.16
+
+- Preserve encrypted reasoning across OpenAI Responses tool continuations, including streaming, on compatible VS Code hosts. Responses may contain multiple messages; clients should process all output items in order.
+- Add startup prompt-cache warnings and a `Configure Copilot Prompt Cache` command to switch between implicit and explicit mode.
+- Require VS Code 1.142.0 or newer.
+
 ## v2.14.1 - 2026.09.29
 
 - Fix GPT prompt-cache misses (`cached_tokens: 0`) with Copilot Chat 0.67 (VS Code 1.139), which enables explicit cache mode by default. On that version, Agent Maestro offers on startup to set `github.copilot.chat.responsesApi.promptCacheBreakpoint.enabled` to `false` when it has never been configured. Upgrading to VS Code 1.140 also resolves it. See [GPT prompt cache](docs/copilot-gpt-prompt-cache.md).
