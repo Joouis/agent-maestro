@@ -172,7 +172,7 @@ export function restoreReasoningPart(
       "Rejecting Responses reasoning: host cannot replay encrypted state",
     );
     throw new ResponsesReasoningError(
-      "This VS Code host does not expose the thinking runtime needed to replay encrypted reasoning. Try updating VS Code and GitHub Copilot, or start a new session without this reasoning history. Verified combination: VS Code 1.141.2 / Copilot 0.69.0; availability in other versions is not guaranteed.",
+      "This VS Code host does not expose the thinking runtime needed to replay encrypted reasoning. Try updating VS Code and GitHub Copilot, or start a new session without this reasoning history. Verified combination: VS Code 1.142.0 / Copilot 0.70.0; availability in other versions is not guaranteed.",
       "reasoning_unavailable",
     );
   }

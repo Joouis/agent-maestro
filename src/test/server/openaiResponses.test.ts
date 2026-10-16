@@ -612,7 +612,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
             error.message,
             /start a new session without this reasoning history/,
           );
-          assert.match(error.message, /VS Code 1\.141\.2 \/ Copilot 0\.69\.0/);
+          assert.match(error.message, /VS Code 1\.142\.0 \/ Copilot 0\.70\.0/);
           assert.match(error.message, /not guaranteed/);
           assert.ok(!error.message.includes("opaque"));
           return true;

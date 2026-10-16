@@ -25,13 +25,13 @@ This README and the [documentation index](docs/README.md) describe this checkout
 
 ### Prerequisites
 
-- VS Code **1.120.0 or newer**, with GitHub Copilot signed in and eligible models available. The LLM proxy currently selects models from the `copilot` vendor.
+- VS Code **1.142.0 or newer**, with GitHub Copilot signed in and eligible models available. The LLM proxy currently selects models from the `copilot` vendor.
 - Install the client you want to use: Claude Code, Claude Desktop, Codex, or Gemini CLI. Installing a client alone does not provide proxy models.
 - Install Roo Code or a compatible variant such as Kilo Code only if you need task orchestration. Cline is optional and currently supports task creation only.
 
 For source development, use Node.js 22 or newer and the pnpm version specified in [package.json](package.json).
 
-For Responses reasoning replay, VS Code **1.141.2 or newer is recommended**; the verified combination is VS Code 1.141.2 / Copilot 0.69.0. Availability depends on the host runtime and provider, so Agent Maestro checks the capability at runtime.
+Responses reasoning replay has been verified with VS Code **1.142.0 / Copilot 0.70.0**. Availability still depends on the host runtime and provider, so Agent Maestro checks the capability at runtime.
 
 ### 1. Install and Start the Proxy
 

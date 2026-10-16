@@ -1,6 +1,6 @@
 # VS Code LM API image MIME re-encode defect
 
-Implementation note reviewed on 2026-09-05. The upstream behavior below records the defect behind the workaround, not a fresh verification of every VS Code release. Recheck it when changing the minimum VS Code version.
+Rechecked on 2026-10-15 against VS Code 1.142.0, commit `6d62b1d5dace93a33b3a6d3eca1317bd5e15bcb1`. The LM API still calls `resizeImage` without the source MIME type and leaves the declared MIME unchanged, so the workaround remains necessary. Recheck it when changing the minimum VS Code version.
 
 ## Summary
 
@@ -26,6 +26,7 @@ since both reduce to "declared type disagrees with bytes".)
 On the request path, `mainThreadLanguageModels.ts` runs every `image_url` part
 through `resizeImage()` (`vs/workbench/contrib/chat/browser/chatImageUtils.ts`):
 
+- Verified sources: [LM request path](https://github.com/microsoft/vscode/blob/6d62b1d5dace93a33b3a6d3eca1317bd5e15bcb1/src/vs/workbench/api/browser/mainThreadLanguageModels.ts#L137-L142) and [resize implementation](https://github.com/microsoft/vscode/blob/6d62b1d5dace93a33b3a6d3eca1317bd5e15bcb1/src/vs/workbench/contrib/chat/browser/chatImageUtils.ts#L20-L74).
 - `resizeImage(data)` is called **without** the source MIME type.
 - With no MIME, the canvas re-encode always picks `image/png`
   (`outputMimeType = mimeType && jpegTypes.includes(mimeType) ? 'image/jpeg' : 'image/png'`).

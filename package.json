@@ -7,7 +7,7 @@
   "publisher": "Joouis",
   "repository": "https://github.com/Joouis/agent-maestro",
   "engines": {
-    "vscode": "^1.120.0",
+    "vscode": "^1.142.0",
     "node": ">=22"
   },
   "packageManager": "pnpm@11.9.0",
@@ -199,7 +199,7 @@
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
-    "@types/vscode": "^1.120.0",
+    "@types/vscode": "^1.140.0",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
     "@vscode/test-cli": "^0.0.10",
