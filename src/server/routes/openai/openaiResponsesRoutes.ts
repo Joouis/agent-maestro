@@ -15,6 +15,7 @@ import {
   withCopilotConfiguration,
   withCopilotConversationId,
 } from "../../../utils/chatModels";
+import { readConfiguration } from "../../../utils/config";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
@@ -22,7 +23,6 @@ import {
   LanguageModelClientDisconnectedError,
   LanguageModelRequestLifecycle,
   LanguageModelRequestTimeoutError,
-  interruptibleLanguageModelStream,
 } from "../../utils/languageModelRequestLifecycle";
 import {
   encryptedThinkingOptions,
@@ -63,6 +63,7 @@ import {
   OpenAIResponsesRequestValidationError,
   prepareOpenAIResponsesTools,
 } from "../../utils/openaiResponsesWebSearch";
+import { streamResponsesWithHistoryRecovery } from "../../utils/responsesHistoryRecovery";
 import {
   WEB_SEARCH_PROVIDER_TIMEOUT_MS,
   WebSearchProvider,
@@ -169,6 +170,7 @@ Limitations:
 });
 
 export interface OpenaiResponsesRoutesOptions {
+  isToolHistoryRecoveryEnabled?: () => boolean;
   heartbeatIntervalMs?: number;
   providerTimeoutMs?: number;
   requestTimeoutMs?: number;
@@ -385,23 +387,23 @@ export function registerOpenaiResponsesRoutes(
       }
 
       // 9. Handle non-streaming response
+      const recoveryEnabled = (
+        options.isToolHistoryRecoveryEnabled ??
+        (() => readConfiguration().responsesToolHistoryRecovery)
+      )();
       if (!stream) {
-        const response = await requestLifecycle.waitFor(
-          client.sendRequest(
-            vsCodeMessages,
-            configuredRequestOptions,
-            cancellationToken,
-          ),
-        );
         let accumulatedText = "";
         const toolCalls: { callId: string; name: string; input: unknown }[] =
           [];
         const parts: ResponsesModelPart[] = [];
         let responseUsage: ResponseUsage | undefined;
 
-        for await (const chunk of interruptibleLanguageModelStream(
-          response.stream,
+        for await (const chunk of streamResponsesWithHistoryRecovery(
+          client,
+          vsCodeMessages,
+          configuredRequestOptions,
           requestLifecycle,
+          recoveryEnabled,
         )) {
           if (chunk instanceof vscode.LanguageModelTextPart) {
             accumulatedText += chunk.value;
@@ -530,13 +532,6 @@ export function registerOpenaiResponsesRoutes(
             writeSSE,
             sequenceNumberRef,
             async (writeSSE) => {
-              const response = await requestLifecycle!.waitFor(
-                client.sendRequest(
-                  vsCodeMessages,
-                  configuredRequestOptions,
-                  cancellationToken,
-                ),
-              );
               // Process stream
               const output: OutputItem[] = [];
               const reasoning = new ReasoningItems("provider");
@@ -547,9 +542,12 @@ export function registerOpenaiResponsesRoutes(
               let totalOutputText = ""; // Track all output for token counting
               let responseUsage: ResponseUsage | undefined;
 
-              for await (const chunk of interruptibleLanguageModelStream(
-                response.stream,
+              for await (const chunk of streamResponsesWithHistoryRecovery(
+                client,
+                vsCodeMessages,
+                configuredRequestOptions,
                 requestLifecycle!,
+                recoveryEnabled,
               )) {
                 if (chunk instanceof vscode.LanguageModelTextPart) {
                   if (!currentMessageId) {

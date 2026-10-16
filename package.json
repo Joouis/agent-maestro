@@ -90,6 +90,12 @@
           "default": "",
           "description": "Model ID to use when a requested model is unavailable after exact and fuzzy matching. Leave empty to use VS Code's automatic model fallback.",
           "scope": "application"
+        },
+        "agent-maestro.experimental.responsesToolHistoryRecovery": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental, opt-in recovery for ordinary Copilot-backed Responses requests. On a specific downstream tool-pairing rejection before output, retry once with completed tool history converted to labelled text/data context. Changes history semantics and may increase usage; does not guarantee recovery. Excludes hosted web-search loops.",
+          "scope": "application"
         }
       }
     },
