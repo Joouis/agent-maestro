@@ -80,10 +80,10 @@ export async function setCopilotPromptCacheMode(
     }
   }
   logger.info(
-    `Set ${PROMPT_CACHE_BREAKPOINT_SETTING} to ${explicit} in User settings; current Workspace override cleared`,
+    `Set ${PROMPT_CACHE_BREAKPOINT_SETTING} to ${explicit} in User settings; current Workspace uses User settings`,
   );
   void vscode.window.showInformationMessage(
-    `Copilot prompt caching set to ${explicit ? "explicit" : "implicit"} mode in User settings. Workspace override cleared.`,
+    `Copilot prompt caching set to ${explicit ? "explicit" : "implicit"} mode in User settings. This workspace now uses that setting.`,
   );
 }
 
@@ -110,13 +110,9 @@ export async function configureCopilotPromptCache(
       explicit: true,
     },
   ];
-  const current =
-    setting.userValue === undefined
-      ? "unset (Copilot experiments may differ)"
-      : String(setting.userValue);
   const selected = await vscode.window.showQuickPick(choices, {
     title: "Copilot Prompt Cache — User Settings",
-    placeHolder: `User: ${current}; Workspace override: ${setting.workspaceValue ?? "none"}; visible: ${setting.visibleValue ?? "unknown"}. Updates User settings and removes this Workspace's override; also affects native Copilot Chat. Other Workspace overrides remain.`,
+    placeHolder: "Also clears this workspace's override",
     matchOnDetail: true,
   });
   if (selected) {
@@ -164,7 +160,7 @@ export const checkCopilotPromptCacheSetting = async (
     logger.error(`Failed to update ${PROMPT_CACHE_BREAKPOINT_SETTING}:`, error);
     const openSettings = "Open Settings";
     const action = await vscode.window.showErrorMessage(
-      `Could not configure Copilot prompt caching: ${error instanceof Error ? error.message : String(error)} Check "${PROMPT_CACHE_BREAKPOINT_SETTING}" in settings.`,
+      `Could not configure Copilot prompt caching: ${error instanceof Error ? error.message : String(error)}`,
       openSettings,
     );
     if (action === openSettings) {

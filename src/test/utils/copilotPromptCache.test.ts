@@ -338,7 +338,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
     ]);
     assert.strictEqual(
       messages.at(-1)!.message,
-      "Copilot prompt caching set to implicit mode in User settings. Workspace override cleared.",
+      "Copilot prompt caching set to implicit mode in User settings. This workspace now uses that setting.",
     );
     const messageCount = messages.length;
     await checkCopilotPromptCacheSetting(context);
@@ -463,6 +463,10 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
     await checkCopilotPromptCacheSetting(context);
     assert.strictEqual(messages.length, 1);
     assert.strictEqual(errors.length, 1);
+    assert.strictEqual(
+      errors[0],
+      "Could not configure Copilot prompt caching: settings are read-only",
+    );
     assert.deepStrictEqual(updates, []);
     assert.deepStrictEqual(commands, [
       ["workbench.action.openSettings", PROMPT_CACHE_BREAKPOINT_SETTING],
@@ -557,13 +561,9 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
         );
         assert.strictEqual(pickerOptions!.matchOnDetail, true);
         assert.match(pickerOptions!.title!, /User Settings/);
-        assert.match(
-          pickerOptions!.placeHolder!,
-          /User: unset.*experiments may differ.*native Copilot Chat/,
-        );
-        assert.match(
-          pickerOptions!.placeHolder!,
-          /Updates User settings and removes this Workspace's override/,
+        assert.strictEqual(
+          pickerOptions!.placeHolder,
+          "Also clears this workspace's override",
         );
         assert.deepStrictEqual(updates, [
           {
@@ -574,7 +574,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
         ]);
         assert.strictEqual(
           messages[0].message,
-          `Copilot prompt caching set to ${explicit ? "explicit" : "implicit"} mode in User settings. Workspace override cleared.`,
+          `Copilot prompt caching set to ${explicit ? "explicit" : "implicit"} mode in User settings. This workspace now uses that setting.`,
         );
       },
     );
@@ -584,14 +584,16 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
     inspected = { globalValue: true, workspaceValue: false };
     state.set("copilotPromptCacheModeNoticeShown", true);
     await configureCopilotPromptCache(context);
-    assert.match(
-      pickerOptions!.placeHolder!,
-      /User: true; Workspace override: false/,
+    assert.strictEqual(
+      pickerOptions!.placeHolder,
+      "Also clears this workspace's override",
     );
     assert.deepStrictEqual(
       { updates, messages },
       { updates: [], messages: [] },
     );
+    assert.strictEqual(inspected.globalValue, true);
+    assert.strictEqual(inspected.workspaceValue, false);
     assert.strictEqual(state.get("copilotPromptCacheModeNoticeShown"), true);
   });
 
