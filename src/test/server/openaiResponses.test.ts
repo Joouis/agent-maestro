@@ -385,31 +385,31 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
     });
 
     test("preserves assistant boundaries and alternating reasoning/call order", () => {
-      const r = (id: string) => ({
+      const reasoningItem = (id: string) => ({
         type: "reasoning" as const,
         id,
         summary: [],
         encrypted_content: `state-${id}`,
       });
-      const c = (id: string) => ({
+      const functionCall = (id: string) => ({
         type: "function_call" as const,
         call_id: id,
         name: id,
         arguments: "{}",
       });
-      const o = (id: string) => ({
+      const functionCallOutput = (id: string) => ({
         type: "function_call_output" as const,
         call_id: id,
         output: "ok",
       });
       const result = convertResponsesInputToVSCode([
         { role: "assistant", content: "A" },
-        r("R1"),
-        c("C1"),
-        r("R2"),
-        c("C2"),
-        o("C1"),
-        o("C2"),
+        reasoningItem("R1"),
+        functionCall("C1"),
+        reasoningItem("R2"),
+        functionCall("C2"),
+        functionCallOutput("C1"),
+        functionCallOutput("C2"),
       ]);
       assert.strictEqual(result.length, 3);
       assert.strictEqual(

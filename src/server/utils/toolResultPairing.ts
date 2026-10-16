@@ -85,6 +85,12 @@ const sameResult = (a: Result, b: Result): boolean =>
   a.name === b.name &&
   a.toolType === b.toolType &&
   isDeepStrictEqual(a.value, b.value);
+const isReasoningOnlyAssistantMessage = (
+  message: ToolHistoryMessage,
+): boolean =>
+  message.role === "assistant" &&
+  message.parts.length > 0 &&
+  message.parts.every((part) => part.kind === "reasoning");
 
 /** Analyze a complete request snapshot; no decisions depend on another request. */
 export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
@@ -350,10 +356,7 @@ export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
       message.parts.some((p) => p.kind === "call");
     const hasResults =
       message.role === "user" && message.parts.some((p) => p.kind === "result");
-    const reasoningOnly =
-      message.role === "assistant" &&
-      message.parts.length > 0 &&
-      message.parts.every((part) => part.kind === "reasoning");
+    const reasoningOnly = isReasoningOnlyAssistantMessage(message);
     if (
       message.boundary ||
       (!hasCalls &&
@@ -425,10 +428,7 @@ export function toolHistoryToVSCode(
     const hasCalls =
       message.role === "assistant" &&
       message.parts.some((part) => part.kind === "call");
-    const reasoningOnly =
-      message.role === "assistant" &&
-      message.parts.length > 0 &&
-      message.parts.every((part) => part.kind === "reasoning");
+    const reasoningOnly = isReasoningOnlyAssistantMessage(message);
     const hasResults =
       message.role === "user" &&
       message.parts.some((part) => part.kind === "result");
