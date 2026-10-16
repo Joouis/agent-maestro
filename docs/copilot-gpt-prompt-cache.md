@@ -27,16 +27,18 @@ When Copilot's setting is available, AM classifies its state from explicit User 
 | Explicit `true` (explicit mode)         | Show a one-time modal warning about the known cache-miss risk.                                                                                                           |
 | Neither scope configured (unknown mode) | Show a one-time modal warning about the possible experiment risk, without claiming explicit mode has been detected. A visible default does not resolve this uncertainty. |
 
-The native modal dialog offers **Use Implicit Mode** and **Keep Current Settings**. AM records that the warning was shown only after the dialog returns, whether the user accepts, keeps the current settings, or dismisses it. Explicit and unknown modes share this record, so the startup warning does not repeat even if the mode later changes or a configuration write fails. If the dialog itself cannot be shown, AM does not suppress future warnings. The command below remains available.
+The native modal dialog offers **Use Implicit Mode** and **Keep Current Settings**. AM records that the warning was shown only after the dialog returns, whether the user accepts, keeps the current settings, or dismisses it. Explicit and unknown modes share this record, so closing the dialog or a failed configuration action does not cause repeated warnings. If the dialog itself cannot be shown, AM does not suppress future warnings. The command below remains available.
 
 Only **Use Implicit Mode** changes configuration: it selects implicit mode (`false`) in User settings, then removes the current Workspace's explicit value so that it inherits the User setting. Both changes are disclosed in the dialog before the same confirmation; the action never switches its write target from User to Workspace. Keeping the current settings or dismissing the dialog changes no configuration.
+
+After implicit mode is successfully applied through the dialog or command, AM clears `copilotPromptCacheModeNoticeShown`. No warning appears while implicit mode remains effective. If the user later removes the setting or changes it to `true`, AM can warn again at the next startup. Choosing `true` in the command, cancelling it, or failing to apply a mode leaves the reminder record unchanged; choosing `true` is not treated as acknowledging the risk dialog. Checks remain startup-only and do not classify requests or model IDs.
 
 ## Switch modes at any time
 
 Run **Agent Maestro: Configure Copilot Prompt Cache** from the Command Palette. The picker offers:
 
-- **false — Implicit (recommended for AM):** allow automatic prefix caching.
-- **true — Explicit:** use Copilot's explicit cache breakpoints; AM's GPT requests can have zero cache hits.
+- **Implicit** (`false`, recommended for Agent Maestro): cache matching prompt prefixes automatically, without requiring prompt cache breakpoints.
+- **Explicit** (`true`): require prompt cache breakpoints, which Agent Maestro cannot currently provide; its GPT requests may have no cache hits.
 
 The picker identifies the current User setting, Workspace override, and visible value. Selecting an item writes the chosen mode to User settings and removes any current Workspace override, including one added while the picker was open; cancelling makes no change. AM verifies the User value and that the current Workspace has no override before reporting success. If the User write fails, the Workspace override is left untouched. If the User write succeeds but override removal fails, AM explicitly reports the partial result instead of claiming the mode is effective.
 

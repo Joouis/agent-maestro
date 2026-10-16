@@ -42,6 +42,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
   let keepSettings: boolean;
   let notificationError: Error | undefined;
   let state: Map<string, unknown>;
+  let stateResetError: Error | undefined;
   let context: vscode.ExtensionContext;
   let writeError: Error | undefined;
   let writeErrorTarget: vscode.ConfigurationTarget | undefined;
@@ -65,6 +66,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
     keepSettings = false;
     notificationError = undefined;
     state = new Map();
+    stateResetError = undefined;
     writeError = undefined;
     writeErrorTarget = undefined;
     ignoreWrite = false;
@@ -78,7 +80,14 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
       globalState: {
         get: (key: string) => state.get(key),
         update: async (key: string, value: unknown) => {
-          state.set(key, value);
+          if (value === undefined) {
+            if (stateResetError) {
+              throw stateResetError;
+            }
+            state.delete(key);
+          } else {
+            state.set(key, value);
+          }
         },
       },
     } as unknown as vscode.ExtensionContext;
@@ -327,11 +336,14 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
         target: vscode.ConfigurationTarget.Global,
       },
     ]);
-    assert.match(messages.at(-1)!.message, /false \(implicit\).*User settings/);
+    assert.strictEqual(
+      messages.at(-1)!.message,
+      "Copilot prompt caching set to implicit mode in User settings. Workspace override cleared.",
+    );
     const messageCount = messages.length;
     await checkCopilotPromptCacheSetting(context);
     assert.strictEqual(messages.length, messageCount);
-    assert.strictEqual(state.size, 1);
+    assert.strictEqual(state.size, 0);
   });
 
   test("removes the Workspace override without rewriting an existing User false", async () => {
@@ -356,8 +368,72 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
     };
     await checkCopilotPromptCacheSetting(context);
     assert.deepStrictEqual(updates, []);
-    assert.strictEqual(messages.length, 1);
+    assert.strictEqual(messages.length, 2);
+    assert.strictEqual(state.size, 0);
   });
+
+  for (const entrypoint of ["notification", "command"] as const) {
+    for (const laterValue of [true, undefined]) {
+      test(`${entrypoint} implicit success rearms the startup warning when User settings later become ${laterValue}`, async () => {
+        inspected = { globalValue: true, workspaceValue: true };
+        if (entrypoint === "notification") {
+          acceptNotice = true;
+          await checkCopilotPromptCacheSetting(context);
+        } else {
+          state.set("copilotPromptCacheModeNoticeShown", true);
+          pick = false;
+          await configureCopilotPromptCache(context);
+        }
+        assert.strictEqual(
+          state.get("copilotPromptCacheModeNoticeShown"),
+          undefined,
+        );
+        assert.strictEqual(inspected.globalValue, false);
+        assert.strictEqual(inspected.workspaceValue, undefined);
+        const warningCount = messages.filter(
+          ({ options }) => options?.modal,
+        ).length;
+        await checkCopilotPromptCacheSetting(context);
+        assert.strictEqual(
+          messages.filter(({ options }) => options?.modal).length,
+          warningCount,
+        );
+        inspected.globalValue = laterValue;
+        acceptNotice = false;
+        await checkCopilotPromptCacheSetting(context);
+        await checkCopilotPromptCacheSetting(context);
+        assert.strictEqual(
+          messages.filter(({ options }) => options?.modal).length,
+          warningCount + 1,
+        );
+        assert.strictEqual(
+          state.get("copilotPromptCacheModeNoticeShown"),
+          true,
+        );
+      });
+    }
+  }
+
+  for (const recorded of [undefined, true]) {
+    test(`choosing explicit mode leaves the notice record ${recorded} instead of acknowledging risk`, async () => {
+      inspected = { globalValue: false };
+      if (recorded !== undefined) {
+        state.set("copilotPromptCacheModeNoticeShown", recorded);
+      }
+      pick = true;
+      await configureCopilotPromptCache(context);
+      assert.strictEqual(inspected.globalValue, true);
+      assert.strictEqual(
+        state.get("copilotPromptCacheModeNoticeShown"),
+        recorded,
+      );
+      await checkCopilotPromptCacheSetting(context);
+      assert.strictEqual(
+        messages.filter(({ options }) => options?.modal).length,
+        recorded === true ? 0 : 1,
+      );
+    });
+  }
 
   test("does not notify or write when Copilot's setting is unavailable", async () => {
     inspected = undefined;
@@ -366,7 +442,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
       { messages, updates },
       { messages: [], updates: [] },
     );
-    await assert.rejects(configureCopilotPromptCache(), /not available/);
+    await assert.rejects(configureCopilotPromptCache(context), /not available/);
     assert.deepStrictEqual(choices, []);
   });
 
@@ -377,7 +453,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
       { messages, updates },
       { messages: [], updates: [] },
     );
-    await assert.rejects(configureCopilotPromptCache(), /not available/);
+    await assert.rejects(configureCopilotPromptCache(context), /not available/);
   });
 
   test("reports a failed notification action and offers settings without claiming success", async () => {
@@ -459,23 +535,27 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
         " after selection",
       async () => {
         pick = explicit;
-        await configureCopilotPromptCache();
+        await configureCopilotPromptCache(context);
         assert.deepStrictEqual(
           choices.map((item) => ({
             label: item.label,
             explicit: item.explicit,
           })),
           [
-            { label: "false", explicit: false },
-            { label: "true", explicit: true },
+            { label: "Implicit", explicit: false },
+            { label: "Explicit", explicit: true },
           ],
         );
-        assert.match(
-          choices[0].description!,
-          /Implicit.*automatic prefix caching/,
+        assert.ok(choices.every((item) => item.description === undefined));
+        assert.strictEqual(
+          choices[0].detail,
+          "Recommended for Agent Maestro. Caches matching prompt prefixes automatically.",
         );
-        assert.match(choices[1].description!, /Explicit.*breakpoints/);
-        assert.match(choices[1].detail!, /zero/);
+        assert.strictEqual(
+          choices[1].detail,
+          "Requires prompt cache breakpoints, which Agent Maestro cannot currently provide.",
+        );
+        assert.strictEqual(pickerOptions!.matchOnDetail, true);
         assert.match(pickerOptions!.title!, /User Settings/);
         assert.match(
           pickerOptions!.placeHolder!,
@@ -492,14 +572,18 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
             target: vscode.ConfigurationTarget.Global,
           },
         ]);
-        assert.match(messages[0].message, /native Copilot Chat/);
+        assert.strictEqual(
+          messages[0].message,
+          `Copilot prompt caching set to ${explicit ? "explicit" : "implicit"} mode in User settings. Workspace override cleared.`,
+        );
       },
     );
   }
 
   test("command cancellation does not change settings", async () => {
     inspected = { globalValue: true, workspaceValue: false };
-    await configureCopilotPromptCache();
+    state.set("copilotPromptCacheModeNoticeShown", true);
+    await configureCopilotPromptCache(context);
     assert.match(
       pickerOptions!.placeHolder!,
       /User: true; Workspace override: false/,
@@ -508,14 +592,15 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
       { updates, messages },
       { updates: [], messages: [] },
     );
+    assert.strictEqual(state.get("copilotPromptCacheModeNoticeShown"), true);
   });
 
   test("command toggles User settings and clears only the current Workspace override", async () => {
     inspected = { globalValue: false, workspaceValue: true };
     pick = false;
-    await configureCopilotPromptCache();
+    await configureCopilotPromptCache(context);
     pick = true;
-    await configureCopilotPromptCache();
+    await configureCopilotPromptCache(context);
     assert.deepStrictEqual(
       updates.map(({ value, target }) => ({ value, target })),
       [
@@ -534,7 +619,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
         explicit,
       async () => {
         inspected = { globalValue: !explicit, workspaceValue: !explicit };
-        await setCopilotPromptCacheMode(explicit);
+        await setCopilotPromptCacheMode(explicit, context);
         assert.deepStrictEqual(
           updates.map(({ value, target }) => ({ value, target })),
           [
@@ -549,7 +634,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
 
     test("clears a matching Workspace override for " + explicit, async () => {
       inspected = { globalValue: explicit, workspaceValue: explicit };
-      await setCopilotPromptCacheMode(explicit);
+      await setCopilotPromptCacheMode(explicit, context);
       assert.deepStrictEqual(
         updates.map(({ value, target }) => ({ value, target })),
         [{ value: undefined, target: vscode.ConfigurationTarget.Workspace }],
@@ -574,7 +659,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
         } else {
           pick = false;
           onPicker = changeOverride;
-          await configureCopilotPromptCache();
+          await configureCopilotPromptCache(context);
         }
         assert.deepStrictEqual(
           updates.map(({ value, target }) => ({ value, target })),
@@ -601,7 +686,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
       inspected!.workspaceValue = true;
       onUpdate = undefined;
     };
-    await setCopilotPromptCacheMode(false);
+    await setCopilotPromptCacheMode(false, context);
     assert.deepStrictEqual(
       updates.map(({ value, target }) => ({ value, target })),
       [
@@ -613,22 +698,25 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
 
   test("preserves the Workspace override when the User write fails", async () => {
     inspected = { globalValue: true, workspaceValue: true };
+    state.set("copilotPromptCacheModeNoticeShown", true);
     writeError = new Error("User settings are read-only");
     await assert.rejects(
-      setCopilotPromptCacheMode(false),
+      setCopilotPromptCacheMode(false, context),
       /User settings are read-only/,
     );
     assert.deepStrictEqual(updates, []);
     assert.strictEqual(inspected.workspaceValue, true);
+    assert.strictEqual(state.get("copilotPromptCacheModeNoticeShown"), true);
     assert.deepStrictEqual(messages, []);
   });
 
   test("reports the partial result when Workspace cleanup fails", async () => {
     inspected = { globalValue: true, workspaceValue: true };
+    state.set("copilotPromptCacheModeNoticeShown", true);
     writeError = new Error("Workspace settings are read-only");
     writeErrorTarget = vscode.ConfigurationTarget.Workspace;
     await assert.rejects(
-      setCopilotPromptCacheMode(false),
+      setCopilotPromptCacheMode(false, context),
       /User prompt-cache setting is false.*Workspace's override could not be removed/,
     );
     assert.deepStrictEqual(
@@ -637,6 +725,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
     );
     assert.strictEqual(inspected.globalValue, false);
     assert.strictEqual(inspected.workspaceValue, true);
+    assert.strictEqual(state.get("copilotPromptCacheModeNoticeShown"), true);
     assert.deepStrictEqual(messages, []);
   });
 
@@ -658,22 +747,45 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
 
   test("rejects ineffective Workspace cleanup even when its value matches User settings", async () => {
     inspected = { globalValue: false, workspaceValue: false };
+    state.set("copilotPromptCacheModeNoticeShown", true);
     ignoredWriteTarget = vscode.ConfigurationTarget.Workspace;
-    await assert.rejects(setCopilotPromptCacheMode(false), /still overridden/);
+    await assert.rejects(
+      setCopilotPromptCacheMode(false, context),
+      /still overridden/,
+    );
+    assert.strictEqual(state.get("copilotPromptCacheModeNoticeShown"), true);
     assert.deepStrictEqual(messages, []);
   });
 
   test("does not rewrite an already explicit matching choice", async () => {
     inspected = { globalValue: false };
-    await setCopilotPromptCacheMode(false);
+    state.set("copilotPromptCacheModeNoticeShown", true);
+    await setCopilotPromptCacheMode(false, context);
     assert.deepStrictEqual(updates, []);
+    assert.strictEqual(
+      state.get("copilotPromptCacheModeNoticeShown"),
+      undefined,
+    );
+  });
+
+  test("reports an enabled implicit mode honestly if resetting its reminder fails", async () => {
+    state.set("copilotPromptCacheModeNoticeShown", true);
+    stateResetError = new Error("Storage is read-only");
+    await assert.rejects(
+      setCopilotPromptCacheMode(false, context),
+      /Implicit mode is enabled, but AM could not reset its cache warning reminder/,
+    );
+    assert.strictEqual(inspected!.globalValue, false);
+    assert.strictEqual(inspected!.workspaceValue, undefined);
+    assert.strictEqual(state.get("copilotPromptCacheModeNoticeShown"), true);
+    assert.deepStrictEqual(messages, []);
   });
 
   test("rejects an ineffective update rather than reporting success", async () => {
     inspected = { globalValue: true, workspaceValue: true };
     ignoreWrite = true;
     await assert.rejects(
-      setCopilotPromptCacheMode(false),
+      setCopilotPromptCacheMode(false, context),
       /User prompt-cache setting could not be applied/,
     );
     assert.strictEqual(inspected.workspaceValue, true);

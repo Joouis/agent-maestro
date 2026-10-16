@@ -10,7 +10,7 @@ export function registerModelCommands(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "agent-maestro.configureCopilotPromptCache",
       createCommandHandler(
-        configureCopilotPromptCache,
+        () => configureCopilotPromptCache(context),
         "Failed to configure Copilot prompt cache",
       ),
     ),
