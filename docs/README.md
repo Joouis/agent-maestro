@@ -19,7 +19,7 @@ The running `/openapi.json` supplies route schemas. It complements these guides;
 
 ## Runbooks and Contribution
 
-- [Testing](testing.md): local checks, suite locations, and manual validation.
+- [Testing](testing.md): local checks, suite locations, manual validation, and pre-release live CLI regression.
 - [Codex collaboration E2E](codex-multi-agent-e2e.md): authenticated manual test.
 - [Remote Roo demo](../examples/demo-site/README.md): local UI and protected remote access.
 - [Contributor instructions](../AGENTS.md), [release procedure](../.claude/commands/release.md), and [issue tracker](agents/issue-tracker.md).
