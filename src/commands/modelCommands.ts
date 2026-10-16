@@ -2,9 +2,19 @@ import * as vscode from "vscode";
 
 import { getChatModelsQuickPickItems } from "../utils/chatModels";
 import { DEFAULT_CONFIG } from "../utils/config";
+import { configureCopilotPromptCache } from "../utils/copilotPromptCache";
 import { createCommandHandler } from "./commandHandler";
 
 export function registerModelCommands(context: vscode.ExtensionContext) {
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "agent-maestro.configureCopilotPromptCache",
+      createCommandHandler(
+        configureCopilotPromptCache,
+        "Failed to configure Copilot prompt cache",
+      ),
+    ),
+  );
   const disposable = vscode.commands.registerCommand(
     "agent-maestro.selectFallbackModel",
     createCommandHandler(async () => {

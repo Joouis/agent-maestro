@@ -5,83 +5,131 @@ import { logger } from "./logger";
 const SECTION = "github.copilot.chat";
 const KEY = "responsesApi.promptCacheBreakpoint.enabled";
 export const PROMPT_CACHE_BREAKPOINT_SETTING = `${SECTION}.${KEY}`;
-const DISMISSED_STATE_KEY = "copilotPromptCacheBreakpointNoticeDismissed";
-const COPILOT_CHAT_EXTENSION_ID = "GitHub.copilot-chat";
+const NOTICE_SHOWN_STATE_KEY = "copilotPromptCacheModeNoticeShown";
 
-/**
- * Copilot Chat 0.67 (bundled with VS Code 1.139) enables explicit prompt-cache
- * mode for GPT-5.6+/GPT-6 Responses requests by default. Explicit mode only
- * caches prefixes marked with cache breakpoints, which Language Model API
- * requests never carry, so GPT requests proxied by Agent Maestro get no cache
- * hits. Copilot 0.68 defaults it off. Experiment-assigned values are not
- * observable, so the installed version is the only runtime signal.
- */
-export const isAffectedCopilotVersion = (version: unknown): boolean =>
-  typeof version === "string" && /^0\.67\./.test(version);
-export const isPromptCacheBreakpointConfigured = (): boolean => {
-  const inspected = vscode.workspace
-    .getConfiguration(SECTION)
-    .inspect<boolean>(KEY);
-  return [
-    inspected?.globalValue,
-    inspected?.workspaceValue,
-    inspected?.workspaceFolderValue,
-  ].some((value) => value !== undefined);
-};
-
-/** Returns true when the setting was written. Never overrides a user value. */
-export const disablePromptCacheBreakpoint = async (): Promise<boolean> => {
-  if (isPromptCacheBreakpointConfigured()) {
-    return false;
+function readPromptCacheSetting() {
+  const configuration = vscode.workspace.getConfiguration(SECTION);
+  const inspected = configuration.inspect<boolean>(KEY);
+  if (!inspected || typeof inspected.defaultValue !== "boolean") {
+    return undefined;
   }
-  await vscode.workspace
-    .getConfiguration(SECTION)
-    .update(KEY, false, vscode.ConfigurationTarget.Global);
-  logger.info(`Set ${PROMPT_CACHE_BREAKPOINT_SETTING} to false`);
-  return true;
-};
+
+  const configuredValue = inspected.workspaceValue ?? inspected.globalValue;
+  const target =
+    inspected.workspaceValue !== undefined
+      ? vscode.ConfigurationTarget.Workspace
+      : vscode.ConfigurationTarget.Global;
+  const targetName =
+    target === vscode.ConfigurationTarget.Workspace ? "Workspace" : "User";
+
+  return {
+    configuration,
+    configuredValue,
+    visibleValue: configuration.get<boolean>(KEY),
+    target,
+    targetName,
+  };
+}
+
+export async function setCopilotPromptCacheMode(
+  explicit: boolean,
+): Promise<void> {
+  const setting = readPromptCacheSetting();
+  if (!setting) {
+    throw new Error(
+      "Copilot's prompt-cache setting is not available in this VS Code window.",
+    );
+  }
+  if (setting.configuredValue !== explicit) {
+    await setting.configuration.update(KEY, explicit, setting.target);
+  }
+  if (readPromptCacheSetting()?.configuredValue !== explicit) {
+    throw new Error(
+      "Copilot's prompt-cache setting is still overridden. Check User and Workspace settings.",
+    );
+  }
+  logger.info(
+    `Set ${PROMPT_CACHE_BREAKPOINT_SETTING} to ${explicit} in ${setting.targetName} settings`,
+  );
+  void vscode.window.showInformationMessage(
+    `Copilot prompt cache set to ${explicit} (${explicit ? "explicit" : "implicit"}) in ${setting.targetName} settings. This also affects native Copilot Chat.`,
+  );
+}
+
+export async function configureCopilotPromptCache(): Promise<void> {
+  const setting = readPromptCacheSetting();
+  if (!setting) {
+    throw new Error(
+      "Copilot's prompt-cache setting is not available in this VS Code window.",
+    );
+  }
+  const choices: Array<vscode.QuickPickItem & { explicit: boolean }> = [
+    {
+      label: "false",
+      description: "Implicit: automatic prefix caching (recommended for AM)",
+      detail:
+        "Lets supported GPT models cache matching prefixes without explicit breakpoints.",
+      explicit: false,
+    },
+    {
+      label: "true",
+      description: "Explicit: cache only prefixes marked with breakpoints",
+      detail:
+        "Copilot Chat supplies breakpoints; AM's GPT requests do not, so cache hits can stay at zero.",
+      explicit: true,
+    },
+  ];
+  const current =
+    setting.configuredValue === undefined
+      ? `not explicitly configured (visible default: ${setting.visibleValue ?? "unknown"}; Copilot experiments may differ)`
+      : String(setting.configuredValue);
+  const selected = await vscode.window.showQuickPick(choices, {
+    title: `Copilot Prompt Cache — ${setting.targetName} Settings`,
+    placeHolder: `Current: ${current}. Also affects native Copilot Chat.`,
+    matchOnDescription: true,
+  });
+  if (selected) {
+    await setCopilotPromptCacheMode(selected.explicit);
+  }
+}
 
 export const checkCopilotPromptCacheSetting = async (
   context: vscode.ExtensionContext,
 ): Promise<void> => {
-  if (
-    !isAffectedCopilotVersion(
-      vscode.extensions.getExtension(COPILOT_CHAT_EXTENSION_ID)?.packageJSON
-        ?.version,
-    ) ||
-    isPromptCacheBreakpointConfigured() ||
-    context.globalState.get<boolean>(DISMISSED_STATE_KEY)
-  ) {
-    return;
-  }
-
-  const enable = "Disable Explicit Cache Mode";
-  const dismiss = "Don't Ask Again";
-  const choice = await vscode.window.showInformationMessage(
-    `GPT requests proxied by Agent Maestro may get no prompt-cache hits while Copilot's explicit cache mode is enabled, increasing token usage. Set "${PROMPT_CACHE_BREAKPOINT_SETTING}" to false?`,
-    enable,
-    dismiss,
-  );
-
-  if (choice === dismiss) {
-    await context.globalState.update(DISMISSED_STATE_KEY, true);
-    return;
-  }
-  if (choice !== enable) {
-    return;
-  }
-
   try {
-    if (await disablePromptCacheBreakpoint()) {
-      vscode.window.showInformationMessage(
-        "Copilot explicit prompt-cache mode disabled. GPT prompt caching applies to new requests.",
-      );
+    const setting = readPromptCacheSetting();
+    if (
+      !setting ||
+      setting.configuredValue === false ||
+      context.globalState.get<boolean>(NOTICE_SHOWN_STATE_KEY)
+    ) {
+      return;
+    }
+
+    // Copilot reads internal experiment treatments as well as VS Code settings.
+    // An unset visible false cannot establish the actual upstream cache mode.
+    const risk =
+      setting.visibleValue === true
+        ? "Copilot's visible setting enables explicit prompt caching, which can prevent cache hits for AM's GPT requests."
+        : "Copilot experiments may enable explicit prompt caching and prevent cache hits for AM's GPT requests. AM cannot verify the experiment's mode.";
+    const enable = "Use Implicit Cache Mode";
+    await context.globalState.update(NOTICE_SHOWN_STATE_KEY, true);
+    const choice = await vscode.window.showInformationMessage(
+      `${risk} Use implicit mode (false) in ${setting.targetName} settings? This also affects native Copilot Chat. Change it later with 'Configure Copilot Prompt Cache'.`,
+      enable,
+    );
+    if (choice === enable) {
+      // Recheck after the notification: a user may have changed the setting meanwhile.
+      if (readPromptCacheSetting()?.configuredValue === false) {
+        return;
+      }
+      await setCopilotPromptCacheMode(false);
     }
   } catch (error) {
     logger.error(`Failed to update ${PROMPT_CACHE_BREAKPOINT_SETTING}:`, error);
     const openSettings = "Open Settings";
     const action = await vscode.window.showErrorMessage(
-      `Failed to update "${PROMPT_CACHE_BREAKPOINT_SETTING}". Set it to false manually.`,
+      `Could not configure Copilot prompt caching. Check "${PROMPT_CACHE_BREAKPOINT_SETTING}" in settings.`,
       openSettings,
     );
     if (action === openSettings) {
