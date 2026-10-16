@@ -189,9 +189,10 @@ location. `city`, `region`, and `timezone` return
 `400 invalid_request_error` because the shared provider cannot currently honor
 them.
 
-`external_web_access: false` is not mapped to an Exa cache-only mode and must be
-rejected. Accepting it while performing a live request would violate the
-caller's network boundary.
+`external_web_access: false` disables hosted search without mapping it to an
+Exa cache-only mode. Search-specific options are ignored; ordinary client
+tools remain available, while a forced web-search choice fails with
+`tool_unavailable`. This preserves the caller's network boundary.
 
 `return_token_budget: unlimited` is incompatible with Agent Maestro's bounded
 evidence policy and shared request output budget. It must be rejected rather
