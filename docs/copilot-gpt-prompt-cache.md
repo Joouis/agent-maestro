@@ -17,9 +17,17 @@ The failure was reproduced with Marketplace AM 2.14.1, VS Code 1.142.0, Copilot 
 
 ## Startup notification
 
-When Copilot's setting is available and no effective explicit `false` is configured, AM shows a one-time notification offering **Use Implicit Cache Mode**. For unset settings, it describes a possible experiment risk rather than claiming explicit mode is active. It does not change settings until the user clicks the button.
+When Copilot's setting is available, AM classifies its state from explicit User and Workspace values, with Workspace taking precedence:
 
-Closing the notification leaves settings untouched. AM records that the notice was shown; the command below remains available. Existing workspace overrides take precedence over user settings, so the one-click action updates the scope currently controlling the setting, or User settings when there is no explicit value.
+| State                                   | Startup behavior                                                                                                                                                         |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Explicit `false` (implicit mode)        | No notification. A Workspace-only `false` applies only to that workspace.                                                                                                |
+| Explicit `true` (explicit mode)         | Show a one-time modal warning about the known cache-miss risk.                                                                                                           |
+| Neither scope configured (unknown mode) | Show a one-time modal warning about the possible experiment risk, without claiming explicit mode has been detected. A visible default does not resolve this uncertainty. |
+
+The native modal dialog offers **Use Implicit Cache Mode** and **Keep Current Settings**. AM records that the warning was shown only after the dialog returns, whether the user accepts, keeps the current settings, or dismisses it. Explicit and unknown modes share this record, so the startup warning does not repeat even if the mode later changes or a configuration write fails. If the dialog itself cannot be shown, AM does not suppress future warnings. The command below remains available.
+
+Only **Use Implicit Cache Mode** changes configuration: it sets User settings to `false`, then removes the current Workspace's explicit value so that it inherits the User setting. Both changes are disclosed in the dialog before the same confirmation; the action never switches its write target from User to Workspace. Keeping the current settings or dismissing the dialog changes no configuration.
 
 ## Switch modes at any time
 
@@ -28,9 +36,9 @@ Run **Agent Maestro: Configure Copilot Prompt Cache** from the Command Palette. 
 - **false — Implicit (recommended for AM):** allow automatic prefix caching.
 - **true — Explicit:** use Copilot's explicit cache breakpoints; AM's GPT requests can have zero cache hits.
 
-The picker identifies the current visible value and the settings scope it will update. Selecting an item is an explicit choice; cancelling makes no change. A successful update reports which scope was changed. If a write fails, AM reports the error instead of claiming the mode changed.
+The picker identifies the current User setting, Workspace override, and visible value. Selecting an item writes the chosen mode to User settings and removes any current Workspace override, including one added while the picker was open; cancelling makes no change. AM verifies the User value and that the current Workspace has no override before reporting success. If the User write fails, the Workspace override is left untouched. If the User write succeeds but override removal fails, AM explicitly reports the partial result instead of claiming the mode is effective.
 
-**This is Copilot's shared setting, not an AM-only option.** User settings can affect other VS Code windows; workspace settings also affect native Copilot Chat in that workspace. Native GPT chat switches cache mode too, and its cache hit rate, latency, cost, and tool-result serialization may change. AM's result does not establish whether native Chat benefits. Anthropic's cache controls are separate.
+**This is Copilot's shared setting, not an AM-only option.** User settings apply to other windows using the same VS Code Profile and User configuration. AM clears only the current Workspace's override; it does not scan, modify, or override settings in other workspaces, which can still take precedence. Native GPT chat switches cache mode too, and its cache hit rate, latency, cost, and tool-result serialization may change. AM's result does not establish whether native Chat benefits. Anthropic's cache controls are separate.
 
 To configure implicit mode manually, set the following in User settings and check that workspace settings do not override it:
 

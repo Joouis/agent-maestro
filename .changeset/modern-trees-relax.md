@@ -2,4 +2,4 @@
 "agent-maestro": patch
 ---
 
-Offer a one-time Copilot cache-mode notice across versions and add a command to choose implicit or explicit caching, with shared-setting scope explained.
+Add User-level Copilot prompt-cache controls that clear the current Workspace override after confirmation, with a one-time modal warning about explicit or unknown cache-mode risks.

@@ -14,20 +14,11 @@ function readPromptCacheSetting() {
     return undefined;
   }
 
-  const configuredValue = inspected.workspaceValue ?? inspected.globalValue;
-  const target =
-    inspected.workspaceValue !== undefined
-      ? vscode.ConfigurationTarget.Workspace
-      : vscode.ConfigurationTarget.Global;
-  const targetName =
-    target === vscode.ConfigurationTarget.Workspace ? "Workspace" : "User";
-
   return {
     configuration,
-    configuredValue,
+    userValue: inspected.globalValue,
+    workspaceValue: inspected.workspaceValue,
     visibleValue: configuration.get<boolean>(KEY),
-    target,
-    targetName,
   };
 }
 
@@ -40,19 +31,48 @@ export async function setCopilotPromptCacheMode(
       "Copilot's prompt-cache setting is not available in this VS Code window.",
     );
   }
-  if (setting.configuredValue !== explicit) {
-    await setting.configuration.update(KEY, explicit, setting.target);
+  if (setting.userValue !== explicit) {
+    await setting.configuration.update(
+      KEY,
+      explicit,
+      vscode.ConfigurationTarget.Global,
+    );
   }
-  if (readPromptCacheSetting()?.configuredValue !== explicit) {
+  const current = readPromptCacheSetting();
+  if (current?.userValue !== explicit) {
+    throw new Error(
+      "Copilot's User prompt-cache setting could not be applied. Check User settings and try again.",
+    );
+  }
+  if (current.workspaceValue !== undefined) {
+    try {
+      await current.configuration.update(
+        KEY,
+        undefined,
+        vscode.ConfigurationTarget.Workspace,
+      );
+    } catch (error) {
+      throw new Error(
+        `Copilot's User prompt-cache setting is ${explicit}, but this Workspace's override could not be removed. ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  }
+  const applied = readPromptCacheSetting();
+  if (
+    applied?.userValue !== explicit ||
+    applied.workspaceValue !== undefined ||
+    applied.visibleValue !== explicit
+  ) {
     throw new Error(
       "Copilot's prompt-cache setting is still overridden. Check User and Workspace settings.",
     );
   }
   logger.info(
-    `Set ${PROMPT_CACHE_BREAKPOINT_SETTING} to ${explicit} in ${setting.targetName} settings`,
+    `Set ${PROMPT_CACHE_BREAKPOINT_SETTING} to ${explicit} in User settings; current Workspace override cleared`,
   );
   void vscode.window.showInformationMessage(
-    `Copilot prompt cache set to ${explicit} (${explicit ? "explicit" : "implicit"}) in ${setting.targetName} settings. This also affects native Copilot Chat.`,
+    `Copilot prompt cache set to ${explicit} (${explicit ? "explicit" : "implicit"}) in User settings; this Workspace has no override. This also affects native Copilot Chat in other windows using these User settings. Other Workspace overrides remain unchanged.`,
   );
 }
 
@@ -80,12 +100,12 @@ export async function configureCopilotPromptCache(): Promise<void> {
     },
   ];
   const current =
-    setting.configuredValue === undefined
-      ? `not explicitly configured (visible default: ${setting.visibleValue ?? "unknown"}; Copilot experiments may differ)`
-      : String(setting.configuredValue);
+    setting.userValue === undefined
+      ? "unset (Copilot experiments may differ)"
+      : String(setting.userValue);
   const selected = await vscode.window.showQuickPick(choices, {
-    title: `Copilot Prompt Cache — ${setting.targetName} Settings`,
-    placeHolder: `Current: ${current}. Also affects native Copilot Chat.`,
+    title: "Copilot Prompt Cache — User Settings",
+    placeHolder: `User: ${current}; Workspace override: ${setting.workspaceValue ?? "none"}; visible: ${setting.visibleValue ?? "unknown"}. Updates User settings and removes this Workspace's override; also affects native Copilot Chat. Other Workspace overrides remain.`,
     matchOnDescription: true,
   });
   if (selected) {
@@ -98,9 +118,12 @@ export const checkCopilotPromptCacheSetting = async (
 ): Promise<void> => {
   try {
     const setting = readPromptCacheSetting();
+    if (!setting) {
+      return;
+    }
+    const configuredValue = setting.workspaceValue ?? setting.userValue;
     if (
-      !setting ||
-      setting.configuredValue === false ||
+      configuredValue === false ||
       context.globalState.get<boolean>(NOTICE_SHOWN_STATE_KEY)
     ) {
       return;
@@ -109,18 +132,28 @@ export const checkCopilotPromptCacheSetting = async (
     // Copilot reads internal experiment treatments as well as VS Code settings.
     // An unset visible false cannot establish the actual upstream cache mode.
     const risk =
-      setting.visibleValue === true
-        ? "Copilot's visible setting enables explicit prompt caching, which can prevent cache hits for AM's GPT requests."
-        : "Copilot experiments may enable explicit prompt caching and prevent cache hits for AM's GPT requests. AM cannot verify the experiment's mode.";
-    const enable = "Use Implicit Cache Mode";
-    await context.globalState.update(NOTICE_SHOWN_STATE_KEY, true);
-    const choice = await vscode.window.showInformationMessage(
-      `${risk} Use implicit mode (false) in ${setting.targetName} settings? This also affects native Copilot Chat. Change it later with 'Configure Copilot Prompt Cache'.`,
+      configuredValue === true
+        ? "Copilot is explicitly configured to use explicit prompt caching, which can prevent cache hits for AM's GPT requests."
+        : "Copilot's cache mode is not explicitly configured. Experiments may enable explicit prompt caching and prevent cache hits for AM's GPT requests. AM cannot verify the experiment's mode.";
+    const enable: vscode.MessageItem = { title: "Use Implicit Cache Mode" };
+    const choice = await vscode.window.showWarningMessage(
+      risk,
+      {
+        modal: true,
+        detail:
+          "Use implicit mode (false) in User settings and remove this Workspace's override? This also affects native Copilot Chat in other windows using these User settings; other Workspace overrides remain. AM will not ask again after you close this dialog. Change the mode later with 'Configure Copilot Prompt Cache'.",
+      },
       enable,
+      { title: "Keep Current Settings", isCloseAffordance: true },
     );
+    await context.globalState.update(NOTICE_SHOWN_STATE_KEY, true);
     if (choice === enable) {
       // Recheck after the notification: a user may have changed the setting meanwhile.
-      if (readPromptCacheSetting()?.configuredValue === false) {
+      const current = readPromptCacheSetting();
+      if (
+        current?.userValue === false &&
+        current.workspaceValue === undefined
+      ) {
         return;
       }
       await setCopilotPromptCacheMode(false);
@@ -129,7 +162,7 @@ export const checkCopilotPromptCacheSetting = async (
     logger.error(`Failed to update ${PROMPT_CACHE_BREAKPOINT_SETTING}:`, error);
     const openSettings = "Open Settings";
     const action = await vscode.window.showErrorMessage(
-      `Could not configure Copilot prompt caching. Check "${PROMPT_CACHE_BREAKPOINT_SETTING}" in settings.`,
+      `Could not configure Copilot prompt caching: ${error instanceof Error ? error.message : String(error)} Check "${PROMPT_CACHE_BREAKPOINT_SETTING}" in settings.`,
       openSettings,
     );
     if (action === openSettings) {
