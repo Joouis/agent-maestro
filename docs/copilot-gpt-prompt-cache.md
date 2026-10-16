@@ -7,6 +7,8 @@ GPT requests that Agent Maestro (AM) proxies to Copilot can report `cache_read: 
 | `false` | Implicit | Matching prefixes can be cached automatically. Recommended for AM.                                                                      |
 | `true`  | Explicit | Only prefixes with explicit cache breakpoints are eligible. AM's LM API requests do not carry these breakpoints and can miss the cache. |
 
+See Microsoft's [Configure prompt cache breakpoints](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/prompt-caching#configure-prompt-cache-breakpoints) for the implicit/explicit mode terminology and breakpoint behavior.
+
 ## Why an upgrade alone may not fix it
 
 Copilot Chat 0.67 (VS Code 1.139) defaulted this setting to `true`. Copilot 0.68 and later default it to `false`, but Copilot can override that default through experiments, and an existing user or workspace value can still enable explicit mode.
@@ -25,9 +27,9 @@ When Copilot's setting is available, AM classifies its state from explicit User 
 | Explicit `true` (explicit mode)         | Show a one-time modal warning about the known cache-miss risk.                                                                                                           |
 | Neither scope configured (unknown mode) | Show a one-time modal warning about the possible experiment risk, without claiming explicit mode has been detected. A visible default does not resolve this uncertainty. |
 
-The native modal dialog offers **Use Implicit Cache Mode** and **Keep Current Settings**. AM records that the warning was shown only after the dialog returns, whether the user accepts, keeps the current settings, or dismisses it. Explicit and unknown modes share this record, so the startup warning does not repeat even if the mode later changes or a configuration write fails. If the dialog itself cannot be shown, AM does not suppress future warnings. The command below remains available.
+The native modal dialog offers **Use Implicit Mode** and **Keep Current Settings**. AM records that the warning was shown only after the dialog returns, whether the user accepts, keeps the current settings, or dismisses it. Explicit and unknown modes share this record, so the startup warning does not repeat even if the mode later changes or a configuration write fails. If the dialog itself cannot be shown, AM does not suppress future warnings. The command below remains available.
 
-Only **Use Implicit Cache Mode** changes configuration: it sets User settings to `false`, then removes the current Workspace's explicit value so that it inherits the User setting. Both changes are disclosed in the dialog before the same confirmation; the action never switches its write target from User to Workspace. Keeping the current settings or dismissing the dialog changes no configuration.
+Only **Use Implicit Mode** changes configuration: it selects implicit mode (`false`) in User settings, then removes the current Workspace's explicit value so that it inherits the User setting. Both changes are disclosed in the dialog before the same confirmation; the action never switches its write target from User to Workspace. Keeping the current settings or dismissing the dialog changes no configuration.
 
 ## Switch modes at any time
 

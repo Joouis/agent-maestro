@@ -133,15 +133,14 @@ export const checkCopilotPromptCacheSetting = async (
     // An unset visible false cannot establish the actual upstream cache mode.
     const risk =
       configuredValue === true
-        ? "Copilot is explicitly configured to use explicit prompt caching, which can prevent cache hits for AM's GPT requests."
-        : "Copilot's cache mode is not explicitly configured. Experiments may enable explicit prompt caching and prevent cache hits for AM's GPT requests. AM cannot verify the experiment's mode.";
-    const enable: vscode.MessageItem = { title: "Use Implicit Cache Mode" };
+        ? "Copilot is set to explicit mode."
+        : "Copilot may be using explicit mode.";
+    const enable: vscode.MessageItem = { title: "Use Implicit Mode" };
     const choice = await vscode.window.showWarningMessage(
-      risk,
+      "Use implicit mode for prompt caching?",
       {
         modal: true,
-        detail:
-          "Use implicit mode (false) in User settings and remove this Workspace's override? This also affects native Copilot Chat in other windows using these User settings; other Workspace overrides remain. AM will not ask again after you close this dialog. Change the mode later with 'Configure Copilot Prompt Cache'.",
+        detail: `${risk} Explicit mode needs prompt cache breakpoints, which Agent Maestro cannot currently support. This can cause cache misses and higher token costs. Implicit mode caches matching input automatically.\n\nUpdates User settings and removes this workspace's override. Also affects Copilot Chat and other windows; other workspace overrides stay unchanged.`,
       },
       enable,
       { title: "Keep Current Settings", isCloseAffordance: true },

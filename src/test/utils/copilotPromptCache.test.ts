@@ -187,20 +187,41 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
         await checkCopilotPromptCacheSetting(context);
         assert.strictEqual(messages.length, 1);
         assert.deepStrictEqual(messages[0].actions, [
-          "Use Implicit Cache Mode",
+          "Use Implicit Mode",
           "Keep Current Settings",
         ]);
-        assert.match(messages[0].message, /Experiments may enable explicit/);
-        assert.ok(
-          messages.every(({ message }) =>
-            message.includes("cache mode is not explicitly configured"),
-          ),
+        assert.strictEqual(
+          messages[0].message,
+          "Use implicit mode for prompt caching?",
         );
-        assert.strictEqual(messages[0].options!.modal, true);
-        assert.match(messages[0].options!.detail!, /native Copilot Chat/);
         assert.match(
           messages[0].options!.detail!,
-          /User settings and remove this Workspace's override/,
+          /Copilot may be using explicit mode/,
+        );
+        assert.match(
+          messages[0].options!.detail!,
+          /prompt cache breakpoints, which Agent Maestro cannot currently support/,
+        );
+        assert.strictEqual(
+          messages[0].options!.detail!.split("\n\n").length,
+          2,
+        );
+        assert.match(
+          messages[0].options!.detail!,
+          /Implicit mode caches matching input automatically/,
+        );
+        assert.strictEqual(messages[0].options!.modal, true);
+        assert.match(
+          messages[0].options!.detail!,
+          /Copilot Chat and other windows/,
+        );
+        assert.match(
+          messages[0].options!.detail!,
+          /Updates User settings and removes this workspace's override/,
+        );
+        assert.match(
+          messages[0].options!.detail!,
+          /other workspace overrides stay unchanged/,
         );
         assert.deepStrictEqual(updates, []);
         assert.deepStrictEqual(
@@ -246,8 +267,8 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
         await checkCopilotPromptCacheSetting(context);
         assert.strictEqual(messages.length, 1);
         assert.match(
-          messages[0].message,
-          /explicitly configured to use explicit/,
+          messages[0].options!.detail!,
+          /Copilot is set to explicit mode/,
         );
         assert.deepStrictEqual(updates, []);
         assert.deepStrictEqual(
@@ -268,7 +289,10 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
     inspected = { globalValue: true };
     await checkCopilotPromptCacheSetting(context);
     assert.strictEqual(messages.length, 1);
-    assert.match(messages[0].message, /explicitly configured to use explicit/);
+    assert.match(
+      messages[0].options!.detail!,
+      /Copilot is set to explicit mode/,
+    );
     assert.deepStrictEqual(updates, []);
   });
 
@@ -278,10 +302,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
     await checkCopilotPromptCacheSetting(context);
     await checkCopilotPromptCacheSetting(context);
     assert.strictEqual(messages.length, 1);
-    assert.match(
-      messages[0].message,
-      /cache mode is not explicitly configured/,
-    );
+    assert.match(messages[0].options!.detail!, /Copilot may be using/);
     assert.deepStrictEqual(updates, []);
   });
 
@@ -291,7 +312,7 @@ suite("Copilot Prompt Cache Setting Test Suite", () => {
     assert.strictEqual(messages.length, 1);
     assert.match(
       messages[0].options!.detail!,
-      /User settings and remove this Workspace's override/,
+      /Updates User settings and removes this workspace's override/,
     );
     assert.deepStrictEqual(updates, []);
   });
