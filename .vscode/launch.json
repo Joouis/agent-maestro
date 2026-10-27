@@ -9,7 +9,10 @@
       "name": "Run Extension",
       "type": "extensionHost",
       "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--enable-proposed-api=joouis.agent-maestro"
+      ],
       "outFiles": ["${workspaceFolder}/dist/**/*.cjs"],
       "preLaunchTask": "${defaultBuildTask}",
       "env": {

@@ -31,6 +31,8 @@ This README and the [documentation index](docs/README.md) describe this checkout
 
 For source development, use Node.js 22 or newer and the pnpm version specified in [package.json](package.json).
 
+This checkout preserves OpenAI instruction roles using VS Code's proposed `languageModelSystem` API. Development/test launches enable it explicitly. Installed development builds require `code --enable-proposed-api=joouis.agent-maestro`; ordinary Marketplace publication is blocked while this proposed API dependency remains. See [instruction-role compatibility](docs/llm-compatibility.md#instruction-roles).
+
 Responses reasoning replay has been verified with VS Code **1.142.0 / Copilot 0.70.0**. Availability still depends on the host runtime and provider, so Agent Maestro checks the capability at runtime.
 
 ### 1. Install and Start the Proxy
