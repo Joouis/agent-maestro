@@ -57,6 +57,8 @@ type NonStreamingResponse = Omit<
   | "top_p"
 >;
 
+const RESPONSES_STREAM_KEEP_ALIVE_INTERVAL_MS = 15_000;
+
 // OpenAPI route definition for /v1/responses
 const createResponseRoute = createRoute({
   method: "post",
@@ -143,6 +145,7 @@ Limitations:
 
 export interface OpenaiResponsesRoutesOptions {
   requestTimeoutMs?: number;
+  streamKeepAliveIntervalMs?: number;
   resolveChatModelClient?: typeof getChatModelClient;
 }
 
@@ -158,6 +161,9 @@ export function registerOpenaiResponsesRoutes(
     let requestedModelId = "";
     let inputTokens = 0;
     let requestLifecycle: LanguageModelRequestLifecycle | undefined;
+    let streamKeepAliveInterval: NodeJS.Timeout | undefined;
+    let streamKeepAliveStopped = false;
+    let pendingSseWrites: Promise<void> | undefined;
 
     try {
       // 1. Parse request and extract fields
@@ -472,9 +478,25 @@ export function registerOpenaiResponsesRoutes(
           const responseId = generateResponseId();
           const createdAt = getCurrentTimestamp();
           const sequenceNumberRef = { value: 0 };
+          let sseWriteQueue = Promise.resolve();
+          const enqueueSSE = (
+            message: Parameters<typeof sseStream.writeSSE>[0],
+            shouldWrite: () => boolean = () => true,
+          ) => {
+            const write = sseWriteQueue.then(async () => {
+              if (!shouldWrite()) {
+                return;
+              }
+
+              await requestLifecycle!.waitFor(sseStream.writeSSE(message));
+            });
+            sseWriteQueue = write.catch(() => {});
+            pendingSseWrites = sseWriteQueue;
+            return write;
+          };
           const writeSSE = (
             message: Parameters<typeof sseStream.writeSSE>[0],
-          ) => requestLifecycle!.waitFor(sseStream.writeSSE(message));
+          ) => enqueueSSE(message);
 
           // Build base response object
           const baseResponse = {
@@ -505,6 +527,28 @@ export function registerOpenaiResponsesRoutes(
             tools: tools ?? [],
             usage: usage ?? null,
           });
+
+          streamKeepAliveInterval = setInterval(() => {
+            void enqueueSSE(
+              {
+                event: "response.in_progress",
+                data: JSON.stringify({
+                  type: "response.in_progress",
+                  response: buildResponseEnvelope("in_progress", []),
+                  sequence_number: sequenceNumberRef.value++,
+                }),
+              },
+              () => !streamKeepAliveStopped,
+            ).catch((error) => {
+              if (
+                !(error instanceof LanguageModelClientDisconnectedError) &&
+                !(error instanceof LanguageModelRequestTimeoutError)
+              ) {
+                logger.error("✕ /v1/responses (stream keep-alive) |", error);
+              }
+            });
+          }, options.streamKeepAliveIntervalMs ?? RESPONSES_STREAM_KEEP_ALIVE_INTERVAL_MS);
+          streamKeepAliveInterval.unref();
 
           // Emit response.created
           await writeSSE({
@@ -786,6 +830,9 @@ export function registerOpenaiResponsesRoutes(
             };
           }
 
+          streamKeepAliveStopped = true;
+          clearInterval(streamKeepAliveInterval);
+
           // Emit response.completed
           await writeSSE({
             event: "response.completed",
@@ -807,6 +854,12 @@ export function registerOpenaiResponsesRoutes(
           requestLifecycle?.dispose();
         },
         async (error, sseStream) => {
+          streamKeepAliveStopped = true;
+          if (streamKeepAliveInterval) {
+            clearInterval(streamKeepAliveInterval);
+          }
+          await pendingSseWrites;
+
           if (error instanceof LanguageModelClientDisconnectedError) {
             logger.info("/v1/responses | client disconnected");
             requestLifecycle?.dispose();
@@ -852,6 +905,10 @@ export function registerOpenaiResponsesRoutes(
         },
       );
     } catch (error) {
+      streamKeepAliveStopped = true;
+      if (streamKeepAliveInterval) {
+        clearInterval(streamKeepAliveInterval);
+      }
       requestLifecycle?.dispose();
 
       if (error instanceof LanguageModelRequestTimeoutError) {

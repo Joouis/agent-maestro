@@ -75,10 +75,17 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     return app;
   };
 
-  const createOpenaiResponsesTestApp = (model: vscode.LanguageModelChat) => {
+  const createOpenaiResponsesTestApp = (
+    model: vscode.LanguageModelChat,
+    options: {
+      requestTimeoutMs?: number;
+      streamKeepAliveIntervalMs?: number;
+    } = {},
+  ) => {
     const app = new OpenAPIHono();
     registerOpenaiResponsesRoutes(app, {
-      requestTimeoutMs: 20,
+      requestTimeoutMs: options.requestTimeoutMs ?? 20,
+      streamKeepAliveIntervalMs: options.streamKeepAliveIntervalMs,
       resolveChatModelClient: async () => ({ client: model }),
     });
     return app;
@@ -379,6 +386,60 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     assert.ok(body.includes("request_timeout"));
     assert.ok(!body.includes("event: response.completed"));
     assert.strictEqual(cancellationObserved, true);
+  });
+
+  test("keeps an idle Responses stream active with progress events", async () => {
+    const app = createOpenaiResponsesTestApp(
+      createStalledModel(() => {}),
+      {
+        requestTimeoutMs: 45,
+        streamKeepAliveIntervalMs: 10,
+      },
+    );
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-opus-test",
+        input: "Hello",
+        stream: true,
+      }),
+    });
+    const body = await response.text();
+
+    assert.ok((body.match(/event: response.in_progress/g) ?? []).length >= 3);
+    assert.ok(body.includes("event: response.failed"));
+  });
+
+  test("does not emit queued progress events after response.failed", async () => {
+    const app = createOpenaiResponsesTestApp(
+      createStalledModel(() => {}),
+      {
+        requestTimeoutMs: 30,
+        streamKeepAliveIntervalMs: 5,
+      },
+    );
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-opus-test",
+        input: "Hello",
+        stream: true,
+      }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const body = await response.text();
+    const failedIndex = body.indexOf("event: response.failed");
+
+    assert.ok(failedIndex >= 0);
+    assert.strictEqual(
+      body.indexOf("event: response.in_progress", failedIndex),
+      -1,
+    );
   });
 
   test("propagates a client disconnect through Responses", async () => {
