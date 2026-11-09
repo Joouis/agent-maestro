@@ -55,6 +55,8 @@ Open the Command Palette and run the relevant command:
 
 For Claude Code, Codex, or Gemini CLI, choose a model from the picker. If the list is empty, check Copilot sign-in and model availability in VS Code before continuing. Claude Code and Gemini CLI also offer project settings when you want the configuration limited to this workspace.
 
+Claude Code also offers an optional model for its client-side auto mode classifier (`CLAUDE_CODE_AUTO_MODE_MODEL`, Claude Code 2.1.301+). Choose **Skip** to let Claude Code use its default.
+
 If you have enabled AM's optional LLM API key, apply the [client authentication settings](#access-and-authentication) before the first request. Otherwise, the generated placeholder credentials are sufficient for the default local setup.
 
 ### 3. Get Your First Response
