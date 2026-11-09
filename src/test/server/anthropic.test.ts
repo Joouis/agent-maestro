@@ -112,18 +112,18 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       );
     });
 
-    test("should omit non-Claude models", () => {
+    test("should include non-Claude models", () => {
       const result = createAnthropicModelsResponse([
-        createMockModel({
-          id: "gpt-5.1",
-          name: "GPT-5.1",
-          family: "gpt",
-        }),
+        createMockModel({ id: "claude-sonnet-4.6" }),
+        createMockModel({ id: "gpt-5.1", name: "GPT-5.1", family: "gpt" }),
       ]);
 
-      assert.deepStrictEqual(result.data, []);
-      assert.strictEqual(result.first_id, null);
-      assert.strictEqual(result.last_id, null);
+      assert.deepStrictEqual(
+        result.data.map((model) => model.id),
+        ["claude-sonnet-4.6", "gpt-5.1"],
+      );
+      assert.strictEqual(result.first_id, "claude-sonnet-4.6");
+      assert.strictEqual(result.last_id, "gpt-5.1");
     });
 
     test("should find one Claude model by exact id", () => {
@@ -144,19 +144,16 @@ suite("Anthropic Conversion Utils Test Suite", () => {
       assert.strictEqual(result.max_input_tokens, 1000000);
     });
 
-    test("should not find non-Claude or unknown model ids", () => {
-      const result = findAnthropicModelById(
-        [
-          createMockModel({
-            id: "gpt-5.1",
-            name: "GPT-5.1",
-            family: "gpt",
-          }),
-        ],
+    test("should find non-Claude models and not unknown model ids", () => {
+      const models = [
+        createMockModel({ id: "gpt-5.1", name: "GPT-5.1", family: "gpt" }),
+      ];
+
+      assert.strictEqual(
+        findAnthropicModelById(models, "gpt-5.1")?.id,
         "gpt-5.1",
       );
-
-      assert.strictEqual(result, null);
+      assert.strictEqual(findAnthropicModelById(models, "gpt-9"), null);
     });
   });
 

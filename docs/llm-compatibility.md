@@ -2,7 +2,7 @@
 
 Current-checkout reference, reviewed on 2026-09-05. This describes Agent Maestro's implementation, not full upstream API parity. Consult the [changelog](../CHANGELOG.md) and pending [changesets](../.changeset/) to distinguish released features from source changes.
 
-For installation, client setup, ports, and authentication scope, start with the [README](../README.md). Only Copilot-vendor models are currently eligible for generation; client model IDs use exact/fuzzy matching followed by the configured or automatic fallback.
+For installation, client setup, ports, and authentication scope, start with the [README](../README.md). Only Copilot-vendor models are currently eligible for generation; client model IDs use exact/fuzzy matching followed by the configured or automatic fallback. Responses report the resolved model ID (`model`, or Gemini `modelVersion`), which can differ from the requested ID.
 
 ## Endpoints
 
@@ -12,7 +12,7 @@ All paths below are relative to `http://127.0.0.1:23333` by default.
 | ------------------- | ---------------------------------------------------------------------------- | ----------------------------------------- |
 | Anthropic           | `POST /api/anthropic/v1/messages`                                            | Text/tool generation, optionally streamed |
 | Anthropic           | `POST /api/anthropic/v1/messages/count_tokens`                               | Local token estimate                      |
-| Anthropic           | `GET /api/anthropic/v1/models` and `GET /api/anthropic/v1/models/{model_id}` | Model metadata for compatible clients     |
+| Anthropic           | `GET /api/anthropic/v1/models` and `GET /api/anthropic/v1/models/{model_id}` | All available models, not only Claude     |
 | OpenAI Chat         | `POST /api/openai/v1/chat/completions`                                       | Chat and client-tool generation           |
 | OpenAI Responses    | `POST /api/openai/v1/responses`                                              | Responses items and streaming events      |
 | Gemini              | `POST /api/gemini/v1beta/models/{model}:generateContent`                     | Non-streaming generation                  |

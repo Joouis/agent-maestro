@@ -258,7 +258,7 @@ export function registerOpenaiChatRoutes(
           id: `AM-${Date.now()}`,
           object: "chat.completion",
           created: Math.floor(Date.now() / 1000),
-          model: modelId,
+          model: client.id,
           choices: [
             {
               index: 0,
@@ -297,7 +297,7 @@ export function registerOpenaiChatRoutes(
             id: chatCompletionId,
             object: "chat.completion.chunk",
             created,
-            model: modelId,
+            model: client.id,
             choices: [
               {
                 index: 0,
@@ -336,7 +336,7 @@ export function registerOpenaiChatRoutes(
                 id: chatCompletionId,
                 object: "chat.completion.chunk",
                 created,
-                model: modelId,
+                model: client.id,
                 choices: [
                   {
                     index: 0,
@@ -356,7 +356,7 @@ export function registerOpenaiChatRoutes(
                 id: chatCompletionId,
                 object: "chat.completion.chunk",
                 created,
-                model: modelId,
+                model: client.id,
                 choices: [
                   {
                     index: 0,
@@ -413,7 +413,7 @@ export function registerOpenaiChatRoutes(
             id: chatCompletionId,
             object: "chat.completion.chunk",
             created,
-            model: modelId,
+            model: client.id,
             choices: [
               {
                 index: 0,

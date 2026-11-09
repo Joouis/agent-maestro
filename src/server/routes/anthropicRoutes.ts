@@ -206,7 +206,7 @@ const modelsRoute = createRoute({
   tags: ["Anthropic API"],
   summary: "List Anthropic-compatible models",
   description:
-    "List Claude models available through VS Code Language Models using an Anthropic-compatible response shape.",
+    "List all models available through VS Code Language Models using an Anthropic-compatible response shape.",
   responses: {
     200: {
       content: {
@@ -238,7 +238,7 @@ const modelRoute = createRoute({
   tags: ["Anthropic API"],
   summary: "Retrieve an Anthropic-compatible model",
   description:
-    "Retrieve one Claude model available through VS Code Language Models using an Anthropic-compatible response shape.",
+    "Retrieve one model available through VS Code Language Models using an Anthropic-compatible response shape.",
   request: {
     params: z.object({
       model_id: z.string().describe("Model identifier"),
@@ -440,7 +440,7 @@ export function registerAnthropicRoutes(
           lifecycle: requestLifecycle,
           maxTokens: requestBody.max_tokens,
           messages: vsCodeLmMessages,
-          model,
+          model: client.id,
           preparedTools,
           provider: options.webSearchProvider!,
           providerTimeoutMs,
@@ -531,7 +531,7 @@ export function registerAnthropicRoutes(
           id: `msg_${Date.now()}`,
           type: "message",
           role: "assistant",
-          model,
+          model: client.id,
           container: null,
           content,
           stop_details: null,
@@ -586,7 +586,7 @@ export function registerAnthropicRoutes(
               id: `msg_${Date.now()}`,
               type: "message",
               role: "assistant",
-              model,
+              model: client.id,
               container: null,
               content: [],
               stop_details: null,

@@ -375,7 +375,7 @@ export function registerOpenaiResponsesRoutes(
               : undefined,
           messages: vsCodeMessages,
           metadata,
-          model,
+          model: client.id,
           parallelToolCalls: parallel_tool_calls,
           preparedTools,
           provider: options.webSearchProvider!,
@@ -461,7 +461,7 @@ export function registerOpenaiResponsesRoutes(
           object: "response",
           status: "completed",
           created_at: getCurrentTimestamp(),
-          model,
+          model: client.id,
           output,
           error: null,
           incomplete_details: null,
@@ -498,7 +498,7 @@ export function registerOpenaiResponsesRoutes(
             buildOpenAIResponsesEnvelope({
               id: responseId,
               createdAt,
-              model,
+              model: client.id,
               metadata,
               parallelToolCalls: parallel_tool_calls,
               toolChoice: tool_choice,
@@ -775,7 +775,7 @@ export function registerOpenaiResponsesRoutes(
                   object: "response",
                   status: "failed",
                   created_at: createdAt,
-                  model: model,
+                  model: client.id,
                   output: [],
                   error: {
                     code:

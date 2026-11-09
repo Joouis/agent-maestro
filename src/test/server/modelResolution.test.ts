@@ -1,6 +1,11 @@
+import { OpenAPIHono } from "@hono/zod-openapi";
 import * as assert from "assert";
 import * as vscode from "vscode";
 
+import { registerAnthropicRoutes } from "../../server/routes/anthropicRoutes";
+import { registerGeminiRoutes } from "../../server/routes/geminiRoutes";
+import { registerOpenaiChatRoutes } from "../../server/routes/openai/openaiChatRoutes";
+import { registerOpenaiResponsesRoutes } from "../../server/routes/openai/openaiResponsesRoutes";
 import {
   type CopilotModelConfiguration,
   chatModelsCache,
@@ -270,6 +275,128 @@ suite("Model Resolution Test Suite", () => {
       assert.deepStrictEqual(withCopilotConversationId({}, undefined), {});
       assert.deepStrictEqual(withCopilotConversationId({}, "  "), {});
       assert.deepStrictEqual(withCopilotConversationId({}, 42), {});
+    });
+  });
+
+  suite("resolved model id in responses", () => {
+    const requestedModelId = "gpt-unknown";
+    const resolvedModel = {
+      id: "gpt-resolved",
+      name: "GPT Resolved",
+      family: "gpt",
+      version: "test",
+      vendor: "copilot",
+      maxInputTokens: 200000,
+      capabilities: { supportsImageToText: false, supportsToolCalling: true },
+      sendRequest: async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelTextPart("ok");
+        })(),
+        text: (async function* () {
+          yield "ok";
+        })(),
+      }),
+      countTokens: async () => 1,
+    } as unknown as vscode.LanguageModelChat;
+
+    const createApp = () => {
+      const app = new OpenAPIHono();
+      const options = {
+        resolveChatModelClient: async () => ({ client: resolvedModel }),
+      };
+      registerAnthropicRoutes(app, options);
+      registerGeminiRoutes(app, options);
+      registerOpenaiChatRoutes(app, options);
+      registerOpenaiResponsesRoutes(app, options);
+      return app;
+    };
+
+    const post = (path: string, body: Record<string, unknown>) =>
+      createApp().request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    const parseSseData = (body: string): Record<string, any>[] =>
+      body
+        .split("\n")
+        .filter((line) => line.startsWith("data: ") && line !== "data: [DONE]")
+        .map((line) => JSON.parse(line.slice(6)));
+
+    const anthropicBody = {
+      model: requestedModelId,
+      max_tokens: 16,
+      messages: [{ role: "user", content: "hi" }],
+    };
+    const chatBody = {
+      model: requestedModelId,
+      messages: [{ role: "user", content: "hi" }],
+    };
+    const responsesBody = { model: requestedModelId, input: "hi" };
+    const geminiBody = {
+      contents: [{ role: "user", parts: [{ text: "hi" }] }],
+    };
+
+    test("Anthropic messages report the resolved model", async () => {
+      const response = await post("/v1/messages", anthropicBody);
+      const body = (await response.json()) as Record<string, any>;
+      assert.strictEqual(body.model, resolvedModel.id);
+
+      const stream = await post("/v1/messages", {
+        ...anthropicBody,
+        stream: true,
+      });
+      const start = parseSseData(await stream.text()).find(
+        (event) => event.type === "message_start",
+      );
+      assert.strictEqual(start?.message.model, resolvedModel.id);
+    });
+
+    test("OpenAI chat completions report the resolved model", async () => {
+      const response = await post("/v1/chat/completions", chatBody);
+      const body = (await response.json()) as Record<string, any>;
+      assert.strictEqual(body.model, resolvedModel.id);
+
+      const stream = await post("/v1/chat/completions", {
+        ...chatBody,
+        stream: true,
+      });
+      const chunks = parseSseData(await stream.text());
+      assert.ok(chunks.length > 0);
+      assert.ok(chunks.every((chunk) => chunk.model === resolvedModel.id));
+    });
+
+    test("OpenAI responses report the resolved model", async () => {
+      const response = await post("/v1/responses", responsesBody);
+      const body = (await response.json()) as Record<string, any>;
+      assert.strictEqual(body.model, resolvedModel.id);
+
+      const stream = await post("/v1/responses", {
+        ...responsesBody,
+        stream: true,
+      });
+      const envelopes = parseSseData(await stream.text())
+        .map((event) => event.response)
+        .filter(Boolean);
+      assert.ok(envelopes.length > 0);
+      assert.ok(envelopes.every((r) => r.model === resolvedModel.id));
+    });
+
+    test("Gemini generateContent reports the resolved model", async () => {
+      const response = await post(
+        `/v1beta/models/${requestedModelId}:generateContent`,
+        geminiBody,
+      );
+      const body = (await response.json()) as Record<string, any>;
+      assert.strictEqual(body.modelVersion, resolvedModel.id);
+
+      const stream = await post(
+        `/v1beta/models/${requestedModelId}:streamGenerateContent?alt=sse`,
+        geminiBody,
+      );
+      const chunks = parseSseData(await stream.text());
+      assert.strictEqual(chunks.at(-1)?.modelVersion, resolvedModel.id);
     });
   });
 });
