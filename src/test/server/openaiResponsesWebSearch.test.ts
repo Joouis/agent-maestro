@@ -1022,6 +1022,22 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
       assert.strictEqual(isImmediateResponsesToolContinuation(input), false);
       assert.strictEqual(prepareSearch({ input }).usesWebSearchLoop, true);
     });
+
+    test("client tool-search results do not trigger hosted web search", () => {
+      const input = [
+        {
+          type: "tool_search_output",
+          execution: "client",
+          call_id: "search-call",
+          tools: [clientTool()],
+        },
+      ];
+      assert.strictEqual(isImmediateResponsesToolContinuation(input), true);
+      assert.strictEqual(
+        prepareSearch({ input, toolChoice: "auto" }).usesWebSearchLoop,
+        false,
+      );
+    });
   });
 
   suite("orchestration, isolation, citations, and budgets", () => {
@@ -1590,6 +1606,70 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
   });
 
   suite("route and streaming protocol", () => {
+    for (const stream of [false, true]) {
+      test(`preserves client tool search alongside hosted web search (stream=${stream})`, async () => {
+        let webSearches = 0;
+        const app = createTestApp({
+          rounds: [
+            {
+              chunks: [
+                new vscode.LanguageModelToolCallPart(
+                  "search-call",
+                  "tool_search",
+                  { query: "list projects" },
+                ),
+              ],
+            },
+          ],
+          provider: createProvider(async () => {
+            webSearches++;
+            return [];
+          }),
+        });
+        const response = await app.request("/v1/responses", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-5.6-test",
+            input: "Discover the project listing tool",
+            stream,
+            tools: [
+              webSearchTool(),
+              {
+                type: "tool_search",
+                execution: "client",
+                parameters: {
+                  type: "object",
+                  properties: { query: { type: "string" } },
+                },
+              },
+            ],
+          }),
+        });
+        assert.strictEqual(response.status, 200);
+        const body = await response.text();
+        const result = stream
+          ? parseSseData(body).find(
+              (event) => event.type === "response.completed",
+            )?.response
+          : JSON.parse(body);
+        assert.strictEqual(result.output[0].type, "tool_search_call");
+        assert.deepStrictEqual(result.output[0].arguments, {
+          query: "list projects",
+        });
+        if (stream) {
+          assert.ok(
+            parseSseData(body).some(
+              (event) =>
+                event.type === "response.output_item.done" &&
+                event.item.type === "tool_search_call",
+            ),
+          );
+        }
+        assert.strictEqual(webSearches, 0);
+      });
+    }
+
     test("rejects invalid search options before resolving the model", async () => {
       let modelResolutions = 0;
       const app = createTestApp({

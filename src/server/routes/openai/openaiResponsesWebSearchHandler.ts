@@ -28,6 +28,7 @@ import {
   writeFunctionToolCallOutputItem,
   writeMessageOutputTextDelta,
   writeReasoningOutputItem,
+  writeToolSearchCallOutputItem,
 } from "../../utils/openaiResponses";
 import {
   OpenAIResponsesSearchLoopCallbacks,
@@ -266,6 +267,15 @@ export async function handleOpenAIResponsesWebSearch({
               continue;
             }
 
+            if (item.type === "tool_search_call") {
+              await writeToolSearchCallOutputItem(
+                writeSSE,
+                item,
+                outputIndex++,
+                sequenceNumberRef,
+              );
+              continue;
+            }
             if (item.type === "custom_tool_call") {
               await writeCustomToolCallOutputItem(
                 writeSSE,

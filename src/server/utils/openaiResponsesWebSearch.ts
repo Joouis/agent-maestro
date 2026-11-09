@@ -352,7 +352,8 @@ export const isImmediateResponsesToolContinuation = (
     const item = value as RawRecord;
     if (
       item.type === "function_call_output" ||
-      item.type === "custom_tool_call_output"
+      item.type === "custom_tool_call_output" ||
+      item.type === "tool_search_output"
     ) {
       return true;
     }

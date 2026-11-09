@@ -14,6 +14,7 @@ For automation, Agent Maestro also exposes Roo Code tasks through REST and MCP: 
 
 - **Choose your client and model.** Connect through Anthropic Messages, OpenAI Chat Completions/Responses, or Gemini-compatible endpoints, with setup commands for four clients and a picker of available Copilot models.
 - **Work with tools and images.** Supported tool histories and image inputs are converted to VS Code messages. Ordinary client tools still execute in the client; AM does not run them on its behalf.
+- **Discover Codex tools on demand.** Client-executed Responses `tool_search` calls and their returned tool definitions are preserved, so deferred MCP tools do not all need to be exposed upfront. Server-executed tool search is not supported.
 - **Replay Responses reasoning on compatible hosts.** Agent Maestro detects the host's optional thinking runtime and preserves encrypted state across tool continuations without enabling proposed APIs. See [reasoning compatibility](docs/openai-responses-api-design.md#reasoning-state).
 - **Search for current information.** Exa-backed search supports declared Anthropic/Responses web-search tools and experimental Codex standalone search, with source links and protocol-specific limits.
 - **Configure longer conversations.** Claude Code and Codex setup uses the selected model's advertised context window. Streaming heartbeats keep supported clients connected while a response is pending.

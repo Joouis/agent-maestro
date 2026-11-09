@@ -39,8 +39,10 @@ import {
   ResponseSSEWriter,
   ResponsesModelPart,
   ResponsesReasoningError,
+  ResponsesToolSearchError,
   buildOpenAIResponsesEnvelope,
   buildResponseOutputFromParts,
+  buildToolSearchCall,
   closeMessageOutputItem,
   convertResponsesInputToVSCode,
   customToolCallInput,
@@ -58,6 +60,7 @@ import {
   writeFunctionToolCallOutputItem,
   writeMessageOutputTextDelta,
   writeReasoningOutputItem,
+  writeToolSearchCallOutputItem,
 } from "../../utils/openaiResponses";
 import {
   OpenAIResponsesRequestValidationError,
@@ -597,6 +600,18 @@ export function registerOpenaiResponsesRoutes(
                   const toolName = toolInfo?.name ?? chunk.name;
                   const toolNamespace = toolInfo?.namespace;
 
+                  if (toolInfo?.isToolSearch) {
+                    const item = buildToolSearchCall(chunk.callId, chunk.input);
+                    output.push(item);
+                    await writeToolSearchCallOutputItem(
+                      writeSSE,
+                      item,
+                      outputIndex++,
+                      sequenceNumberRef,
+                    );
+                    continue;
+                  }
+
                   if (toolInfo?.isCustom) {
                     const ctcId = generateCustomToolCallId();
                     const callId = chunk.callId;
@@ -804,7 +819,8 @@ export function registerOpenaiResponsesRoutes(
 
       if (
         error instanceof OpenAIResponsesRequestValidationError ||
-        error instanceof ResponsesReasoningError
+        error instanceof ResponsesReasoningError ||
+        error instanceof ResponsesToolSearchError
       ) {
         return c.json(
           {
