@@ -1392,7 +1392,11 @@ export const convertResponsesToolsToVSCode = (
     }
 
     if (tool.type === "tool_search") {
-      if (tool.execution !== "client") {
+      if (
+        tool.execution !== undefined &&
+        tool.execution !== null &&
+        tool.execution !== "client"
+      ) {
         throw new ResponsesToolSearchError(
           "Only client-executed tool_search is supported.",
           "tools",
@@ -1462,6 +1466,7 @@ export const convertResponsesToolsToVSCode = (
  */
 export const extractAdditionalTools = (
   input: string | ResponseInput | undefined,
+  requestTools: Tool[] = [],
 ): Tool[] => {
   if (!Array.isArray(input)) {
     return [];
@@ -1469,13 +1474,99 @@ export const extractAdditionalTools = (
 
   const tools: Tool[] = [];
   for (const item of input) {
-    if (
-      item &&
-      typeof item === "object" &&
-      (item.type === "additional_tools" || item.type === "tool_search_output")
-    ) {
+    if (item && typeof item === "object" && item.type === "additional_tools") {
       if (Array.isArray(item.tools)) {
         tools.push(...item.tools);
+      }
+    }
+  }
+
+  const declaredNames = new Set(
+    convertResponsesToolsToVSCode([...requestTools, ...tools]).tools.map(
+      (tool) => tool.name,
+    ),
+  );
+  const acceptDiscoveredTool = (
+    tool: Tool | NamespaceTool["tools"][number],
+  ): boolean => {
+    if (
+      !tool ||
+      typeof tool !== "object" ||
+      (tool.type !== "function" && tool.type !== "custom") ||
+      typeof tool.name !== "string" ||
+      !tool.name ||
+      (tool.description !== undefined &&
+        tool.description !== null &&
+        typeof tool.description !== "string") ||
+      (tool.type === "function" &&
+        tool.parameters !== undefined &&
+        tool.parameters !== null &&
+        (typeof tool.parameters !== "object" || Array.isArray(tool.parameters)))
+    ) {
+      logger.warn("Skipping invalid discovered tool declaration");
+      return false;
+    }
+    return true;
+  };
+  const mergeDiscoveredTool = (tool: Tool): boolean => {
+    const names = convertResponsesToolsToVSCode([tool]).tools.map(
+      (converted) => converted.name,
+    );
+    if (names.some((name) => declaredNames.has(name))) {
+      logger.warn("Skipping colliding discovered tool declaration");
+      return false;
+    }
+    names.forEach((name) => declaredNames.add(name));
+    return true;
+  };
+  const searchCalls = new Set<string>();
+  for (const item of input) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    if (item.type === "tool_search_call") {
+      if (
+        typeof item.call_id === "string" &&
+        item.call_id &&
+        (item.execution === undefined ||
+          item.execution === null ||
+          item.execution === "client")
+      ) {
+        searchCalls.add(item.call_id);
+      }
+    } else if (item.type === "tool_search_output") {
+      if (!item.call_id || !searchCalls.has(item.call_id)) {
+        logger.warn("Skipping discovered tools from an orphaned search output");
+        continue;
+      }
+      if (!Array.isArray(item.tools)) {
+        continue;
+      }
+      for (const tool of item.tools) {
+        if (tool && typeof tool === "object" && tool.type === "namespace") {
+          if (
+            typeof tool.name !== "string" ||
+            !tool.name ||
+            (tool.description !== undefined &&
+              tool.description !== null &&
+              typeof tool.description !== "string") ||
+            !Array.isArray(tool.tools)
+          ) {
+            logger.warn("Skipping invalid discovered tool namespace");
+            continue;
+          }
+          const members = tool.tools.filter((member) => {
+            if (!acceptDiscoveredTool(member)) {
+              return false;
+            }
+            return mergeDiscoveredTool({ ...tool, tools: [member] });
+          });
+          if (members.length > 0) {
+            tools.push({ ...tool, tools: members });
+          }
+        } else if (acceptDiscoveredTool(tool) && mergeDiscoveredTool(tool)) {
+          tools.push(tool);
+        }
       }
     }
   }
@@ -1537,6 +1628,9 @@ export const narrowToolsForChoice = (
   const wantCustom = toolChoice.type === "custom";
   const matches = vsCodeTools.filter((t) => {
     const info = toolMap.get(t.name);
+    if (info?.isToolSearch) {
+      return false;
+    }
     const name = info?.name ?? t.name;
     const isCustom = info?.isCustom ?? false;
     return name === targetName && isCustom === wantCustom;
@@ -1606,14 +1700,21 @@ export const buildResponseOutput = (
 export const buildToolSearchCall = (
   callId: string,
   input: unknown,
-): ResponseToolSearchCall => ({
-  type: "tool_search_call",
-  id: `ts_AM-${randomString(12)}`,
-  call_id: callId,
-  execution: "client",
-  arguments: input,
-  status: "completed",
-});
+): ResponseToolSearchCall => {
+  const validInput =
+    input !== null && typeof input === "object" && !Array.isArray(input);
+  if (!validInput) {
+    logger.warn("Replacing non-object model tool search arguments with {}");
+  }
+  return {
+    type: "tool_search_call",
+    id: `ts_AM-${randomString(12)}`,
+    call_id: callId,
+    execution: "client",
+    arguments: validInput ? input : {},
+    status: "completed",
+  };
+};
 
 export const plaintextFunctionCallMetadata = (
   info?: ToolCallInfo,

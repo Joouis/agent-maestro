@@ -211,6 +211,138 @@ suite("Normalized history through official SDKs", () => {
     assert.strictEqual(requests, 0);
   });
 
+  for (const stream of [false, true]) {
+    test(`Responses skips invalid, colliding and orphaned discovered tools on later turns (stream=${stream})`, async () => {
+      let requests = 0;
+      const app = responsesApp({
+        ...modelMetadata,
+        sendRequest: async (_messages, options) => {
+          requests++;
+          assert.deepStrictEqual(
+            options?.tools?.map((tool) => tool.name),
+            ["tool_search", "existing", "good", "mcp__valid"],
+          );
+          return {
+            stream: (async function* () {
+              yield new vscode.LanguageModelToolCallPart(
+                `next-search-${requests}`,
+                "tool_search",
+                { query: "continue" },
+              );
+            })(),
+            text: (async function* () {})(),
+          };
+        },
+      } as vscode.LanguageModelChat);
+      const input = [
+        { role: "user", content: "Discover tools" },
+        {
+          type: "tool_search_output",
+          call_id: "orphan",
+          tools: [{ type: "function", name: "orphaned" }],
+        },
+        {
+          type: "tool_search_call",
+          call_id: "search-call",
+          arguments: { query: "tools" },
+        },
+        {
+          type: "tool_search_output",
+          call_id: "search-call",
+          tools: [
+            { type: "namespace", name: "bad", tools: {} },
+            { type: "namespace", name: "bad", tools: [null] },
+            { type: "tool_search", execution: "server" },
+            { type: "function", name: "tool_search" },
+            { type: "custom", name: "tool_search" },
+            { type: "function", name: "existing" },
+            { type: "function", name: "bad-schema", parameters: [] },
+            null,
+            { type: "function", name: "good" },
+            {
+              type: "namespace",
+              name: "mcp",
+              tools: [
+                null,
+                { type: "tool_search", execution: "server" },
+                { type: "function", name: "bad-schema", parameters: [] },
+                { type: "function", name: "valid" },
+              ],
+            },
+          ],
+        },
+      ];
+      // Reusing the same external output must not poison future requests.
+      for (let turn = 0; turn < 2; turn++) {
+        const response = await app.request("/v1/responses", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: modelMetadata.id,
+            input,
+            tools: [
+              { type: "tool_search", parameters: { type: "object" } },
+              { type: "function", name: "existing" },
+            ],
+            tool_choice: "required",
+            stream,
+          }),
+        });
+        assert.strictEqual(response.status, 200);
+        const body = await response.text();
+        assert.ok(body.includes("tool_search_call"));
+        assert.ok(!body.includes('"type":"error"'));
+      }
+      assert.strictEqual(requests, 2);
+    });
+  }
+
+  test("Responses supports null client execution but rejects a named function choice for native search", async () => {
+    let requests = 0;
+    const app = responsesApp({
+      ...modelMetadata,
+      sendRequest: async () => {
+        requests++;
+        return {
+          stream: (async function* () {
+            yield new vscode.LanguageModelToolCallPart(
+              "search-call",
+              "tool_search",
+              { query: "tools" },
+            );
+          })(),
+          text: (async function* () {})(),
+        };
+      },
+    } as vscode.LanguageModelChat);
+    for (const tool_choice of [
+      "required",
+      { type: "function", name: "tool_search" },
+    ]) {
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: modelMetadata.id,
+          input: "Discover tools",
+          tools: [
+            {
+              type: "tool_search",
+              execution: null,
+              parameters: { type: "object" },
+            },
+          ],
+          tool_choice,
+        }),
+      });
+      assert.strictEqual(
+        response.status,
+        tool_choice === "required" ? 200 : 400,
+      );
+    }
+    assert.strictEqual(requests, 1);
+  });
+
   const modelMetadata = {
     id: "gpt-reasoning-test",
     name: "Test",

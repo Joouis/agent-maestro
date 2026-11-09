@@ -17,8 +17,8 @@ Send the complete conversation history on each request. The Responses endpoint d
 | Custom tools/calls/results                                     | Raw string input is preserved and returned as `custom_tool_call`.                                                                                  |
 | Namespace tools                                                | Nested function/custom tools are registered under encoded names and decoded to namespace + bare name on output.                                    |
 | `additional_tools` input items                                 | Tool declarations are merged into the effective request tool set.                                                                                  |
-| Client `tool_search`, `tool_search_call`, `tool_search_output` | Search is translated to a VS Code function; native call items and paired history are preserved. Returned tool definitions join the next request.   |
-| Server/default `tool_search` execution                         | Rejected with HTTP 400; AM does not perform native hosted tool discovery.                                                                          |
+| Client `tool_search`, `tool_search_call`, `tool_search_output` | Search is translated to a VS Code function; native call items and paired history are preserved. Only paired results expose discovered tools.       |
+| Explicit server `tool_search` execution                        | Rejected with HTTP 400; AM does not perform native hosted tool discovery.                                                                          |
 | Codex `agent_message`                                          | Plaintext content is retained with author/recipient provenance. Opaque `encrypted_content` cannot be used by VS Code LM.                           |
 | Base64 `input_image`                                           | Supported, including recognized image parts in function/custom outputs.                                                                            |
 | URL/file-ID images and `input_file`                            | Serialized as textual metadata; AM does not fetch the referenced content.                                                                          |
@@ -33,6 +33,8 @@ Send the complete conversation history on each request. The Responses endpoint d
 | Other `include` values, `store`, `background`, `service_tier`  | Do not enable the corresponding OpenAI service feature. AM does not persist responses or start background jobs.                                    |
 
 The capability table concerns this endpoint. Chat Completions has its own representation and supports function/custom call histories and `reasoning_effort`; it is not limited to the old function-only format.
+
+For `tool_search`, omitted or null execution defaults to client execution with an object parameter schema. Malformed or colliding discovered declarations are skipped with warnings; request-level declaration conflicts remain errors.
 
 Custom tools are presented to VS Code LM with a JSON object schema requiring a
 string `input` containing the complete raw tool input. This matches replayed

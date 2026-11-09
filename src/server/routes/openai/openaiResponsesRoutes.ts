@@ -299,7 +299,7 @@ export function registerOpenaiResponsesRoutes(
 
       const effectiveTools = [
         ...(tools ?? []),
-        ...extractAdditionalTools(input),
+        ...extractAdditionalTools(input, tools),
       ];
       const preparedTools = prepareOpenAIResponsesTools({
         tools: effectiveTools,
