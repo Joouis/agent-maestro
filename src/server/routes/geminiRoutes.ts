@@ -423,7 +423,7 @@ export function registerGeminiRoutes(
           },
         ],
         usageMetadata,
-        modelVersion: modelId,
+        modelVersion: client.id,
       };
 
       logger.debug("generateContent response:");
@@ -619,7 +619,7 @@ export function registerGeminiRoutes(
                 },
               ],
               usageMetadata,
-              modelVersion: modelId,
+              modelVersion: client.id,
             };
 
             await requestLifecycle!.waitFor(
@@ -670,7 +670,7 @@ export function registerGeminiRoutes(
                 candidatesTokenCount: 0,
                 totalTokenCount: inputTokens,
               },
-              modelVersion: modelId,
+              modelVersion: client.id,
             };
 
             try {

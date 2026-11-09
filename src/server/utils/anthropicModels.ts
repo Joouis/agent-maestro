@@ -66,11 +66,6 @@ function convertVSCodeCapabilitiesToAnthropic(
   };
 }
 
-function isClaudeModel(model: vscode.LanguageModelChat): boolean {
-  const searchable = `${model.id} ${model.name} ${model.family}`.toLowerCase();
-  return searchable.includes("claude");
-}
-
 export function convertVSCodeModelToAnthropicModel(
   model: vscode.LanguageModelChat,
 ): ModelInfo {
@@ -88,9 +83,7 @@ export function convertVSCodeModelToAnthropicModel(
 export function createAnthropicModelsResponse(
   models: vscode.LanguageModelChat[],
 ): AnthropicModelsResponse {
-  const data = models
-    .filter(isClaudeModel)
-    .map(convertVSCodeModelToAnthropicModel);
+  const data = models.map(convertVSCodeModelToAnthropicModel);
 
   return {
     data,
@@ -104,6 +97,6 @@ export function findAnthropicModelById(
   models: vscode.LanguageModelChat[],
   modelId: string,
 ): ModelInfo | null {
-  const model = models.find((m) => isClaudeModel(m) && m.id === modelId);
+  const model = models.find((m) => m.id === modelId);
   return model ? convertVSCodeModelToAnthropicModel(model) : null;
 }
