@@ -168,6 +168,62 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       }
     });
 
+    test("reserves the internal search name only while client search is declared", () => {
+      const search = {
+        type: "tool_search" as const,
+        parameters: { type: "object" },
+      };
+      const fn = (name: string) => ({
+        type: "function" as const,
+        name,
+        parameters: { type: "object" },
+        strict: false,
+      });
+      for (const tools of [
+        [search, fn(CLIENT_TOOL_SEARCH_LM_NAME)],
+        [fn(CLIENT_TOOL_SEARCH_LM_NAME), search],
+      ]) {
+        assert.throws(
+          () => convertResponsesToolsToVSCode(tools),
+          ResponsesToolSearchError,
+        );
+      }
+
+      for (const tools of [
+        [fn(CLIENT_TOOL_SEARCH_LM_NAME), fn("tool_search")],
+        [fn("tool_search"), fn(CLIENT_TOOL_SEARCH_LM_NAME)],
+      ]) {
+        assert.deepStrictEqual(
+          convertResponsesToolsToVSCode(tools)
+            .tools.map((tool) => tool.name)
+            .sort(),
+          [CLIENT_TOOL_SEARCH_LM_NAME, "tool_search"],
+        );
+      }
+
+      const discovered = extractAdditionalTools(
+        [
+          {
+            type: "tool_search_call",
+            call_id: "search-call",
+            execution: "client",
+            arguments: { query: "tools" },
+          },
+          {
+            type: "tool_search_output",
+            call_id: "search-call",
+            execution: "client",
+            tools: [fn("tool_search")],
+          },
+        ],
+        [fn(CLIENT_TOOL_SEARCH_LM_NAME)],
+      );
+      assert.deepStrictEqual(
+        discovered.map((tool) => (tool as { name: string }).name),
+        ["tool_search"],
+      );
+    });
+
     test("rejects malformed search history instead of losing the tool turn", () => {
       assert.throws(
         () =>

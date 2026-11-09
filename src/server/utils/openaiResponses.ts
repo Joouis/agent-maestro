@@ -1281,7 +1281,9 @@ const TOOL_SEARCH_NAME = "tool_search";
 
 // Copilot's Responses API path strips LM tools named `tool_search` (reserved
 // for its own agent), so GPT models would never see client search under its
-// wire name. See docs/llm-compatibility.md.
+// wire name. See docs/llm-compatibility.md. The alias is reserved while client
+// search is declared; history replay converts items without the declared
+// tools, so it cannot be allocated per request.
 export const CLIENT_TOOL_SEARCH_LM_NAME = "agent_maestro_tool_search";
 
 export type ToolCallInfo = {
@@ -1368,7 +1370,7 @@ export const convertResponsesToolsToVSCode = (
     const conflictsWithSearch = info.isToolSearch
       ? toolMap.has(TOOL_SEARCH_NAME)
       : encodedName === TOOL_SEARCH_NAME &&
-        toolMap.has(CLIENT_TOOL_SEARCH_LM_NAME);
+        toolMap.get(CLIENT_TOOL_SEARCH_LM_NAME)?.isToolSearch === true;
     if (conflictsWithSearch) {
       throw new ResponsesToolSearchError(
         "Client tool_search conflicts with another tool named tool_search.",
@@ -1378,7 +1380,7 @@ export const convertResponsesToolsToVSCode = (
     if (toolMap.has(encodedName)) {
       if (info.isToolSearch || toolMap.get(encodedName)?.isToolSearch) {
         throw new ResponsesToolSearchError(
-          "Client tool_search conflicts with another tool named tool_search.",
+          `Tool name "${CLIENT_TOOL_SEARCH_LM_NAME}" is reserved while client tool_search is declared.`,
           "tools",
         );
       }
@@ -1501,7 +1503,7 @@ export const extractAdditionalTools = (
 
   const declared = convertResponsesToolsToVSCode([...requestTools, ...tools]);
   const declaredNames = new Set(declared.tools.map((tool) => tool.name));
-  if (declaredNames.has(CLIENT_TOOL_SEARCH_LM_NAME)) {
+  if (declared.toolMap.get(CLIENT_TOOL_SEARCH_LM_NAME)?.isToolSearch) {
     declaredNames.add(TOOL_SEARCH_NAME);
   }
   const acceptDiscoveredTool = (
