@@ -974,7 +974,7 @@ export const convertResponsesItemToVSCode = (
     return vscode.LanguageModelChatMessage.Assistant([
       new vscode.LanguageModelToolCallPart(
         item.call_id,
-        "tool_search",
+        CLIENT_TOOL_SEARCH_LM_NAME,
         item.arguments,
       ),
     ]);
@@ -1266,8 +1266,9 @@ export const CUSTOM_TOOL_INPUT_SCHEMA = {
  *    under an *encoded* name `<namespace>__<name>` to keep it unique across
  *    namespaces. The returned `toolMap` records how to decode that back into a
  *    separate `namespace` + bare `name` when serializing the model's tool call.
- *  - Client `tool_search`: exposed as a function and returned as a native
- *    search call; discovered tools arrive in client search outputs.
+ *  - Client `tool_search`: exposed as a function under an internal name and
+ *    returned as a native search call; discovered tools arrive in client
+ *    search outputs.
  * Other tool types (file_search, web_search, etc.) are not executable via
  * VSCode LM and are skipped.
  */
@@ -1275,6 +1276,13 @@ export const NAMESPACE_SEPARATOR = "__";
 
 export const encodeNamespacedName = (namespace: string, name: string): string =>
   `${namespace}${NAMESPACE_SEPARATOR}${name}`;
+
+const TOOL_SEARCH_NAME = "tool_search";
+
+// Copilot's Responses API path strips LM tools named `tool_search` (reserved
+// for its own agent), so GPT models would never see client search under its
+// wire name. See docs/llm-compatibility.md.
+export const CLIENT_TOOL_SEARCH_LM_NAME = "agent_maestro_tool_search";
 
 export type ToolCallInfo = {
   namespace?: string;
@@ -1357,6 +1365,16 @@ export const convertResponsesToolsToVSCode = (
     description?: string | null,
     parameters?: unknown,
   ) => {
+    const conflictsWithSearch = info.isToolSearch
+      ? toolMap.has(TOOL_SEARCH_NAME)
+      : encodedName === TOOL_SEARCH_NAME &&
+        toolMap.has(CLIENT_TOOL_SEARCH_LM_NAME);
+    if (conflictsWithSearch) {
+      throw new ResponsesToolSearchError(
+        "Client tool_search conflicts with another tool named tool_search.",
+        "tools",
+      );
+    }
     if (toolMap.has(encodedName)) {
       if (info.isToolSearch || toolMap.get(encodedName)?.isToolSearch) {
         throw new ResponsesToolSearchError(
@@ -1413,8 +1431,8 @@ export const convertResponsesToolsToVSCode = (
         );
       }
       push(
-        "tool_search",
-        { name: "tool_search", isCustom: false, isToolSearch: true },
+        CLIENT_TOOL_SEARCH_LM_NAME,
+        { name: TOOL_SEARCH_NAME, isCustom: false, isToolSearch: true },
         tool.description,
         tool.parameters,
       );
@@ -1481,11 +1499,11 @@ export const extractAdditionalTools = (
     }
   }
 
-  const declaredNames = new Set(
-    convertResponsesToolsToVSCode([...requestTools, ...tools]).tools.map(
-      (tool) => tool.name,
-    ),
-  );
+  const declared = convertResponsesToolsToVSCode([...requestTools, ...tools]);
+  const declaredNames = new Set(declared.tools.map((tool) => tool.name));
+  if (declaredNames.has(CLIENT_TOOL_SEARCH_LM_NAME)) {
+    declaredNames.add(TOOL_SEARCH_NAME);
+  }
   const acceptDiscoveredTool = (
     tool: Tool | NamespaceTool["tools"][number],
   ): boolean => {

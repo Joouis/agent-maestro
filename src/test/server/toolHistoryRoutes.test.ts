@@ -16,6 +16,7 @@ import {
   ThinkingPart,
   getThinkingRuntime,
 } from "../../server/utils/languageModelThinking";
+import { CLIENT_TOOL_SEARCH_LM_NAME } from "../../server/utils/openaiResponses";
 
 suite("Normalized history through official SDKs", () => {
   for (const stream of [false, true] as const) {
@@ -51,7 +52,11 @@ suite("Normalized history through official SDKs", () => {
           requestCount++;
           const availableTools = options?.tools;
           assert.ok(availableTools);
-          assert.ok(availableTools.some((tool) => tool.name === "tool_search"));
+          assert.ok(
+            availableTools.some(
+              (tool) => tool.name === CLIENT_TOOL_SEARCH_LM_NAME,
+            ),
+          );
           if (requestCount === 1) {
             assert.strictEqual(availableTools.length, 1);
           } else {
@@ -70,7 +75,7 @@ suite("Normalized history through official SDKs", () => {
             assert.ok(result instanceof vscode.LanguageModelToolResultPart);
             assert.strictEqual(call.callId, "search-call");
             assert.strictEqual(result.callId, call.callId);
-            assert.strictEqual(call.name, "tool_search");
+            assert.strictEqual(call.name, CLIENT_TOOL_SEARCH_LM_NAME);
             assert.deepStrictEqual(call.input, query);
           }
           return {
@@ -78,7 +83,7 @@ suite("Normalized history through official SDKs", () => {
               yield requestCount === 1
                 ? new vscode.LanguageModelToolCallPart(
                     "search-call",
-                    "tool_search",
+                    CLIENT_TOOL_SEARCH_LM_NAME,
                     query,
                   )
                 : new vscode.LanguageModelToolCallPart(
@@ -220,13 +225,13 @@ suite("Normalized history through official SDKs", () => {
           requests++;
           assert.deepStrictEqual(
             options?.tools?.map((tool) => tool.name),
-            ["tool_search", "existing", "good", "mcp__valid"],
+            [CLIENT_TOOL_SEARCH_LM_NAME, "existing", "good", "mcp__valid"],
           );
           return {
             stream: (async function* () {
               yield new vscode.LanguageModelToolCallPart(
                 `next-search-${requests}`,
-                "tool_search",
+                CLIENT_TOOL_SEARCH_LM_NAME,
                 { query: "continue" },
               );
             })(),
@@ -307,7 +312,7 @@ suite("Normalized history through official SDKs", () => {
           stream: (async function* () {
             yield new vscode.LanguageModelToolCallPart(
               "search-call",
-              "tool_search",
+              CLIENT_TOOL_SEARCH_LM_NAME,
               { query: "tools" },
             );
           })(),
