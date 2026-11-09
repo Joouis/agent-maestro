@@ -9,7 +9,10 @@ import {
   ThinkingPart,
   getThinkingRuntime,
 } from "../../server/utils/languageModelThinking";
-import { convertResponsesInputToVSCode } from "../../server/utils/openaiResponses";
+import {
+  CLIENT_TOOL_SEARCH_LM_NAME,
+  convertResponsesInputToVSCode,
+} from "../../server/utils/openaiResponses";
 import {
   OpenAIResponsesRequestValidationError,
   PreparedOpenAIResponsesTools,
@@ -1615,7 +1618,7 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
               chunks: [
                 new vscode.LanguageModelToolCallPart(
                   "search-call",
-                  "tool_search",
+                  CLIENT_TOOL_SEARCH_LM_NAME,
                   { query: "list projects" },
                 ),
               ],

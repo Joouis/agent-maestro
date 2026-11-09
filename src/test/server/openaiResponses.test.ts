@@ -8,6 +8,7 @@ import {
 } from "../../server/utils/languageModelThinking";
 import { extractOpenAIResponsesUsage } from "../../server/utils/openai";
 import {
+  CLIENT_TOOL_SEARCH_LM_NAME,
   CUSTOM_TOOL_INPUT_SCHEMA,
   ProviderReasoningError,
   ResponsesReasoningError,
@@ -42,7 +43,42 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         { type: "tool_search", parameters: { type: "object" } },
       ]);
       assert.strictEqual(tools.length, 1);
-      assert.strictEqual(toolMap.get("tool_search")?.isToolSearch, true);
+      assert.strictEqual(
+        toolMap.get(CLIENT_TOOL_SEARCH_LM_NAME)?.isToolSearch,
+        true,
+      );
+    });
+
+    test("registers search under an LM name Copilot does not strip", () => {
+      const { tools, toolMap } = convertResponsesToolsToVSCode([
+        { type: "tool_search", parameters: { type: "object" } },
+      ]);
+      assert.deepStrictEqual(
+        tools.map((tool) => tool.name),
+        [CLIENT_TOOL_SEARCH_LM_NAME],
+      );
+      assert.notStrictEqual(CLIENT_TOOL_SEARCH_LM_NAME, "tool_search");
+      assert.strictEqual(
+        toolMap.get(CLIENT_TOOL_SEARCH_LM_NAME)?.name,
+        "tool_search",
+      );
+
+      const replayed = convertResponsesItemToVSCode({
+        type: "tool_search_call",
+        call_id: "search-call",
+        execution: "client",
+        arguments: { query: "projects" },
+      });
+      const part = replayed?.content[0];
+      assert.ok(part instanceof vscode.LanguageModelToolCallPart);
+      assert.strictEqual(part.name, CLIENT_TOOL_SEARCH_LM_NAME);
+
+      const [call] = buildResponseOutput(
+        "",
+        [{ callId: "search-call", name: part.name, input: part.input }],
+        toolMap,
+      );
+      assert.strictEqual(call.type, "tool_search_call");
     });
 
     test("does not select native search through a named function choice", () => {
@@ -130,6 +166,62 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
           ResponsesToolSearchError,
         );
       }
+    });
+
+    test("reserves the internal search name only while client search is declared", () => {
+      const search = {
+        type: "tool_search" as const,
+        parameters: { type: "object" },
+      };
+      const fn = (name: string) => ({
+        type: "function" as const,
+        name,
+        parameters: { type: "object" },
+        strict: false,
+      });
+      for (const tools of [
+        [search, fn(CLIENT_TOOL_SEARCH_LM_NAME)],
+        [fn(CLIENT_TOOL_SEARCH_LM_NAME), search],
+      ]) {
+        assert.throws(
+          () => convertResponsesToolsToVSCode(tools),
+          ResponsesToolSearchError,
+        );
+      }
+
+      for (const tools of [
+        [fn(CLIENT_TOOL_SEARCH_LM_NAME), fn("tool_search")],
+        [fn("tool_search"), fn(CLIENT_TOOL_SEARCH_LM_NAME)],
+      ]) {
+        assert.deepStrictEqual(
+          convertResponsesToolsToVSCode(tools)
+            .tools.map((tool) => tool.name)
+            .sort(),
+          [CLIENT_TOOL_SEARCH_LM_NAME, "tool_search"],
+        );
+      }
+
+      const discovered = extractAdditionalTools(
+        [
+          {
+            type: "tool_search_call",
+            call_id: "search-call",
+            execution: "client",
+            arguments: { query: "tools" },
+          },
+          {
+            type: "tool_search_output",
+            call_id: "search-call",
+            execution: "client",
+            tools: [fn("tool_search")],
+          },
+        ],
+        [fn(CLIENT_TOOL_SEARCH_LM_NAME)],
+      );
+      assert.deepStrictEqual(
+        discovered.map((tool) => (tool as { name: string }).name),
+        ["tool_search"],
+      );
     });
 
     test("rejects malformed search history instead of losing the tool turn", () => {

@@ -29,6 +29,7 @@ Primary language: **TypeScript** (ESM). Runtime and package-manager requirements
 ## Known upstream (VS Code) issues
 
 - **Image MIME re-encode** — the VS Code LM API re-encodes images to PNG when both dimensions exceed 768px without updating their declared MIME type, which breaks providers that sniff bytes (e.g. Anthropic vision). Worked around in `src/server/utils/imageMime.ts`. **Re-check this whenever bumping `engines.vscode`** — if upstream starts preserving the source format, the workaround must be removed or it will cause a new mismatch. See `docs/vscode-image-mime-defect.md`.
+- **Copilot strips `tool_search` tools** — Copilot's Responses API path (GPT models) drops any LM tool named `tool_search`, which it reserves for its own agent. Client Responses `tool_search` is therefore registered as `agent_maestro_tool_search` in `src/server/utils/openaiResponses.ts` and mapped back to native items. **Re-check when bumping `engines.vscode`** if Copilot changes this behavior.
 
 ## Commands
 
