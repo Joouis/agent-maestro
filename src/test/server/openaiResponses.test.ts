@@ -11,8 +11,10 @@ import {
   CUSTOM_TOOL_INPUT_SCHEMA,
   ProviderReasoningError,
   ResponsesReasoningError,
+  ResponsesToolSearchError,
   buildResponseOutput,
   buildResponseOutputFromParts,
+  buildToolSearchCall,
   convertInputContentToVSCodePart,
   convertResponsesInputToVSCode,
   convertResponsesItemToVSCode,
@@ -34,6 +36,125 @@ const encode = (value: unknown): Uint8Array =>
   new TextEncoder().encode(JSON.stringify(value));
 
 suite("OpenAI Responses Conversion Utils Test Suite", () => {
+  suite("Client tool search", () => {
+    test("defaults omitted declaration execution to client", () => {
+      const { tools, toolMap } = convertResponsesToolsToVSCode([
+        { type: "tool_search", parameters: { type: "object" } },
+      ]);
+      assert.strictEqual(tools.length, 1);
+      assert.strictEqual(toolMap.get("tool_search")?.isToolSearch, true);
+    });
+
+    test("does not select native search through a named function choice", () => {
+      const { tools, toolMap } = convertResponsesToolsToVSCode([
+        { type: "tool_search", parameters: { type: "object" } },
+      ]);
+      assert.deepStrictEqual(
+        narrowToolsForChoice(
+          { type: "function", name: "tool_search" },
+          tools,
+          toolMap,
+        ),
+        { ok: false, targetName: "tool_search", matchCount: 0 },
+      );
+      assert.deepStrictEqual(narrowToolsForChoice("required", tools, toolMap), {
+        ok: true,
+        tools,
+      });
+    });
+
+    test("normalizes malformed model search arguments into replay-safe objects", () => {
+      const warnings: string[] = [];
+      const oldWarn = logger.warn;
+      logger.warn = (message) => warnings.push(message);
+      try {
+        for (const input of [undefined, null, "query", []]) {
+          const call = buildToolSearchCall("search-call", input);
+          assert.deepStrictEqual(call.arguments, {});
+          const message = convertResponsesItemToVSCode(call);
+          assert.ok(message);
+          const part = message.content[0];
+          assert.ok(part instanceof vscode.LanguageModelToolCallPart);
+          assert.deepStrictEqual(part.input, {});
+        }
+        assert.strictEqual(warnings.length, 4);
+        const input = { query: "list projects" };
+        assert.strictEqual(
+          buildToolSearchCall("search-call", input).arguments,
+          input,
+        );
+        assert.strictEqual(warnings.length, 4);
+      } finally {
+        logger.warn = oldWarn;
+      }
+    });
+
+    test("rejects server-executed search rather than silently dropping it", () => {
+      assert.throws(
+        () =>
+          convertResponsesToolsToVSCode([
+            { type: "tool_search", execution: "server" },
+          ]),
+        ResponsesToolSearchError,
+      );
+    });
+
+    test("rejects search without an object parameter schema", () => {
+      assert.throws(
+        () =>
+          convertResponsesToolsToVSCode([
+            { type: "tool_search", execution: "client", parameters: null },
+          ]),
+        ResponsesToolSearchError,
+      );
+    });
+
+    test("rejects a name collision instead of dispatching search as a function", () => {
+      const search = {
+        type: "tool_search" as const,
+        execution: "client" as const,
+        parameters: { type: "object" },
+      };
+      const other = {
+        type: "function" as const,
+        name: "tool_search",
+        parameters: { type: "object" },
+        strict: false,
+      };
+      for (const tools of [
+        [search, other],
+        [other, search],
+      ]) {
+        assert.throws(
+          () => convertResponsesToolsToVSCode(tools),
+          ResponsesToolSearchError,
+        );
+      }
+    });
+
+    test("rejects malformed search history instead of losing the tool turn", () => {
+      assert.throws(
+        () =>
+          convertResponsesItemToVSCode({
+            type: "tool_search_call",
+            execution: "client",
+            call_id: "search-call",
+            arguments: "not an object",
+          }),
+        ResponsesToolSearchError,
+      );
+      assert.throws(
+        () =>
+          convertResponsesItemToVSCode({
+            type: "tool_search_output",
+            execution: "client",
+            tools: [],
+          }),
+        ResponsesToolSearchError,
+      );
+    });
+  });
+
   suite("Encrypted reasoning", () => {
     test("records current AM ordering of thinking, call, text, call", () => {
       const runtime = getThinkingRuntime()!;

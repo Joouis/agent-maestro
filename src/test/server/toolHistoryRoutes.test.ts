@@ -18,6 +18,331 @@ import {
 } from "../../server/utils/languageModelThinking";
 
 suite("Normalized history through official SDKs", () => {
+  for (const stream of [false, true] as const) {
+    test(`Responses client tool search loads tools and replays its history (stream=${stream})`, async () => {
+      let requestCount = 0;
+      const query = { query: "list accessible projects" };
+      const discovered: OpenAI.Responses.Tool = {
+        type: "namespace",
+        name: "ado_office",
+        description: "Azure DevOps",
+        tools: [
+          {
+            type: "function",
+            name: "core_list_projects",
+            description: "List projects",
+            parameters: {
+              type: "object",
+              properties: { top: { type: "integer" } },
+            },
+            strict: false,
+          },
+        ],
+      };
+      const model = {
+        id: "gpt-test",
+        name: "Test",
+        family: "gpt",
+        vendor: "copilot",
+        version: "test",
+        maxInputTokens: 200000,
+        countTokens: async () => 1,
+        sendRequest: async (messages, options) => {
+          requestCount++;
+          const availableTools = options?.tools;
+          assert.ok(availableTools);
+          assert.ok(availableTools.some((tool) => tool.name === "tool_search"));
+          if (requestCount === 1) {
+            assert.strictEqual(availableTools.length, 1);
+          } else {
+            const tool = availableTools.find(
+              (tool) => tool.name === "ado_office__core_list_projects",
+            );
+            assert.ok(tool, "Search results must become callable tools");
+            const parts = messages.flatMap((message) => message.content);
+            const call = parts.find(
+              (part) => part instanceof vscode.LanguageModelToolCallPart,
+            );
+            const result = parts.find(
+              (part) => part instanceof vscode.LanguageModelToolResultPart,
+            );
+            assert.ok(call instanceof vscode.LanguageModelToolCallPart);
+            assert.ok(result instanceof vscode.LanguageModelToolResultPart);
+            assert.strictEqual(call.callId, "search-call");
+            assert.strictEqual(result.callId, call.callId);
+            assert.strictEqual(call.name, "tool_search");
+            assert.deepStrictEqual(call.input, query);
+          }
+          return {
+            stream: (async function* () {
+              yield requestCount === 1
+                ? new vscode.LanguageModelToolCallPart(
+                    "search-call",
+                    "tool_search",
+                    query,
+                  )
+                : new vscode.LanguageModelToolCallPart(
+                    "project-call",
+                    "ado_office__core_list_projects",
+                    { top: 1 },
+                  );
+            })(),
+            text: (async function* () {})(),
+          };
+        },
+      } as vscode.LanguageModelChat;
+      const app = new OpenAPIHono();
+      registerOpenaiResponsesRoutes(app, {
+        requestTimeoutMs: 2000,
+        resolveChatModelClient: async () => ({ client: model }),
+      });
+      const client = new OpenAI({
+        apiKey: "test",
+        baseURL: "http://localhost/v1",
+        maxRetries: 0,
+        fetch: async (input, init) => app.request(new Request(input, init)),
+      });
+      const tools: OpenAI.Responses.Tool[] = [
+        {
+          type: "tool_search",
+          execution: "client",
+          description: "Discover client tools",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
+        },
+      ];
+      const input: OpenAI.Responses.ResponseInput = [
+        { role: "user", content: "List accessible projects" },
+      ];
+      for (let round = 0; round < 2; round++) {
+        const response = await client.responses.create({
+          model: model.id,
+          tools,
+          input,
+          tool_choice: "required",
+          stream,
+        });
+        let output: OpenAI.Responses.ResponseOutputItem[] = [];
+        const lifecycle: string[] = [];
+        if ("output" in response) {
+          output = response.output;
+        } else {
+          for await (const event of response) {
+            if (
+              event.type === "response.output_item.added" ||
+              event.type === "response.output_item.done"
+            ) {
+              lifecycle.push(event.item.type);
+            }
+            if (event.type === "response.completed") {
+              output = event.response.output;
+            }
+          }
+        }
+        assert.strictEqual(output.length, 1);
+        const call = output[0];
+        if (round === 0) {
+          assert.strictEqual(call.type, "tool_search_call");
+          if (call.type !== "tool_search_call") {
+            assert.fail("Expected native tool_search_call, not function_call");
+          }
+          assert.strictEqual(call.call_id, "search-call");
+          assert.strictEqual(call.execution, "client");
+          assert.deepStrictEqual(call.arguments, query);
+          if (stream) {
+            assert.deepStrictEqual(lifecycle, [
+              "tool_search_call",
+              "tool_search_call",
+            ]);
+          }
+          input.push(call, {
+            type: "tool_search_output",
+            ...(stream ? {} : { execution: "client" as const }),
+            call_id: call.call_id,
+            tools: [discovered],
+          });
+        } else {
+          assert.strictEqual(call.type, "function_call");
+          if (call.type !== "function_call") {
+            assert.fail("Expected discovered function call");
+          }
+          assert.strictEqual(call.namespace, "ado_office");
+          assert.strictEqual(call.name, "core_list_projects");
+          assert.strictEqual(call.arguments, '{"top":1}');
+        }
+      }
+      assert.strictEqual(requestCount, 2);
+    });
+  }
+
+  test("invalid client search history and declarations return HTTP 400", async () => {
+    let requests = 0;
+    const app = responsesApp({
+      ...modelMetadata,
+      sendRequest: async () => {
+        requests++;
+        throw new Error("Invalid search must fail before model dispatch");
+      },
+    });
+    for (const payload of [
+      { input: "Discover tools", tools: [{ type: "tool_search" }] },
+      {
+        input: [
+          {
+            type: "tool_search_output",
+            call_id: "search-call",
+            tools: "invalid",
+          },
+        ],
+      },
+    ]) {
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: modelMetadata.id, ...payload }),
+      });
+      assert.strictEqual(response.status, 400);
+      const body = await response.json();
+      assert.strictEqual(body.error.code, "invalid_tool_search");
+    }
+    assert.strictEqual(requests, 0);
+  });
+
+  for (const stream of [false, true]) {
+    test(`Responses skips invalid, colliding and orphaned discovered tools on later turns (stream=${stream})`, async () => {
+      let requests = 0;
+      const app = responsesApp({
+        ...modelMetadata,
+        sendRequest: async (_messages, options) => {
+          requests++;
+          assert.deepStrictEqual(
+            options?.tools?.map((tool) => tool.name),
+            ["tool_search", "existing", "good", "mcp__valid"],
+          );
+          return {
+            stream: (async function* () {
+              yield new vscode.LanguageModelToolCallPart(
+                `next-search-${requests}`,
+                "tool_search",
+                { query: "continue" },
+              );
+            })(),
+            text: (async function* () {})(),
+          };
+        },
+      } as vscode.LanguageModelChat);
+      const input = [
+        { role: "user", content: "Discover tools" },
+        {
+          type: "tool_search_output",
+          call_id: "orphan",
+          tools: [{ type: "function", name: "orphaned" }],
+        },
+        {
+          type: "tool_search_call",
+          call_id: "search-call",
+          arguments: { query: "tools" },
+        },
+        {
+          type: "tool_search_output",
+          call_id: "search-call",
+          tools: [
+            { type: "namespace", name: "bad", tools: {} },
+            { type: "namespace", name: "bad", tools: [null] },
+            { type: "tool_search", execution: "server" },
+            { type: "function", name: "tool_search" },
+            { type: "custom", name: "tool_search" },
+            { type: "function", name: "existing" },
+            { type: "function", name: "bad-schema", parameters: [] },
+            null,
+            { type: "function", name: "good" },
+            {
+              type: "namespace",
+              name: "mcp",
+              tools: [
+                null,
+                { type: "tool_search", execution: "server" },
+                { type: "function", name: "bad-schema", parameters: [] },
+                { type: "function", name: "valid" },
+              ],
+            },
+          ],
+        },
+      ];
+      // Reusing the same external output must not poison future requests.
+      for (let turn = 0; turn < 2; turn++) {
+        const response = await app.request("/v1/responses", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: modelMetadata.id,
+            input,
+            tools: [
+              { type: "tool_search", parameters: { type: "object" } },
+              { type: "function", name: "existing" },
+            ],
+            tool_choice: "required",
+            stream,
+          }),
+        });
+        assert.strictEqual(response.status, 200);
+        const body = await response.text();
+        assert.ok(body.includes("tool_search_call"));
+        assert.ok(!body.includes('"type":"error"'));
+      }
+      assert.strictEqual(requests, 2);
+    });
+  }
+
+  test("Responses supports null client execution but rejects a named function choice for native search", async () => {
+    let requests = 0;
+    const app = responsesApp({
+      ...modelMetadata,
+      sendRequest: async () => {
+        requests++;
+        return {
+          stream: (async function* () {
+            yield new vscode.LanguageModelToolCallPart(
+              "search-call",
+              "tool_search",
+              { query: "tools" },
+            );
+          })(),
+          text: (async function* () {})(),
+        };
+      },
+    } as vscode.LanguageModelChat);
+    for (const tool_choice of [
+      "required",
+      { type: "function", name: "tool_search" },
+    ]) {
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: modelMetadata.id,
+          input: "Discover tools",
+          tools: [
+            {
+              type: "tool_search",
+              execution: null,
+              parameters: { type: "object" },
+            },
+          ],
+          tool_choice,
+        }),
+      });
+      assert.strictEqual(
+        response.status,
+        tool_choice === "required" ? 200 : 400,
+      );
+    }
+    assert.strictEqual(requests, 1);
+  });
+
   const modelMetadata = {
     id: "gpt-reasoning-test",
     name: "Test",
