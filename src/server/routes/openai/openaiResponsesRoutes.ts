@@ -22,7 +22,7 @@ import {
   LanguageModelClientDisconnectedError,
   LanguageModelRequestLifecycle,
   LanguageModelRequestTimeoutError,
-  interruptibleLanguageModelStream,
+  requestLanguageModelWithEmptyResponseRetry,
 } from "../../utils/languageModelRequestLifecycle";
 import {
   encryptedThinkingOptions,
@@ -389,21 +389,16 @@ export function registerOpenaiResponsesRoutes(
 
       // 9. Handle non-streaming response
       if (!stream) {
-        const response = await requestLifecycle.waitFor(
-          client.sendRequest(
-            vsCodeMessages,
-            configuredRequestOptions,
-            cancellationToken,
-          ),
-        );
         let accumulatedText = "";
         const toolCalls: { callId: string; name: string; input: unknown }[] =
           [];
         const parts: ResponsesModelPart[] = [];
         let responseUsage: ResponseUsage | undefined;
 
-        for await (const chunk of interruptibleLanguageModelStream(
-          response.stream,
+        for await (const chunk of requestLanguageModelWithEmptyResponseRetry(
+          client,
+          vsCodeMessages,
+          configuredRequestOptions,
           requestLifecycle,
         )) {
           if (chunk instanceof vscode.LanguageModelTextPart) {
@@ -533,13 +528,6 @@ export function registerOpenaiResponsesRoutes(
             writeSSE,
             sequenceNumberRef,
             async (writeSSE) => {
-              const response = await requestLifecycle!.waitFor(
-                client.sendRequest(
-                  vsCodeMessages,
-                  configuredRequestOptions,
-                  cancellationToken,
-                ),
-              );
               // Process stream
               const output: OutputItem[] = [];
               const reasoning = new ReasoningItems("provider");
@@ -550,8 +538,10 @@ export function registerOpenaiResponsesRoutes(
               let totalOutputText = ""; // Track all output for token counting
               let responseUsage: ResponseUsage | undefined;
 
-              for await (const chunk of interruptibleLanguageModelStream(
-                response.stream,
+              for await (const chunk of requestLanguageModelWithEmptyResponseRetry(
+                client,
+                vsCodeMessages,
+                configuredRequestOptions,
                 requestLifecycle!,
               )) {
                 if (chunk instanceof vscode.LanguageModelTextPart) {

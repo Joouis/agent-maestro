@@ -1,4 +1,12 @@
+import { setTimeout as delay } from "node:timers/promises";
 import * as vscode from "vscode";
+
+import { logger } from "../../utils/logger";
+import {
+  ThinkingPart,
+  hasEncryptedThinking,
+  isThinkingPart,
+} from "./languageModelThinking";
 
 export const LANGUAGE_MODEL_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -117,5 +125,76 @@ export async function* interruptibleLanguageModelStream<T>(
     }
 
     yield result.value;
+  }
+}
+
+export async function* requestLanguageModelWithEmptyResponseRetry(
+  client: vscode.LanguageModelChat,
+  messages: vscode.LanguageModelChatMessage[],
+  options: vscode.LanguageModelChatRequestOptions,
+  lifecycle: LanguageModelRequestLifecycle,
+  isIncompleteResponseError?: (error: unknown) => boolean,
+): AsyncGenerator<unknown> {
+  for (let attempt = 0; ; attempt++) {
+    let committedOutput = false;
+    const pendingThinking: ThinkingPart[] = [];
+    try {
+      if (lifecycle.signal.aborted) {
+        throw lifecycle.signal.reason;
+      }
+      const response = await lifecycle.waitFor(
+        client.sendRequest(messages, options, lifecycle.token),
+      );
+      for await (const part of interruptibleLanguageModelStream(
+        response.stream,
+        lifecycle,
+      )) {
+        // Keep opaque-only reasoning private until this attempt can be committed.
+        if (
+          !committedOutput &&
+          client.vendor === "copilot" &&
+          isThinkingPart(part) &&
+          hasEncryptedThinking(part) &&
+          (part.value === "" ||
+            (Array.isArray(part.value) &&
+              part.value.every((value) => value === "")))
+        ) {
+          pendingThinking.push(part);
+          continue;
+        }
+        committedOutput = true;
+        yield* pendingThinking;
+        pendingThinking.length = 0;
+        yield part;
+      }
+      yield* pendingThinking;
+      return;
+    } catch (error) {
+      if (lifecycle.signal.aborted) {
+        throw lifecycle.signal.reason;
+      }
+      if (isIncompleteResponseError?.(error)) {
+        yield* pendingThinking;
+        throw error;
+      }
+      // Never replay text, tools, visible thinking, usage, or unknown parts.
+      if (
+        attempt !== 0 ||
+        committedOutput ||
+        client.vendor !== "copilot" ||
+        !(error instanceof Error) ||
+        error.message !== "Response contained no choices."
+      ) {
+        throw error;
+      }
+      logger.warn(
+        `Copilot returned no choices before committing response output; retrying once after 250ms (model: ${client.id})`,
+      );
+      await delay(250, undefined, { signal: lifecycle.signal }).catch(
+        (error: unknown) => {
+          throw lifecycle.signal.aborted ? lifecycle.signal.reason : error;
+        },
+      );
+    }
   }
 }

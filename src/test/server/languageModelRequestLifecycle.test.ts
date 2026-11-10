@@ -749,11 +749,18 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
 
   test("propagates a client disconnect through Responses", async () => {
     let cancellationObserved = false;
-    const app = createOpenaiResponsesTestApp(
-      createStalledModel(() => {
-        cancellationObserved = true;
-      }),
-    );
+    const model = createStalledModel(() => {
+      cancellationObserved = true;
+    });
+    const sendRequest = model.sendRequest;
+    const started = new Promise<void>((resolve) => {
+      model.sendRequest = (...args) => {
+        const response = sendRequest(...args);
+        resolve();
+        return response;
+      };
+    });
+    const app = createOpenaiResponsesTestApp(model);
     const clientAbortController = new AbortController();
 
     const responsePromise = app.request("/v1/responses", {
@@ -765,6 +772,7 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
       }),
       signal: clientAbortController.signal,
     });
+    await started;
     clientAbortController.abort();
 
     const response = await responsePromise;

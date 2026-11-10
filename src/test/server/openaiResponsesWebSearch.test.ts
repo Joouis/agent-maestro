@@ -237,6 +237,66 @@ const parseSseData = (body: string): Record<string, any>[] =>
     .map((line) => JSON.parse(line.slice("data: ".length)));
 
 suite("OpenAI Responses Server Web Search Test Suite", () => {
+  test("recovers a no-choices error without repeating a completed search", async () => {
+    const prepared = prepareSearch();
+    const requests: Parameters<typeof createRoundModel>[1] = [];
+    let searches = 0;
+    const result = await runLoop({
+      prepared,
+      requests,
+      rounds: [
+        { chunks: [internalCall(prepared)] },
+        { chunks: [], error: new Error("Response contained no choices.") },
+        { chunks: [new vscode.LanguageModelTextPart("Recovered answer")] },
+      ],
+      provider: createProvider(async () => {
+        searches++;
+        return [];
+      }),
+    });
+
+    assert.strictEqual(searches, 1);
+    assert.strictEqual(requests.length, 3);
+    assert.deepStrictEqual(requests[1], requests[2]);
+    assert.ok(JSON.stringify(result.output).includes("Recovered answer"));
+  });
+
+  test("recovers no-choices errors through both hosted-search response modes", async () => {
+    for (const stream of [false, true]) {
+      const requests: Parameters<typeof createRoundModel>[1] = [];
+      const app = createTestApp({
+        requests,
+        rounds: [
+          { chunks: [], error: new Error("Response contained no choices.") },
+          { chunks: [new vscode.LanguageModelTextPart("Recovered answer")] },
+        ],
+        provider: createProvider(async () => []),
+      });
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-5.6-test",
+          input: "Synthetic retry check",
+          tools: [webSearchTool()],
+          stream,
+        }),
+      });
+      const body = await response.text();
+
+      assert.strictEqual(response.status, 200);
+      assert.strictEqual(requests.length, 2);
+      assert.ok(body.includes("Recovered answer"));
+      if (stream) {
+        const events = parseSseData(body);
+        assert.strictEqual(events.at(-1)?.type, "response.completed");
+        assert.ok(!events.some(({ type }) => type === "response.failed"));
+      } else {
+        assert.strictEqual(JSON.parse(body).status, "completed");
+      }
+    }
+  });
+
   test("reports provider reasoning conflicts when the hosted-search route returns client output", async () => {
     for (const stream of [false, true]) {
       const runtime = getThinkingRuntime()!;
@@ -1606,6 +1666,146 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
         assert.strictEqual(result.output[0].status, "failed");
       }
     });
+  });
+
+  suite("reasoning-only incomplete recovery", () => {
+    const thinking = (id: string, encrypted: string) =>
+      new (getThinkingRuntime()!.Thinking)("", id, {
+        encrypted_content: encrypted,
+        vscode_thinking_origin_api: "responses",
+      });
+
+    for (const stream of [false, true]) {
+      for (const afterSearch of [false, true]) {
+        test(`preserves incomplete reasoning ${afterSearch ? "after search" : "without search"} in ${stream ? "SSE" : "JSON"}`, async () => {
+          const requests: Parameters<typeof createRoundModel>[1] = [];
+          let searches = 0;
+          const prepared = prepareSearch();
+          const app = createTestApp({
+            requests,
+            rounds: [
+              ...(afterSearch
+                ? [{ chunks: [internalCall(prepared), usagePart()] }]
+                : []),
+              {
+                chunks: [thinking("rs_incomplete", "partial-state")],
+                error: new Error("Response too long for the configured limit"),
+              },
+            ],
+            provider: createProvider(async () => {
+              searches++;
+              return [];
+            }),
+          });
+          const response = await app.request("/v1/responses", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              model: "gpt-5.6-test",
+              input: "Search",
+              tools: [webSearchTool()],
+              stream,
+            }),
+          });
+          assert.strictEqual(response.status, 200);
+          const body = await response.text();
+          const events = stream ? parseSseData(body) : [];
+          const result = stream
+            ? events.find(({ type }) => type === "response.incomplete")
+                ?.response
+            : JSON.parse(body);
+          assert.ok(result);
+          assert.strictEqual(result.status, "incomplete");
+          assert.deepStrictEqual(result.incomplete_details, {
+            reason: "max_output_tokens",
+          });
+          const retained = result.output.filter(
+            ({ type }: { type: string }) => type === "reasoning",
+          );
+          assert.strictEqual(retained.length, 1);
+          assert.strictEqual(retained[0].id, "rs_incomplete");
+          const restored = convertResponsesInputToVSCode(retained)
+            .flatMap(({ content }) => content)
+            .find((part) => part instanceof getThinkingRuntime()!.Thinking);
+          assert.ok(restored instanceof getThinkingRuntime()!.Thinking);
+          assert.strictEqual(
+            restored.metadata?.encrypted_content,
+            "partial-state",
+          );
+          assert.strictEqual(requests.length, afterSearch ? 2 : 1);
+          assert.strictEqual(searches, afterSearch ? 1 : 0);
+          if (stream) {
+            assert.ok(
+              !events.some(({ type }) => type === "response.completed"),
+            );
+            assert.deepStrictEqual(
+              events
+                .filter(
+                  ({ type, item }) =>
+                    type === "response.output_item.done" &&
+                    item.type === "reasoning",
+                )
+                .map(({ item }) => item),
+              retained,
+            );
+          }
+        });
+      }
+
+      test(`preserves only the current reasoning on retry then incomplete in ${stream ? "SSE" : "JSON"}`, async () => {
+        const requests: Parameters<typeof createRoundModel>[1] = [];
+        let searches = 0;
+        const app = createTestApp({
+          requests,
+          rounds: [
+            {
+              chunks: [thinking("rs_failed", "failed-state")],
+              error: new Error("Response contained no choices."),
+            },
+            {
+              chunks: [thinking("rs_incomplete", "partial-state")],
+              error: new Error("Response too long for the configured limit"),
+            },
+          ],
+          provider: createProvider(async () => {
+            searches++;
+            return [];
+          }),
+        });
+        const response = await app.request("/v1/responses", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-5.6-test",
+            input: "Search",
+            tools: [webSearchTool()],
+            stream,
+          }),
+        });
+        const body = await response.text();
+        const result = stream
+          ? parseSseData(body).find(
+              ({ type }) => type === "response.incomplete",
+            )?.response
+          : JSON.parse(body);
+        assert.ok(result);
+        assert.strictEqual(result.status, "incomplete");
+        assert.strictEqual(result.output.length, 1);
+        assert.strictEqual(result.output[0].type, "reasoning");
+        assert.strictEqual(result.output[0].id, "rs_incomplete");
+        const restored = convertResponsesInputToVSCode(result.output)
+          .flatMap(({ content }) => content)
+          .find((part) => part instanceof getThinkingRuntime()!.Thinking);
+        assert.ok(restored instanceof getThinkingRuntime()!.Thinking);
+        assert.strictEqual(
+          restored.metadata?.encrypted_content,
+          "partial-state",
+        );
+        assert.doesNotMatch(body, /rs_failed|failed-state/);
+        assert.strictEqual(requests.length, 2);
+        assert.strictEqual(searches, 0);
+      });
+    }
   });
 
   suite("route and streaming protocol", () => {
