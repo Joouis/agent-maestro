@@ -130,6 +130,38 @@ export function registerConfiguratorCommands(
           return;
         }
 
+        const currentAutoModeModel: string | undefined =
+          existingSettings?.env?.CLAUDE_CODE_AUTO_MODE_MODEL;
+        const selectedAutoModeModel = await vscode.window.showQuickPick(
+          [
+            ...(currentAutoModeModel
+              ? [
+                  {
+                    label: "Keep current",
+                    description: currentAutoModeModel,
+                    modelId: currentAutoModeModel,
+                  },
+                ]
+              : []),
+            {
+              label: "Skip",
+              description: "Let Claude Code choose the auto mode model",
+              modelId: undefined,
+            },
+            ...modelOptions,
+          ],
+          {
+            title:
+              "Select auto mode classifier model (CLAUDE_CODE_AUTO_MODE_MODEL, optional)",
+            placeHolder:
+              "Model used by the client-side auto mode classifier (Claude Code 2.1.301+)",
+          },
+        );
+
+        if (!selectedAutoModeModel) {
+          return;
+        }
+
         // Preserve existing auth token if it has a meaningful value
         const currentToken = existingSettings?.env?.ANTHROPIC_AUTH_TOKEN;
         const authToken = currentToken
@@ -140,6 +172,7 @@ export function registerConfiguratorCommands(
         const existingEnv = { ...existingSettings?.env };
         // Remove the deprecated Claude Code small-fast override when rewriting settings.
         delete existingEnv.ANTHROPIC_SMALL_FAST_MODEL;
+        delete existingEnv.CLAUDE_CODE_AUTO_MODE_MODEL;
         const autoCompactWindow = selectedDefaultModel.maxInputTokens
           ? String(selectedDefaultModel.maxInputTokens)
           : undefined;
@@ -155,6 +188,9 @@ export function registerConfiguratorCommands(
               selectedDefaultModel.modelId,
               selectedDefaultModel.maxInputTokens,
             ),
+            ...(selectedAutoModeModel.modelId
+              ? { CLAUDE_CODE_AUTO_MODE_MODEL: selectedAutoModeModel.modelId }
+              : {}),
             ...(autoCompactWindow
               ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: autoCompactWindow }
               : {}),
