@@ -57,6 +57,8 @@ For Claude Code, Codex, or Gemini CLI, choose a model from the picker. If the li
 
 Claude Code also offers an optional model for its client-side auto mode classifier (`CLAUDE_CODE_AUTO_MODE_MODEL`, Claude Code 2.1.301+). Choose **Skip** to let Claude Code use its default.
 
+The configurator also sets `CLAUDE_CODE_AUTO_MODE_SERVER=0`. Agent Maestro cannot forward the server-side auto mode classifier's `anthropic-beta` header and `safeguards` field, so Claude Code keeps classifier requests on the client. Those requests are billed as usual, and the "auto mode classifier billing" notice does not appear. See [Auto mode classifier request charges](https://code.claude.com/docs/en/auto-mode-classifier-billing).
+
 If you have enabled AM's optional LLM API key, apply the [client authentication settings](#access-and-authentication) before the first request. Otherwise, the generated placeholder credentials are sufficient for the default local setup.
 
 ### 3. Get Your First Response

@@ -191,6 +191,8 @@ export function registerConfiguratorCommands(
             ...(selectedAutoModeModel.modelId
               ? { CLAUDE_CODE_AUTO_MODE_MODEL: selectedAutoModeModel.modelId }
               : {}),
+            // The proxy cannot forward the server-side classifier's safeguards field, so keep auto mode classifier requests on the client.
+            CLAUDE_CODE_AUTO_MODE_SERVER: "0",
             ...(autoCompactWindow
               ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: autoCompactWindow }
               : {}),
