@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.16.0 - 2026.11.10
+
+- **Configure Claude Code Settings** now offers an optional auto mode classifier model choice (`CLAUDE_CODE_AUTO_MODE_MODEL`) and sets `CLAUDE_CODE_AUTO_MODE_SERVER=0`, so auto mode classifier requests stay on the client and the "auto mode classifier billing" notice no longer appears.
+- List all available VS Code language models (GPT, Gemini, Grok, etc.), not only Claude, from the Anthropic-compatible `/v1/models` endpoints, and report the resolved model ID in Anthropic, OpenAI, and Gemini responses instead of echoing the requested ID.
+- Preserve Codex client-side tool search across the Responses bridge, including streaming calls, search history, and newly discovered tool definitions, and make it work with GPT models, which previously never saw the search tool because Copilot drops tools named `tool_search`.
+
 ## v2.15.0 - 2026.10.16
 
 - Preserve encrypted reasoning across OpenAI Responses tool continuations, including streaming, on compatible VS Code hosts. Responses may contain multiple messages; clients should process all output items in order.
