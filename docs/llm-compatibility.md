@@ -134,6 +134,10 @@ Direct page targets must be public HTTP(S) URLs. Local DNS/address checks are de
 
 Protocol rationale and exact validation rules: [Anthropic search](2026-08-26-anthropic-server-web-search-design.md), [Responses search](2026-08-30-openai-responses-web-search-design.md), [standalone search](2026-08-31-codex-standalone-web-search-design.md).
 
+### Grok Build
+
+**Configure Grok Build Settings** writes an `agent-maestro` Chat Completions model to `~/.grok/config.toml` (or `$GROK_HOME/config.toml`) and selects it with `models.default`. It does not set `supports_backend_search` or `models.web_search`. Grok Build backend search is a server tool the proxy does not serve, and the Chat Completions path does not replace a client search tool the way Codex Responses and standalone search do. Grok Build keeps its own client web search.
+
 ## Diagnostic Logs
 
 Supported LLM generation failures can append JSON diagnostics to one timestamped `*-debug.log` per extension session in the first workspace folder. The file is created on the first logged error, not merely on startup. If no workspace or writable location exists, file logging can fail; the response includes a log path only when available.

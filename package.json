@@ -1,7 +1,7 @@
 {
   "name": "agent-maestro",
   "displayName": "Agent Maestro",
-  "description": "Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code or Codex straight in through an OpenAI/Anthropic-compatible API.",
+  "description": "Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code, Codex, or Grok Build straight in through an OpenAI/Anthropic-compatible API.",
   "version": "2.16.0",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
@@ -38,6 +38,8 @@
     "anthropic",
     "claude code",
     "claude",
+    "grok",
+    "grok build",
     "openai",
     "codex",
     "gpt",
@@ -152,6 +154,11 @@
       {
         "command": "agent-maestro.configureCodex",
         "title": "Configure Codex Settings",
+        "category": "Agent Maestro"
+      },
+      {
+        "command": "agent-maestro.configureGrokBuild",
+        "title": "Configure Grok Build Settings",
         "category": "Agent Maestro"
       },
       {

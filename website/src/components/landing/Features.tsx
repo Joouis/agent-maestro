@@ -12,7 +12,7 @@ const features = [
     icon: MousePointer,
     title: "One-Click Setup",
     description:
-      "Configure Claude Code, Claude Desktop, Codex, or Gemini CLI to use available GitHub Copilot models through Agent Maestro.",
+      "Configure Claude Code, Claude Desktop, Codex, Gemini CLI, or Grok Build to use available GitHub Copilot models through Agent Maestro.",
   },
   {
     icon: Cpu,
