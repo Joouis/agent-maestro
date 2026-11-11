@@ -1,5 +1,7 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import * as assert from "assert";
+import OpenAI from "openai";
 import * as vscode from "vscode";
 
 import { registerAnthropicRoutes } from "../../server/routes/anthropicRoutes";
@@ -59,176 +61,157 @@ suite("General Copilot Grok Proxy Test Suite", () => {
           },
         } as vscode.LanguageModelChat;
         try {
-          chatModelsCache.getChatModels = async () => [model];
+          chatModelsCache.getChatModels = async () => [
+            {
+              ...model,
+              id: "gpt-decoy",
+              family: "gpt",
+              sendRequest: async () => {
+                throw new Error("Wrong model selected");
+              },
+            },
+            model,
+          ];
           const app = new OpenAPIHono();
-          const openai = new OpenAPIHono();
-          registerOpenaiRoutes(openai);
-          app.route("/api/openai", openai);
-          const anthropic = new OpenAPIHono();
-          registerAnthropicRoutes(anthropic);
-          app.route("/api/anthropic", anthropic);
-          const listPath =
+          const openaiRoutes = new OpenAPIHono();
+          registerOpenaiRoutes(openaiRoutes);
+          app.route("/api/openai", openaiRoutes);
+          const anthropicRoutes = new OpenAPIHono();
+          registerAnthropicRoutes(anthropicRoutes);
+          app.route("/api/anthropic", anthropicRoutes);
+          const fetch = async (
+            input: string | URL | Request,
+            init?: RequestInit,
+          ) => app.request(new Request(input, init));
+          const openai = new OpenAI({
+            apiKey: "test",
+            baseURL: "http://localhost/api/openai/v1",
+            maxRetries: 0,
+            fetch,
+          });
+          const anthropic = new Anthropic({
+            apiKey: "test",
+            baseURL: "http://localhost/api/anthropic",
+            maxRetries: 0,
+            fetch,
+          });
+          const listed =
             protocol === "anthropic"
-              ? "/api/anthropic/v1/models"
-              : "/api/openai/v1/models";
-          const discovered = await app.request(listPath);
-          assert.strictEqual(discovered.status, 200);
-          const listed = (await discovered.json()) as {
-            data: { id: string }[];
-          };
-          const id = listed.data[0].id;
+              ? await anthropic.models.list()
+              : await openai.models.list();
+          const id = listed.data.find((entry) => entry.id === model.id)?.id;
           assert.strictEqual(id, model.id);
           assert.strictEqual(requests, 0);
-
           const schema = {
-            type: "object",
+            type: "object" as const,
             properties: { text: { type: "string" } },
             required: ["text"],
           };
-          const history: any[] = [
-            { role: "user", content: "Echo CONNECTED using the probe tool." },
-          ];
-          for (let round = 0; round < 2; round++) {
-            const body =
-              protocol === "responses"
-                ? {
-                    model: id,
-                    stream,
-                    input: history,
-                    tools: [
-                      {
-                        type: "function",
-                        name: "echo_probe",
-                        parameters: schema,
-                      },
-                    ],
-                  }
-                : protocol === "chat"
-                  ? {
-                      model: id,
-                      stream,
-                      messages: history,
-                      tools: [
-                        {
-                          type: "function",
-                          function: { name: "echo_probe", parameters: schema },
-                        },
-                      ],
-                    }
-                  : {
-                      model: id,
-                      stream,
-                      max_tokens: 128,
-                      messages: history,
-                      tools: [{ name: "echo_probe", input_schema: schema }],
-                    };
-            const endpoint =
-              protocol === "anthropic"
-                ? "/api/anthropic/v1/messages"
-                : `/api/openai/v1/${protocol === "chat" ? "chat/completions" : "responses"}`;
-            const response = await app.request(endpoint, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(body),
-            });
-            assert.strictEqual(response.status, 200);
-            let result: any;
-            if (!stream) {
-              result = await response.json();
-            } else {
-              const events = (await response.text())
-                .split("\n")
-                .filter(
-                  (line) =>
-                    line.startsWith("data: ") && line !== "data: [DONE]",
-                )
-                .map((line) => JSON.parse(line.slice(6)));
-              if (protocol === "responses") {
-                result = events.find(
-                  (event) => event.type === "response.completed",
-                )?.response;
-              } else if (protocol === "chat") {
-                assert.ok(events.every((event) => event.model === id));
-                const delta = events
-                  .flatMap((event) => event.choices)
-                  .map((choice) => choice.delta);
-                const calls = delta.flatMap((part) => part.tool_calls ?? []);
-                result = {
+
+          if (protocol === "chat") {
+            const messages: OpenAI.ChatCompletionMessageParam[] = [
+              { role: "user", content: "Echo CONNECTED with the probe tool." },
+            ];
+            for (let round = 0; round < 2; round++) {
+              const params: OpenAI.ChatCompletionCreateParamsNonStreaming = {
+                model: id,
+                messages,
+                tools: [
+                  {
+                    type: "function",
+                    function: { name: "echo_probe", parameters: schema },
+                  },
+                ],
+              };
+              const response = stream
+                ? await openai.chat.completions
+                    .stream({ ...params, stream: true })
+                    .finalChatCompletion()
+                : await openai.chat.completions.create(params);
+              assert.strictEqual(response.model, id);
+              const message = response.choices[0].message;
+              if (round === 0) {
+                const call = message.tool_calls?.[0];
+                assert.ok(call?.type === "function");
+                assert.strictEqual(call.function.name, "echo_probe");
+                assert.deepStrictEqual(JSON.parse(call.function.arguments), {
+                  text: "CONNECTED",
+                });
+                messages.push(message, {
+                  role: "tool",
+                  tool_call_id: call.id,
+                  content: "CONNECTED",
+                });
+              } else {
+                assert.strictEqual(message.content, "CONNECTED");
+              }
+            }
+          } else if (protocol === "responses") {
+            const input: OpenAI.Responses.ResponseInput = [
+              { role: "user", content: "Echo CONNECTED with the probe tool." },
+            ];
+            for (let round = 0; round < 2; round++) {
+              const params: OpenAI.Responses.ResponseCreateParamsNonStreaming =
+                {
                   model: id,
-                  choices: [
+                  input,
+                  tools: [
                     {
-                      message: {
-                        content: delta
-                          .map((part) => part.content ?? "")
-                          .join(""),
-                        tool_calls: calls,
-                      },
+                      type: "function",
+                      name: "echo_probe",
+                      parameters: schema,
+                      strict: false,
                     },
                   ],
                 };
-              } else {
-                const content = events
-                  .filter((event) => event.type === "content_block_start")
-                  .map((event) => {
-                    const block = event.content_block;
-                    if (block.type === "tool_use") {
-                      const input = events
-                        .filter(
-                          (delta) =>
-                            delta.type === "content_block_delta" &&
-                            delta.index === event.index &&
-                            delta.delta.type === "input_json_delta",
-                        )
-                        .map((delta) => delta.delta.partial_json)
-                        .join("");
-                      if (input) {
-                        block.input = JSON.parse(input);
-                      }
-                    }
-                    return block;
-                  });
-                result = {
-                  model: events.find((event) => event.type === "message_start")
-                    ?.message.model,
-                  content,
-                  text: events
-                    .filter(
-                      (event) =>
-                        event.type === "content_block_delta" &&
-                        event.delta.type === "text_delta",
-                    )
-                    .map((event) => event.delta.text)
-                    .join(""),
-                };
-              }
-            }
-            assert.strictEqual(result.model, id);
-            if (round === 0) {
-              if (protocol === "responses") {
-                const call = result.output.find(
-                  (item: any) => item.type === "function_call",
+              const response = stream
+                ? await openai.responses
+                    .stream({ ...params, stream: true })
+                    .finalResponse()
+                : await openai.responses.create(params);
+              assert.strictEqual(response.model, id);
+              if (round === 0) {
+                const call = response.output.find(
+                  (item) => item.type === "function_call",
                 );
+                assert.ok(call?.type === "function_call");
                 assert.strictEqual(call.name, "echo_probe");
-                history.push(...result.output, {
+                assert.deepStrictEqual(JSON.parse(call.arguments), {
+                  text: "CONNECTED",
+                });
+                input.push(call, {
                   type: "function_call_output",
                   call_id: call.call_id,
                   output: "CONNECTED",
                 });
-              } else if (protocol === "chat") {
-                const call = result.choices[0].message.tool_calls[0];
-                assert.strictEqual(call.function.name, "echo_probe");
-                history.push(
-                  { role: "assistant", content: null, tool_calls: [call] },
-                  { role: "tool", tool_call_id: call.id, content: "CONNECTED" },
-                );
               } else {
-                const call = result.content.find(
-                  (item: any) => item.type === "tool_use",
+                assert.strictEqual(response.output_text, "CONNECTED");
+              }
+            }
+          } else {
+            const messages: Anthropic.MessageParam[] = [
+              { role: "user", content: "Echo CONNECTED with the probe tool." },
+            ];
+            for (let round = 0; round < 2; round++) {
+              const params: Anthropic.MessageCreateParamsNonStreaming = {
+                model: id,
+                max_tokens: 128,
+                messages,
+                tools: [{ name: "echo_probe", input_schema: schema }],
+              };
+              const response = stream
+                ? await anthropic.messages.stream(params).finalMessage()
+                : await anthropic.messages.create(params);
+              assert.strictEqual(response.model, id);
+              if (round === 0) {
+                const call = response.content.find(
+                  (item) => item.type === "tool_use",
                 );
+                assert.ok(call?.type === "tool_use");
                 assert.strictEqual(call.name, "echo_probe");
                 assert.deepStrictEqual(call.input, { text: "CONNECTED" });
-                history.push(
-                  { role: "assistant", content: [call] },
+                messages.push(
+                  { role: "assistant", content: response.content },
                   {
                     role: "user",
                     content: [
@@ -240,22 +223,15 @@ suite("General Copilot Grok Proxy Test Suite", () => {
                     ],
                   },
                 );
+              } else {
+                assert.strictEqual(
+                  response.content
+                    .filter((item) => item.type === "text")
+                    .map((item) => item.text)
+                    .join(""),
+                  "CONNECTED",
+                );
               }
-            } else {
-              const text =
-                protocol === "responses"
-                  ? result.output
-                      .flatMap((item: any) => item.content ?? [])
-                      .map((part: any) => part.text ?? "")
-                      .join("")
-                  : protocol === "chat"
-                    ? result.choices[0].message.content
-                    : stream
-                      ? result.text
-                      : result.content
-                          .map((part: any) => part.text ?? "")
-                          .join("");
-              assert.strictEqual(text, "CONNECTED");
             }
           }
           assert.strictEqual(requests, 2);

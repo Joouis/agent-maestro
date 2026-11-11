@@ -88,7 +88,8 @@ export function registerOpenaiModelsRoutes(
   options: OpenaiModelsRoutesOptions = {},
 ): void {
   const getChatModels =
-    options.getChatModels ?? (() => chatModelsCache.getChatModels());
+    options.getChatModels ??
+    (() => chatModelsCache.getChatModels({ throwOnError: true }));
   app.openapi(listModelsRoute, async (c) => {
     try {
       const models = await getChatModels();

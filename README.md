@@ -55,21 +55,6 @@ Open the Command Palette and run the relevant command:
 
 For Claude Code, Codex, or Gemini CLI, choose a model from the picker. If the list is empty, check Copilot sign-in and model availability in VS Code before continuing. Claude Code and Gemini CLI also offer project settings when you want the configuration limited to this workspace.
 
-### Use Copilot Grok with Other API Clients
-
-Grok uses the same local proxy as the other Copilot models. Set your client's API format and base URL, then choose an available Grok model ID:
-
-| Client API format    | Base URL                               | Model discovery  | Generation                                    |
-| -------------------- | -------------------------------------- | ---------------- | --------------------------------------------- |
-| OpenAI-compatible    | `http://127.0.0.1:23333/api/openai/v1` | `GET /models`    | `POST /chat/completions` or `POST /responses` |
-| Anthropic-compatible | `http://127.0.0.1:23333/api/anthropic` | `GET /v1/models` | `POST /v1/messages`                           |
-
-The model family and client protocol are independent: choosing Grok through the Anthropic API calls Copilot's Grok model, and does not require the Claude Code client. AM's model pickers include a **Grok** group. Model access and usage limits come from your Copilot account; no xAI API key is needed.
-
-Use the model ID returned by discovery rather than a fixed ID from another account. The OpenAI model list contains all proxy-eligible Copilot models, and `GET /models/<id>` requires an exact match. If AM's optional LLM key is enabled, supply it as a Bearer token for OpenAI or `x-api-key` for Anthropic. Check the resolved model in the generation response and AM Output because generation can use the configured fallback when a requested ID is unavailable. See [client-independent setup and examples](docs/llm-compatibility.md#using-copilot-grok-with-a-general-api-client).
-
-This works with clients that allow a custom API address. It does not configure the consumer Grok app or provide xAI-native hosted tools. The OpenAI model list is standard API discovery, not a Codex-native model catalog.
-
 Claude Code also offers an optional model for its client-side auto mode classifier (`CLAUDE_CODE_AUTO_MODE_MODEL`, Claude Code 2.1.301+). Choose **Skip** to let Claude Code use its default.
 
 The configurator also sets `CLAUDE_CODE_AUTO_MODE_SERVER=0`. Agent Maestro cannot forward the server-side auto mode classifier's `anthropic-beta` header and `safeguards` field, so Claude Code keeps classifier requests on the client. Those requests are billed as usual, and the "auto mode classifier billing" notice does not appear. See [Auto mode classifier request charges](https://code.claude.com/docs/en/auto-mode-classifier-billing).
@@ -96,6 +81,12 @@ Reply with exactly AM_CONNECTED. Do not read files or use tools.
 Look for the reply **and** the matching request in VS Code's **Output → Agent Maestro** channel. AM logs an incoming request with its resolved model and a completion with token usage; this confirms the client used the proxy rather than another configured provider. The prompt is a smoke check, not a guarantee of exact model output.
 
 Once connected, try a normal task such as explaining a function in your project. Requests consume model quota, and any tool approvals remain part of the client workflow. If the check fails, see [troubleshooting](#troubleshooting-and-diagnostics). Direct API users can use the [complete request examples](docs/llm-compatibility.md#request-examples).
+
+### Other API Clients, Including Grok
+
+The model family and client protocol are independent: any compatible client with a custom API address can request Copilot's Grok through the existing OpenAI or Anthropic endpoints. Discover eligible IDs at `GET /api/openai/v1/models`, or choose the **Grok** group in AM's model picker. No xAI key or Claude Code client is required.
+
+See [client-independent setup and examples](docs/llm-compatibility.md#using-copilot-grok-with-a-general-api-client) for base URLs, authentication, and model verification. This standard model list is distinct from a Codex-native catalog and does not enable consumer Grok App or xAI-specific hosted features.
 
 ## Web Search
 

@@ -31,6 +31,7 @@ class ChatModelsCache {
   private static instance: ChatModelsCache;
   private cachedModels: vscode.LanguageModelChat[] = [];
   private initializationPromise: Promise<void> | null = null;
+  private initializationError: Error | undefined;
 
   private constructor() {}
 
@@ -52,9 +53,14 @@ class ChatModelsCache {
 
     this.initializationPromise = (async () => {
       try {
+        this.initializationError = undefined;
         logger.info("Initializing chat models cache...");
         this.cachedModels = await selectSupportedModels();
       } catch (error) {
+        this.initializationError =
+          error instanceof Error
+            ? error
+            : new Error("Failed to discover Copilot models", { cause: error });
         logger.error("Failed to initialize chat models cache:", error);
         this.cachedModels = [];
       } finally {
@@ -65,12 +71,17 @@ class ChatModelsCache {
     return this.initializationPromise;
   }
 
-  async getChatModels(): Promise<vscode.LanguageModelChat[]> {
+  async getChatModels(
+    options: { throwOnError?: boolean } = {},
+  ): Promise<vscode.LanguageModelChat[]> {
     if (this.cachedModels.length > 0) {
       return this.cachedModels;
     }
 
     await this.initialize();
+    if (options.throwOnError && this.initializationError) {
+      throw this.initializationError;
+    }
     return this.cachedModels;
   }
 

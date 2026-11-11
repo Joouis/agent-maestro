@@ -3,7 +3,8 @@ import * as assert from "assert";
 import OpenAI from "openai";
 import * as vscode from "vscode";
 
-import { createOpenAIAuthMiddleware } from "../../server/middleware/authMiddleware";
+import type { ExtensionController } from "../../core/controller";
+import { ProxyServer } from "../../server/ProxyServer";
 import { registerOpenaiModelsRoutes } from "../../server/routes/openai/openaiModelsRoutes";
 import { registerOpenaiRoutes } from "../../server/routes/openai/openaiRoutes";
 import {
@@ -27,13 +28,8 @@ const mockModel = (id: string, family = id): vscode.LanguageModelChat => ({
 suite("OpenAI Model Discovery Test Suite", () => {
   const createApp = (
     getChatModels: () => Promise<vscode.LanguageModelChat[]>,
-    key: string | null = null,
   ) => {
     const app = new OpenAPIHono();
-    app.use(
-      "*",
-      createOpenAIAuthMiddleware(() => key),
-    );
     registerOpenaiModelsRoutes(app, { getChatModels });
     return app;
   };
@@ -87,54 +83,47 @@ suite("OpenAI Model Discovery Test Suite", () => {
   });
 
   test("protects both discovery routes with the existing Bearer authentication", async () => {
+    const original = chatModelsCache.getChatModels;
     let queries = 0;
-    const app = createApp(async () => {
-      queries++;
-      return [mockModel("grok-test")];
-    }, "server-key");
-    for (const route of ["/v1/models", "/v1/models/grok-test"]) {
-      for (const headers of [{}, { authorization: "Bearer wrong" }] as Record<
-        string,
-        string
-      >[]) {
-        assert.strictEqual((await app.request(route, { headers })).status, 401);
+    try {
+      chatModelsCache.getChatModels = async () => {
+        queries++;
+        return [mockModel("grok-test")];
+      };
+      const proxy = new ProxyServer(
+        {} as ExtensionController,
+        23333,
+        {} as vscode.ExtensionContext,
+      );
+      proxy.setLlmApiKey("server-key");
+      const app = (proxy as unknown as { app: OpenAPIHono }).app;
+      for (const route of [
+        "/api/openai/v1/models",
+        "/api/openai/v1/models/grok-test",
+      ]) {
+        for (const headers of [{}, { authorization: "Bearer wrong" }] as Record<
+          string,
+          string
+        >[]) {
+          assert.strictEqual(
+            (await app.request(route, { headers })).status,
+            401,
+          );
+        }
       }
       assert.strictEqual(queries, 0);
-    }
-    assert.strictEqual(
-      (await clientFor(app, "server-key").models.list()).data[0].id,
-      "grok-test",
-    );
-    assert.strictEqual(
-      (await clientFor(app, "server-key").models.retrieve("grok-test")).id,
-      "grok-test",
-    );
-    assert.strictEqual(queries, 2);
-  });
-
-  test("discovery failures return structured errors without exposing exception details", async () => {
-    const app = createApp(async () => {
-      throw new Error("private provider detail");
-    });
-    for (const route of ["/v1/models", "/v1/models/grok-test"]) {
-      const response = await app.request(route);
-      assert.strictEqual(response.status, 500);
-      const body = await response.text();
-      assert.ok(!body.includes("private provider detail"));
-      assert.strictEqual(JSON.parse(body).error.type, "api_error");
-    }
-  });
-
-  test("the full OpenAI router exposes the same eligible cache as generation", async () => {
-    const original = chatModelsCache.getChatModels;
-    try {
-      chatModelsCache.getChatModels = async () => [mockModel("grok-test")];
-      const app = new OpenAPIHono();
-      registerOpenaiRoutes(app);
+      const client = new OpenAI({
+        apiKey: "server-key",
+        baseURL: "http://localhost/api/openai/v1",
+        maxRetries: 0,
+        fetch: async (input, init) => app.request(new Request(input, init)),
+      });
+      assert.strictEqual((await client.models.list()).data[0].id, "grok-test");
       assert.strictEqual(
-        (await clientFor(app).models.list()).data[0].id,
+        (await client.models.retrieve("grok-test")).id,
         "grok-test",
       );
+      assert.strictEqual(queries, 2);
     } finally {
       chatModelsCache.getChatModels = original;
     }
@@ -196,6 +185,36 @@ suite("OpenAI Model Discovery Test Suite", () => {
       );
     } finally {
       chatModelsCache.getChatModels = original;
+    }
+  });
+
+  test("the default discovery path reports VS Code failures while generation retains its existing fallback behavior", async () => {
+    const originalSelect = vscode.lm.selectChatModels;
+    const previousModels = chatModelsCache.getCachedModels();
+    try {
+      vscode.lm.selectChatModels = async () => {
+        throw new Error("private provider detail");
+      };
+      await chatModelsCache.refresh();
+      const app = new OpenAPIHono();
+      registerOpenaiRoutes(app);
+      for (const route of ["/v1/models", "/v1/models/grok-test"]) {
+        const response = await app.request(route);
+        assert.strictEqual(response.status, 500);
+        const body = await response.text();
+        assert.strictEqual(JSON.parse(body).error.type, "api_error");
+        assert.ok(!body.includes("private provider detail"));
+      }
+      assert.deepStrictEqual(await chatModelsCache.getChatModels(), []);
+      vscode.lm.selectChatModels = async () => [mockModel("grok-recovered")];
+      assert.strictEqual(
+        (await clientFor(app).models.list()).data[0].id,
+        "grok-recovered",
+      );
+    } finally {
+      vscode.lm.selectChatModels = async () => previousModels;
+      await chatModelsCache.refresh();
+      vscode.lm.selectChatModels = originalSelect;
     }
   });
 });
