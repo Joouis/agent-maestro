@@ -55,13 +55,20 @@ Open the Command Palette and run the relevant command:
 
 For Claude Code, Codex, or Gemini CLI, choose a model from the picker. If the list is empty, check Copilot sign-in and model availability in VS Code before continuing. Claude Code and Gemini CLI also offer project settings when you want the configuration limited to this workspace.
 
-The protocol belongs to the client, not the model family. For example, Codex can request an available Copilot Grok or Gemini model through AM's OpenAI Responses endpoint; using the Anthropic endpoint does not require a Claude model or the Claude Code client. Client compatibility and the selected model's capabilities still apply.
+### Use Copilot Grok with Other API Clients
 
-#### Codex model pickers and existing catalogs
+Grok uses the same local proxy as the other Copilot models. Set your client's API format and base URL, then choose an available Grok model ID:
 
-Selecting a model in AM sets Codex's default model ID; it does not add that ID to the desktop model picker. To expose additional models, supply a version-compatible Codex catalog through `model_catalog_json`. This catalog replaces Codex's bundled catalog, so preserve the complete existing catalog and its instructions instead of supplying only one new model. See the [Codex catalog guidance](docs/llm-compatibility.md#codex-model-catalogs).
+| Client API format    | Base URL                               | Model discovery  | Generation                                    |
+| -------------------- | -------------------------------------- | ---------------- | --------------------------------------------- |
+| OpenAI-compatible    | `http://127.0.0.1:23333/api/openai/v1` | `GET /models`    | `POST /chat/completions` or `POST /responses` |
+| Anthropic-compatible | `http://127.0.0.1:23333/api/anthropic` | `GET /v1/models` | `POST /v1/messages`                           |
 
-When a user configuration already points to a local catalog, **Configure Codex Settings** requires the selected model to exist in that catalog. It updates that entry's advertised context window, preserves other entries and unknown fields, and moves top-level context/reasoning overrides into the previous default model's entry. This prevents a GPT context window or reasoning setting from being applied to Grok or Gemini. Unsupported or ambiguous migrations stop before writing; originals are backed up alongside both files. Profiles and remote catalogs are not rewritten. Fully quit and reopen the Codex desktop app or restart the CLI to load catalog changes.
+The model family and client protocol are independent: choosing Grok through the Anthropic API calls Copilot's Grok model, and does not require the Claude Code client. AM's model pickers include a **Grok** group. Model access and usage limits come from your Copilot account; no xAI API key is needed.
+
+Use the model ID returned by discovery rather than a fixed ID from another account. The OpenAI model list contains all proxy-eligible Copilot models, and `GET /models/<id>` requires an exact match. If AM's optional LLM key is enabled, supply it as a Bearer token for OpenAI or `x-api-key` for Anthropic. Check the resolved model in the generation response and AM Output because generation can use the configured fallback when a requested ID is unavailable. See [client-independent setup and examples](docs/llm-compatibility.md#using-copilot-grok-with-a-general-api-client).
+
+This works with clients that allow a custom API address. It does not configure the consumer Grok app or provide xAI-native hosted tools. The OpenAI model list is standard API discovery, not a Codex-native model catalog.
 
 Claude Code also offers an optional model for its client-side auto mode classifier (`CLAUDE_CODE_AUTO_MODE_MODEL`, Claude Code 2.1.301+). Choose **Skip** to let Claude Code use its default.
 
@@ -168,14 +175,14 @@ The HTTP server listens on a wildcard address. **The LLM key does not protect `/
 
 The default HTTP origin is `http://127.0.0.1:23333`. Inspect the running instance's [`/openapi.json`](http://127.0.0.1:23333/openapi.json) for routes and schemas; use the compatibility guides for supported protocol behavior and limits.
 
-| Interface               | Paths                                                                                               | Reference                                                      |
-| ----------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Anthropic               | `/api/anthropic/v1/messages`, `/api/anthropic/v1/messages/count_tokens`, `/api/anthropic/v1/models` | [LLM compatibility](docs/llm-compatibility.md#endpoints)       |
-| OpenAI                  | `/api/openai/v1/chat/completions`, `/api/openai/v1/responses`                                       | [Responses compatibility](docs/openai-responses-api-design.md) |
-| Gemini                  | `/api/gemini/v1beta/models/{model}:generateContent`, `:streamGenerateContent`, `:countTokens`       | [LLM compatibility](docs/llm-compatibility.md#endpoints)       |
-| Codex standalone search | `/api/openai/v1/alpha/search`                                                                       | [Search compatibility](docs/llm-compatibility.md#web-search)   |
-| Roo and Cline           | `/api/v1/roo/*`, `/api/v1/cline/task`                                                               | [Roo HTTP/SSE](docs/roo-routes-events.md)                      |
-| Model discovery         | `/api/v1/lm/chatModels`, `/api/v1/lm/tools`                                                         | Running OpenAPI document                                       |
+| Interface               | Paths                                                                                                                      | Reference                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Anthropic               | `/api/anthropic/v1/messages`, `/api/anthropic/v1/messages/count_tokens`, `/api/anthropic/v1/models`                        | [LLM compatibility](docs/llm-compatibility.md#endpoints)     |
+| OpenAI                  | `/api/openai/v1/models`, `/api/openai/v1/models/{model_id}`, `/api/openai/v1/chat/completions`, `/api/openai/v1/responses` | [LLM compatibility](docs/llm-compatibility.md#endpoints)     |
+| Gemini                  | `/api/gemini/v1beta/models/{model}:generateContent`, `:streamGenerateContent`, `:countTokens`                              | [LLM compatibility](docs/llm-compatibility.md#endpoints)     |
+| Codex standalone search | `/api/openai/v1/alpha/search`                                                                                              | [Search compatibility](docs/llm-compatibility.md#web-search) |
+| Roo and Cline           | `/api/v1/roo/*`, `/api/v1/cline/task`                                                                                      | [Roo HTTP/SSE](docs/roo-routes-events.md)                    |
+| Model discovery         | `/api/v1/lm/chatModels`, `/api/v1/lm/tools`                                                                                | Running OpenAPI document                                     |
 
 Use these Command Palette actions to manage the extension:
 

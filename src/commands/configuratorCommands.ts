@@ -16,11 +16,6 @@ import {
   getClaudeDesktopConfigDirectory,
   updateClaudeDesktopMetadata,
 } from "../utils/claudeDesktop";
-import {
-  createCodexConfiguration,
-  resolveCodexCatalogPath,
-  writeCodexConfiguration,
-} from "../utils/codex";
 import { logger } from "../utils/logger";
 import { updateEnvFile } from "../utils/updateEnvFile";
 import { createCommandHandler } from "./commandHandler";
@@ -395,34 +390,33 @@ export function registerConfiguratorCommands(
 
         const proxyPort = proxy.getStatus().port;
 
-        const catalogPath =
-          existingConfig.model_catalog_json !== undefined
-            ? resolveCodexCatalogPath(
-                codexConfigPath,
-                existingConfig.model_catalog_json,
-              )
-            : undefined;
-        const catalog = catalogPath
-          ? JSON.parse(fs.readFileSync(catalogPath, "utf8"))
-          : undefined;
-        const update = createCodexConfiguration(
-          existingConfig,
-          selectedModel,
-          proxyPort,
-          catalog,
-        );
-        if (catalogPath) {
-          const shouldUpdateCatalog = await vscode.window.showQuickPick(
-            ["Update catalog and configuration", "Cancel"],
-            {
-              title: "Update Codex Model Catalog",
-              placeHolder: `Update ${catalogPath} and move global model overrides into its entries? Both files will be backed up.`,
+        const modelContextWindow = selectedModel.maxInputTokens ?? undefined;
+
+        // Build updated config by merging with existing config
+        const updatedConfig = {
+          ...existingConfig,
+          model: selectedModel.modelId,
+          model_provider: "agent-maestro",
+          web_search:
+            existingConfig.web_search === "disabled" ? "disabled" : "live",
+          ...(modelContextWindow !== undefined && {
+            model_context_window: modelContextWindow,
+          }),
+          features: {
+            ...existingConfig.features,
+            standalone_web_search: true,
+          },
+          model_providers: {
+            ...existingConfig.model_providers,
+            "agent-maestro": {
+              ...existingConfig.model_providers?.["agent-maestro"],
+              name: "Agent Maestro",
+              base_url: `http://${LOOPBACK_HOST}:${proxyPort}/api/openai/v1`,
+              wire_api: "responses",
+              supports_standalone_web_search: true,
             },
-          );
-          if (shouldUpdateCatalog !== "Update catalog and configuration") {
-            return;
-          }
-        }
+          },
+        };
 
         // Ensure .codex directory exists
         const codexDir = path.dirname(codexConfigPath);
@@ -434,19 +428,10 @@ export function registerConfiguratorCommands(
         }
 
         // Write config file using smol-toml stringify
-        writeCodexConfiguration(
-          codexConfigPath,
-          stringify(update.config as Parameters<typeof stringify>[0]),
-          catalogPath && update.catalog
-            ? {
-                path: catalogPath,
-                content: JSON.stringify(update.catalog, null, 2) + "\n",
-              }
-            : undefined,
-        );
+        fs.writeFileSync(codexConfigPath, stringify(updatedConfig));
 
         vscode.window.showInformationMessage(
-          `Codex configuration ${fileExists ? "updated" : "created"} successfully! Fully quit and reopen the Codex desktop app or restart the CLI to load configuration and model catalog changes.`,
+          `Codex configuration ${fileExists ? "updated" : "created"} successfully! The configuration points to Agent Maestro proxy server for OpenAI-compatible API.`,
         );
 
         logger.info(

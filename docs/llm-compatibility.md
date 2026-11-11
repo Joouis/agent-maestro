@@ -15,6 +15,7 @@ All paths below are relative to `http://127.0.0.1:23333` by default.
 | Anthropic           | `GET /api/anthropic/v1/models` and `GET /api/anthropic/v1/models/{model_id}` | All available models, not only Claude     |
 | OpenAI Chat         | `POST /api/openai/v1/chat/completions`                                       | Chat and client-tool generation           |
 | OpenAI Responses    | `POST /api/openai/v1/responses`                                              | Responses items and streaming events      |
+| OpenAI Models       | `GET /api/openai/v1/models` and `GET /api/openai/v1/models/{model_id}`       | Proxy-eligible models, exact retrieval    |
 | Gemini              | `POST /api/gemini/v1beta/models/{model}:generateContent`                     | Non-streaming generation                  |
 | Gemini              | `POST /api/gemini/v1beta/models/{model}:streamGenerateContent`               | Streaming generation                      |
 | Gemini              | `POST /api/gemini/v1beta/models/{model}:countTokens`                         | Local token estimate                      |
@@ -22,23 +23,37 @@ All paths below are relative to `http://127.0.0.1:23333` by default.
 
 The running [`/openapi.json`](http://127.0.0.1:23333/openapi.json) lists routes. Some LLM bodies deliberately use permissive schemas; the support rules below and the [Responses reference](openai-responses-api-design.md) describe limits that a generic schema does not capture.
 
-## Models and Client Protocols
+## Using Copilot Grok with a General API Client
 
-AM selects a Copilot model by ID independently of the incoming protocol. An available Grok or Gemini model can be requested through OpenAI Responses; the Anthropic Messages endpoint is not limited to Claude. The client must support that protocol, and tools, images, reasoning controls, and context limits still depend on the resolved model. A consumer chat app without a custom API setting cannot be connected merely by choosing its provider's model.
+Grok is an upstream model, not a separate client protocol. Use the existing OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages paths with a Grok ID available to your Copilot account. AM converts those requests into VS Code LM calls; it does not connect to `api.x.ai` or use an xAI subscription/API key. Text, streaming, images, and client tools depend on the selected model and the protocol's limits below.
 
-Use `/api/v1/lm/chatModels` to discover current IDs, filter for `vendor: "copilot"`, and verify the resolved ID in the response and AM Output. Do not copy model IDs or advertised capabilities from another account. In particular, a successful HTTP response after fuzzy/fallback selection does not prove that the requested model ran.
+1. Keep the VS Code window running with Copilot signed in. Discover the eligible model IDs with `GET /api/openai/v1/models` or `GET /api/anthropic/v1/models`. The OpenAI response uses `{"object":"list","data":[...]}`; `owned_by` reports the VS Code vendor (`copilot`), and `created: 0` is a sentinel because VS Code does not expose a creation timestamp. This is not a Codex-native capability catalog.
+2. Set any compatible client's OpenAI base URL to `http://127.0.0.1:23333/api/openai/v1`, or Anthropic base URL to `http://127.0.0.1:23333/api/anthropic`. Select the exact Grok ID returned by discovery. Model discovery does not generate output or consume model-inference quota.
+3. If AM's optional LLM key is enabled, use `Authorization: Bearer <AM key>` for OpenAI or `x-api-key: <AM key>` for Anthropic. With authentication disabled, an arbitrary placeholder key satisfies clients that require a key field.
+4. Send a short request, then test a tool call and its result continuation if the client needs tools. Compare the resolved model ID in the response with the request; generation still uses AM's existing fuzzy/fallback behavior. Model retrieval is exact and returns 404 for an unavailable ID rather than falling back.
 
-### Codex Model Catalogs
+For example, discover models first:
 
-The configurator sets a default model; Codex desktop's picker also needs a Codex-native catalog entry. For a manually maintained local catalog:
+```bash
+curl --fail-with-body http://127.0.0.1:23333/api/openai/v1/models \
+  -H 'Authorization: Bearer YOUR_LLM_API_KEY'
+```
 
-1. Follow [OpenAI's version-specific catalog specification](https://learn.chatgpt.com/docs/model-catalogs). Preserve the complete catalog and its instructions when adding entries: `model_catalog_json` replaces the bundled catalog, and the ordinary OpenAI model-list format is not a Codex catalog. Do not copy an unrelated model's prompt or capabilities solely to obtain a new display name.
-2. Set `model_catalog_json` in the user `config.toml` to the catalog's filesystem path. Relative paths are resolved beside that configuration file by AM; use an absolute path for portability between clients. AM does not expand `~` or load a URL as a local catalog.
-3. Give each entry a unique `slug` matching the available Copilot model ID. Use `maxInputTokens` for its context budget. Reasoning levels, input modalities, service tiers, and optional tool formats must reflect tested route capabilities, not the model's brand. For example, a provider may reject `reasoning.effort: "none"`, Responses Lite, image-search declarations, or OpenAI-specific speed tiers.
-4. Run **Configure Codex Settings** and select an entry already in that catalog. AM updates its window and preserves other entries. Existing global `model_context_window` / `model_reasoning_effort` values move into the old default entry before being removed from the global config; the previous entry must exist and declare any migrated effort. Read/validation failures stop before either file is changed. Backups use the `.agent-maestro-<timestamp>.bak` suffix alongside each original.
-5. Fully quit and reopen the desktop app or restart the CLI. Check `model/list` or the picker and verify the selected model with text, streaming, a tool call, and a matching tool-result continuation.
+Then replace `GROK_MODEL_ID_FROM_DISCOVERY` with one returned Grok ID:
 
-This command handles only the local catalog in the user configuration it edits; it does not merge active profile catalogs, generate model metadata, or update remote `model_catalog_url` endpoints. Without a local catalog it retains the single-model setup, including a global window for the selected default. Recheck global reasoning settings before changing model families.
+```bash
+curl --fail-with-body http://127.0.0.1:23333/api/openai/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_LLM_API_KEY' \
+  -d '{"model":"GROK_MODEL_ID_FROM_DISCOVERY","messages":[{"role":"user","content":"Reply with OK."}]}'
+
+curl --fail-with-body http://127.0.0.1:23333/api/anthropic/v1/messages \
+  -H 'Content-Type: application/json' \
+  -H 'x-api-key: YOUR_LLM_API_KEY' \
+  -d '{"model":"GROK_MODEL_ID_FROM_DISCOVERY","max_tokens":64,"messages":[{"role":"user","content":"Reply with OK."}]}'
+```
+
+Omit the authentication header when AM authentication is disabled. See the Responses example below for clients using that protocol. Discovery does not imply support for xAI-specific tools or all upstream reasoning settings; start with provider defaults and verify any optional controls against the resolved model. A consumer app without a custom API setting cannot be pointed at AM through these settings.
 
 ## Request Examples
 

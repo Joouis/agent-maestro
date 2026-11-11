@@ -31,7 +31,6 @@ class ChatModelsCache {
   private static instance: ChatModelsCache;
   private cachedModels: vscode.LanguageModelChat[] = [];
   private initializationPromise: Promise<void> | null = null;
-  private hasShownNoClaudeWarning = false;
 
   private constructor() {}
 
@@ -55,19 +54,6 @@ class ChatModelsCache {
       try {
         logger.info("Initializing chat models cache...");
         this.cachedModels = await selectSupportedModels();
-
-        // Check for Claude models availability and show warning once if none found
-        if (this.cachedModels.length > 0 && !this.hasShownNoClaudeWarning) {
-          const hasClaudeModels = this.cachedModels.some((m) =>
-            m.id.toLowerCase().includes("claude"),
-          );
-          if (!hasClaudeModels) {
-            this.hasShownNoClaudeWarning = true;
-            vscode.window.showWarningMessage(
-              "No Claude models found. Please check your network or VPN settings.",
-            );
-          }
-        }
       } catch (error) {
         logger.error("Failed to initialize chat models cache:", error);
         this.cachedModels = [];
@@ -108,17 +94,23 @@ const chatModelToQuickPickItem = (model: vscode.LanguageModelChat) => ({
   maxInputTokens: model.maxInputTokens,
 });
 
-export type ModelFamily = "claude" | "gemini" | "openai" | "other";
+export type ModelFamily = "claude" | "gemini" | "openai" | "grok" | "other";
 
 export interface GetChatModelsOptions {
   recommendedModelId?: string;
-  priorityFamily?: "claude" | "gemini" | "openai";
+  priorityFamily?: Exclude<ModelFamily, "other">;
 }
 
 function getFamilyOrder(
-  priorityFamily?: "claude" | "gemini" | "openai",
+  priorityFamily?: Exclude<ModelFamily, "other">,
 ): ModelFamily[] {
-  const defaultOrder: ModelFamily[] = ["claude", "openai", "gemini", "other"];
+  const defaultOrder: ModelFamily[] = [
+    "claude",
+    "openai",
+    "gemini",
+    "grok",
+    "other",
+  ];
 
   if (!priorityFamily) {
     return defaultOrder;
@@ -137,6 +129,7 @@ function getFamilyLabel(family: ModelFamily): string {
     claude: "Claude",
     openai: "OpenAI",
     gemini: "Gemini",
+    grok: "Grok",
     other: "Other",
   };
   return labels[family];
@@ -155,6 +148,7 @@ export const getChatModelsQuickPickItems = async (
     claude: [],
     gemini: [],
     openai: [],
+    grok: [],
     other: [],
   };
   let recommendedModel: vscode.LanguageModelChat | null = null;
@@ -169,6 +163,8 @@ export const getChatModelsQuickPickItems = async (
       modelGroups.gemini.push(m);
     } else if (m.family.includes("gpt")) {
       modelGroups.openai.push(m);
+    } else if (m.family.includes("grok")) {
+      modelGroups.grok.push(m);
     } else {
       modelGroups.other.push(m);
     }
