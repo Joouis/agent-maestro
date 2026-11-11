@@ -29,6 +29,24 @@ import { createCommandHandler } from "./commandHandler";
 
 const LOOPBACK_HOST = "127.0.0.1";
 
+function writeGrokBuildConfig(
+  configPath: string,
+  contents: string,
+  restrictToOwner: boolean,
+): void {
+  const flags =
+    fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC;
+  const fd = fs.openSync(configPath, flags, restrictToOwner ? 0o600 : 0o644);
+  try {
+    if (restrictToOwner) {
+      fs.fchmodSync(fd, 0o600);
+    }
+    fs.writeFileSync(fd, contents);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 export function registerConfiguratorCommands(
   proxy: ProxyServer,
   context: vscode.ExtensionContext,
@@ -541,13 +559,11 @@ export function registerConfiguratorCommands(
         const restrictsConfigFile =
           typeof writtenApiKey === "string" &&
           writtenApiKey !== GROK_BUILD_PLACEHOLDER_API_KEY;
-        // mode applies only when the file is created. chmod covers an existing readable file.
-        fs.writeFileSync(grokConfigPath, stringify(updatedConfig), {
-          mode: restrictsConfigFile ? 0o600 : undefined,
-        });
-        if (restrictsConfigFile) {
-          fs.chmodSync(grokConfigPath, 0o600);
-        }
+        writeGrokBuildConfig(
+          grokConfigPath,
+          stringify(updatedConfig),
+          restrictsConfigFile,
+        );
 
         vscode.window.showInformationMessage(
           `Grok Build configuration ${fileExists ? "updated" : "created"} successfully! Start a new Grok Build session to use the Agent Maestro model.`,

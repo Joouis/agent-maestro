@@ -133,6 +133,48 @@ suite("Grok Build Config", () => {
     );
   });
 
+  test("clears an inherited API backend so Grok uses chat completions", () => {
+    const config = buildGrokBuildConfig({
+      existingConfig: {
+        model: {
+          [GROK_BUILD_MODEL_KEY]: {
+            api_backend: "messages",
+          },
+        },
+      },
+      modelId: "gpt-5.5",
+      baseUrl: "http://127.0.0.1:23333/api/openai/v1",
+    });
+
+    assert.strictEqual(
+      Object.hasOwn(config.model?.[GROK_BUILD_MODEL_KEY] ?? {}, "api_backend"),
+      false,
+    );
+  });
+
+  test("omits a nonpositive context window", () => {
+    const config = buildGrokBuildConfig({
+      existingConfig: {
+        model: {
+          [GROK_BUILD_MODEL_KEY]: {
+            context_window: 128000,
+          },
+        },
+      },
+      modelId: "gpt-5.5",
+      baseUrl: "http://127.0.0.1:23333/api/openai/v1",
+      contextWindow: 0,
+    });
+
+    assert.strictEqual(
+      Object.hasOwn(
+        config.model?.[GROK_BUILD_MODEL_KEY] ?? {},
+        "context_window",
+      ),
+      false,
+    );
+  });
+
   test("drops a stale context window when the selected model has none", () => {
     const config = buildGrokBuildConfig({
       existingConfig: {

@@ -56,10 +56,11 @@ export function buildGrokBuildConfig(options: {
     api_key: apiKey,
   };
 
-  // The flag describes the endpoint. The proxy does not serve Grok's backend search.
+  // These describe the previous endpoint. The proxy serves Chat Completions only.
   delete modelEntry.supports_backend_search;
+  delete modelEntry.api_backend;
 
-  if (contextWindow !== undefined) {
+  if (contextWindow !== undefined && contextWindow > 0) {
     modelEntry.context_window = contextWindow;
   } else {
     delete modelEntry.context_window;
