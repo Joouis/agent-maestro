@@ -202,7 +202,7 @@ suite("OpenAI Model Discovery Test Suite", () => {
         const response = await app.request(route);
         assert.strictEqual(response.status, 500);
         const body = await response.text();
-        assert.strictEqual(JSON.parse(body).error.type, "api_error");
+        assert.strictEqual(JSON.parse(body).error.type, "internal_error");
         assert.ok(!body.includes("private provider detail"));
       }
       assert.deepStrictEqual(await chatModelsCache.getChatModels(), []);

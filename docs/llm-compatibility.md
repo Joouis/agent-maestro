@@ -23,37 +23,20 @@ All paths below are relative to `http://127.0.0.1:23333` by default.
 
 The running [`/openapi.json`](http://127.0.0.1:23333/openapi.json) lists routes. Some LLM bodies deliberately use permissive schemas; the support rules below and the [Responses reference](openai-responses-api-design.md) describe limits that a generic schema does not capture.
 
-## Using Copilot Grok with a General API Client
+## Model Discovery and Selection
 
-Grok is an upstream model, not a separate client protocol. Use the existing OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages paths with a Grok ID available to your Copilot account. AM converts those requests into VS Code LM calls; it does not connect to `api.x.ai` or use an xAI subscription/API key. Text, streaming, images, and client tools depend on the selected model and the protocol's limits below.
-
-1. Keep the VS Code window running with Copilot signed in. Discover the eligible model IDs with `GET /api/openai/v1/models` or `GET /api/anthropic/v1/models`. The OpenAI response uses `{"object":"list","data":[...]}`; `owned_by` reports the VS Code vendor (`copilot`), and `created: 0` is a sentinel because VS Code does not expose a creation timestamp. This is not a Codex-native capability catalog.
-2. Set any compatible client's OpenAI base URL to `http://127.0.0.1:23333/api/openai/v1`, or Anthropic base URL to `http://127.0.0.1:23333/api/anthropic`. Select the exact Grok ID returned by discovery. Model discovery does not generate output or consume model-inference quota.
-3. If AM's optional LLM key is enabled, use `Authorization: Bearer <AM key>` for OpenAI or `x-api-key: <AM key>` for Anthropic. With authentication disabled, an arbitrary placeholder key satisfies clients that require a key field.
-4. Send a short request, then test a tool call and its result continuation if the client needs tools. Compare the resolved model ID in the response with the request; generation still uses AM's existing fuzzy/fallback behavior. Model retrieval is exact and returns 404 for an unavailable ID rather than falling back.
-
-For example, discover models first:
+The model family and client protocol are independent. An available Copilot Grok or Gemini model can use the existing OpenAI Chat Completions, Responses, or Anthropic Messages examples below. Choose an exact model ID from `GET /api/openai/v1/models` or `GET /api/anthropic/v1/models`; discovery does not run inference.
 
 ```bash
 curl --fail-with-body http://127.0.0.1:23333/api/openai/v1/models \
   -H 'Authorization: Bearer YOUR_LLM_API_KEY'
 ```
 
-Then replace `GROK_MODEL_ID_FROM_DISCOVERY` with one returned Grok ID:
+For OpenAI-compatible clients, set the base URL to `http://127.0.0.1:23333/api/openai/v1`; for Anthropic-compatible clients, use `http://127.0.0.1:23333/api/anthropic`. Apply the same [authentication settings](../README.md#access-and-authentication) as generation. Model access and quota come from Copilot, so Grok does not require an xAI key or Claude Code client.
 
-```bash
-curl --fail-with-body http://127.0.0.1:23333/api/openai/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_LLM_API_KEY' \
-  -d '{"model":"GROK_MODEL_ID_FROM_DISCOVERY","messages":[{"role":"user","content":"Reply with OK."}]}'
+The OpenAI model list uses `{"object":"list","data":[...]}`. `owned_by` reports the VS Code vendor (`copilot`); `created: 0` means the creation time is unknown. This is standard API discovery, not a Codex-native capability catalog. Single-model retrieval requires an exact ID and returns 404 when unavailable; OpenAI model discovery failures return 500. Generation retains its existing fuzzy/fallback selection, so verify the resolved ID in the response and AM Output.
 
-curl --fail-with-body http://127.0.0.1:23333/api/anthropic/v1/messages \
-  -H 'Content-Type: application/json' \
-  -H 'x-api-key: YOUR_LLM_API_KEY' \
-  -d '{"model":"GROK_MODEL_ID_FROM_DISCOVERY","max_tokens":64,"messages":[{"role":"user","content":"Reply with OK."}]}'
-```
-
-Omit the authentication header when AM authentication is disabled. See the Responses example below for clients using that protocol. Discovery does not imply support for xAI-specific tools or all upstream reasoning settings; start with provider defaults and verify any optional controls against the resolved model. A consumer app without a custom API setting cannot be pointed at AM through these settings.
+Client tools, images, and reasoning options remain subject to model capabilities and the protocol limits below. These settings require a client with a custom API address; they do not enable consumer Grok App or xAI-specific hosted features.
 
 ## Request Examples
 

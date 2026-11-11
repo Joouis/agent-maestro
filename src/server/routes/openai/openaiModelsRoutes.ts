@@ -1,8 +1,10 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import type { Model } from "openai/resources/models";
 import type * as vscode from "vscode";
 
 import { chatModelsCache } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
+import { CommonResponseError } from "../../schemas/openai";
 
 const modelSchema = z.object({
   id: z.string(),
@@ -10,22 +12,17 @@ const modelSchema = z.object({
   created: z.number().int(),
   owned_by: z.string(),
 });
-const errorSchema = z.object({
-  error: z.object({
-    type: z.string(),
-    message: z.string(),
-    param: z.string().nullable(),
-    code: z.string().nullable(),
-  }),
+// Closed schemas preserve Hono's inferred status-specific response types.
+const modelErrorSchema = z.object({
+  error: z.object(CommonResponseError.shape.error.shape),
 });
-
-const listModelsRoute = createRoute({
+const modelsRoute = createRoute({
   method: "get",
   path: "/v1/models",
   tags: ["OpenAI API"],
-  summary: "List proxy-eligible models",
+  summary: "List OpenAI-compatible models",
   description:
-    "List all Copilot models available for generation, including Grok, using the OpenAI Models response format.",
+    "List proxy-eligible Copilot models using the OpenAI Models response format.",
   responses: {
     200: {
       content: {
@@ -36,40 +33,46 @@ const listModelsRoute = createRoute({
           }),
         },
       },
-      description: "Available models",
+      description: "Successfully listed models",
     },
     500: {
-      content: { "application/json": { schema: errorSchema } },
-      description: "Model discovery failed",
+      content: { "application/json": { schema: modelErrorSchema } },
+      description: "Internal server error",
     },
   },
 });
 
-const retrieveModelRoute = createRoute({
+const modelRoute = createRoute({
   method: "get",
   path: "/v1/models/{model_id}",
   tags: ["OpenAI API"],
-  summary: "Retrieve a proxy-eligible model",
+  summary: "Retrieve an OpenAI-compatible model",
   description:
     "Retrieve an exact model ID. Discovery does not perform fuzzy matching or fall back to another model.",
-  request: { params: z.object({ model_id: z.string().min(1) }) },
+  request: {
+    params: z.object({
+      model_id: z.string().min(1).describe("Model identifier"),
+    }),
+  },
   responses: {
     200: {
       content: { "application/json": { schema: modelSchema } },
-      description: "Available model",
+      description: "Successfully retrieved model",
     },
     404: {
-      content: { "application/json": { schema: errorSchema } },
+      content: { "application/json": { schema: modelErrorSchema } },
       description: "Model not found",
     },
     500: {
-      content: { "application/json": { schema: errorSchema } },
-      description: "Model discovery failed",
+      content: { "application/json": { schema: modelErrorSchema } },
+      description: "Internal server error",
     },
   },
 });
 
-function toOpenAIModel(model: vscode.LanguageModelChat) {
+function convertVSCodeModelToOpenAIModel(
+  model: vscode.LanguageModelChat,
+): Model {
   return {
     id: model.id,
     object: "model" as const,
@@ -90,19 +93,22 @@ export function registerOpenaiModelsRoutes(
   const getChatModels =
     options.getChatModels ??
     (() => chatModelsCache.getChatModels({ throwOnError: true }));
-  app.openapi(listModelsRoute, async (c) => {
+  app.openapi(modelsRoute, async (c) => {
     try {
       const models = await getChatModels();
       return c.json(
-        { object: "list" as const, data: models.map(toOpenAIModel) },
+        {
+          object: "list" as const,
+          data: models.map(convertVSCodeModelToOpenAIModel),
+        },
         200,
       );
     } catch (error) {
-      logger.error("OpenAI model discovery failed:", error);
+      logger.error("Error fetching OpenAI-compatible models:", error);
       return c.json(
         {
           error: {
-            type: "api_error",
+            type: "internal_error",
             message: "Failed to list available models",
             param: null,
             code: null,
@@ -112,7 +118,7 @@ export function registerOpenaiModelsRoutes(
       );
     }
   });
-  app.openapi(retrieveModelRoute, async (c) => {
+  app.openapi(modelRoute, async (c) => {
     const { model_id: modelId } = c.req.valid("param");
     try {
       const models = await getChatModels();
@@ -130,13 +136,13 @@ export function registerOpenaiModelsRoutes(
           404,
         );
       }
-      return c.json(toOpenAIModel(model), 200);
+      return c.json(convertVSCodeModelToOpenAIModel(model), 200);
     } catch (error) {
-      logger.error("OpenAI model discovery failed:", error);
+      logger.error("Error fetching OpenAI-compatible model:", error);
       return c.json(
         {
           error: {
-            type: "api_error",
+            type: "internal_error",
             message: "Failed to retrieve available model",
             param: null,
             code: null,

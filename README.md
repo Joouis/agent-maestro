@@ -82,11 +82,11 @@ Look for the reply **and** the matching request in VS Code's **Output → Agent 
 
 Once connected, try a normal task such as explaining a function in your project. Requests consume model quota, and any tool approvals remain part of the client workflow. If the check fails, see [troubleshooting](#troubleshooting-and-diagnostics). Direct API users can use the [complete request examples](docs/llm-compatibility.md#request-examples).
 
-### Other API Clients, Including Grok
+### Other Compatible Clients
 
 The model family and client protocol are independent: any compatible client with a custom API address can request Copilot's Grok through the existing OpenAI or Anthropic endpoints. Discover eligible IDs at `GET /api/openai/v1/models`, or choose the **Grok** group in AM's model picker. No xAI key or Claude Code client is required.
 
-See [client-independent setup and examples](docs/llm-compatibility.md#using-copilot-grok-with-a-general-api-client) for base URLs, authentication, and model verification. This standard model list is distinct from a Codex-native catalog and does not enable consumer Grok App or xAI-specific hosted features.
+See [model discovery and selection](docs/llm-compatibility.md#model-discovery-and-selection) for base URLs, authentication, and model verification.
 
 ## Web Search
 
