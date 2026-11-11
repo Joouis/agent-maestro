@@ -55,6 +55,14 @@ Open the Command Palette and run the relevant command:
 
 For Claude Code, Codex, or Gemini CLI, choose a model from the picker. If the list is empty, check Copilot sign-in and model availability in VS Code before continuing. Claude Code and Gemini CLI also offer project settings when you want the configuration limited to this workspace.
 
+The protocol belongs to the client, not the model family. For example, Codex can request an available Copilot Grok or Gemini model through AM's OpenAI Responses endpoint; using the Anthropic endpoint does not require a Claude model or the Claude Code client. Client compatibility and the selected model's capabilities still apply.
+
+#### Codex model pickers and existing catalogs
+
+Selecting a model in AM sets Codex's default model ID; it does not add that ID to the desktop model picker. To expose additional models, supply a version-compatible Codex catalog through `model_catalog_json`. This catalog replaces Codex's bundled catalog, so preserve the complete existing catalog and its instructions instead of supplying only one new model. See the [Codex catalog guidance](docs/llm-compatibility.md#codex-model-catalogs).
+
+When a user configuration already points to a local catalog, **Configure Codex Settings** requires the selected model to exist in that catalog. It updates that entry's advertised context window, preserves other entries and unknown fields, and moves top-level context/reasoning overrides into the previous default model's entry. This prevents a GPT context window or reasoning setting from being applied to Grok or Gemini. Unsupported or ambiguous migrations stop before writing; originals are backed up alongside both files. Profiles and remote catalogs are not rewritten. Fully quit and reopen the Codex desktop app or restart the CLI to load catalog changes.
+
 Claude Code also offers an optional model for its client-side auto mode classifier (`CLAUDE_CODE_AUTO_MODE_MODEL`, Claude Code 2.1.301+). Choose **Skip** to let Claude Code use its default.
 
 The configurator also sets `CLAUDE_CODE_AUTO_MODE_SERVER=0`. Agent Maestro cannot forward the server-side auto mode classifier's `anthropic-beta` header and `safeguards` field, so Claude Code keeps classifier requests on the client. Those requests are billed as usual, and the "auto mode classifier billing" notice does not appear. See [Auto mode classifier request charges](https://code.claude.com/docs/en/auto-mode-classifier-billing).

@@ -19,6 +19,148 @@ import {
 import { CLIENT_TOOL_SEARCH_LM_NAME } from "../../server/utils/openaiResponses";
 
 suite("Normalized history through official SDKs", () => {
+  for (const family of ["grok", "gemini"]) {
+    for (const stream of [false, true] as const) {
+      test(`Responses preserves ${family} model selection through a tool continuation (stream=${stream})`, async () => {
+        const modelId = `${family}-test`;
+        let requests = 0;
+        const model = {
+          id: modelId,
+          name: `${family} test model`,
+          family,
+          vendor: "copilot",
+          version: "test",
+          maxInputTokens: 400000,
+          countTokens: async () => 1,
+          sendRequest: async (messages, options) => {
+            requests++;
+            assert.strictEqual(options?.tools?.[0].name, "echo_probe");
+            const configuration = (
+              options as vscode.LanguageModelChatRequestOptions & {
+                configuration?: {
+                  contextSize?: number;
+                  reasoningEffort?: string;
+                };
+              }
+            ).configuration;
+            assert.strictEqual(configuration?.contextSize, 400000);
+            assert.strictEqual(configuration?.reasoningEffort, "low");
+            if (requests === 2) {
+              const parts = messages.flatMap((message) => message.content);
+              const call = parts.find(
+                (part) => part instanceof vscode.LanguageModelToolCallPart,
+              );
+              const result = parts.find(
+                (part) => part instanceof vscode.LanguageModelToolResultPart,
+              );
+              assert.ok(call instanceof vscode.LanguageModelToolCallPart);
+              assert.ok(result instanceof vscode.LanguageModelToolResultPart);
+              assert.strictEqual(call.callId, result.callId);
+              assert.strictEqual(call.name, "echo_probe");
+              assert.deepStrictEqual(call.input, { text: "CONNECTED" });
+              assert.ok(
+                result.content.some(
+                  (part) =>
+                    part instanceof vscode.LanguageModelTextPart &&
+                    part.value === "CONNECTED",
+                ),
+              );
+            }
+            const first = requests === 1;
+            return {
+              stream: (async function* () {
+                yield first
+                  ? new vscode.LanguageModelToolCallPart(
+                      "probe-call",
+                      "echo_probe",
+                      { text: "CONNECTED" },
+                    )
+                  : new vscode.LanguageModelTextPart("CONNECTED");
+              })(),
+              text: (async function* () {})(),
+            };
+          },
+        } as vscode.LanguageModelChat;
+        const app = new OpenAPIHono();
+        registerOpenaiResponsesRoutes(app, {
+          resolveChatModelClient: async (requested) => {
+            assert.strictEqual(requested, modelId);
+            return { client: model };
+          },
+        });
+        const client = new OpenAI({
+          apiKey: "test",
+          baseURL: "http://localhost/v1",
+          maxRetries: 0,
+          fetch: async (input, init) => app.request(new Request(input, init)),
+        });
+        const tools: OpenAI.Responses.Tool[] = [
+          {
+            type: "function",
+            name: "echo_probe",
+            description: "Echo a connectivity marker.",
+            parameters: {
+              type: "object",
+              properties: { text: { type: "string" } },
+            },
+            strict: false,
+          },
+        ];
+        const input: OpenAI.Responses.ResponseInput = [
+          { role: "user", content: "Echo CONNECTED with the probe tool." },
+        ];
+        for (let round = 0; round < 2; round++) {
+          const response = await client.responses.create({
+            model: modelId,
+            input,
+            tools,
+            stream,
+            reasoning: { effort: "low" },
+          });
+          let output: OpenAI.Responses.ResponseOutputItem[] = [];
+          let resolved: string | undefined;
+          if ("output" in response) {
+            output = response.output;
+            resolved = response.model;
+          } else {
+            for await (const event of response) {
+              if (event.type === "response.completed") {
+                output = event.response.output;
+                resolved = event.response.model;
+              }
+            }
+          }
+          assert.strictEqual(resolved, modelId);
+          assert.strictEqual(output.length, 1);
+          const item = output[0];
+          if (round === 0) {
+            assert.strictEqual(item.type, "function_call");
+            if (item.type !== "function_call") {
+              assert.fail("Expected probe tool call");
+            }
+            assert.strictEqual(item.name, "echo_probe");
+            input.push(item, {
+              type: "function_call_output",
+              call_id: item.call_id,
+              output: "CONNECTED",
+            });
+          } else {
+            assert.strictEqual(item.type, "message");
+            if (item.type !== "message") {
+              assert.fail("Expected final text");
+            }
+            assert.strictEqual(item.content[0].type, "output_text");
+            if (item.content[0].type !== "output_text") {
+              assert.fail("Expected output text");
+            }
+            assert.strictEqual(item.content[0].text, "CONNECTED");
+          }
+        }
+        assert.strictEqual(requests, 2);
+      });
+    }
+  }
+
   for (const stream of [false, true] as const) {
     test(`Responses client tool search loads tools and replays its history (stream=${stream})`, async () => {
       let requestCount = 0;

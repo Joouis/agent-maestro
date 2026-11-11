@@ -22,6 +22,24 @@ All paths below are relative to `http://127.0.0.1:23333` by default.
 
 The running [`/openapi.json`](http://127.0.0.1:23333/openapi.json) lists routes. Some LLM bodies deliberately use permissive schemas; the support rules below and the [Responses reference](openai-responses-api-design.md) describe limits that a generic schema does not capture.
 
+## Models and Client Protocols
+
+AM selects a Copilot model by ID independently of the incoming protocol. An available Grok or Gemini model can be requested through OpenAI Responses; the Anthropic Messages endpoint is not limited to Claude. The client must support that protocol, and tools, images, reasoning controls, and context limits still depend on the resolved model. A consumer chat app without a custom API setting cannot be connected merely by choosing its provider's model.
+
+Use `/api/v1/lm/chatModels` to discover current IDs, filter for `vendor: "copilot"`, and verify the resolved ID in the response and AM Output. Do not copy model IDs or advertised capabilities from another account. In particular, a successful HTTP response after fuzzy/fallback selection does not prove that the requested model ran.
+
+### Codex Model Catalogs
+
+The configurator sets a default model; Codex desktop's picker also needs a Codex-native catalog entry. For a manually maintained local catalog:
+
+1. Follow [OpenAI's version-specific catalog specification](https://learn.chatgpt.com/docs/model-catalogs). Preserve the complete catalog and its instructions when adding entries: `model_catalog_json` replaces the bundled catalog, and the ordinary OpenAI model-list format is not a Codex catalog. Do not copy an unrelated model's prompt or capabilities solely to obtain a new display name.
+2. Set `model_catalog_json` in the user `config.toml` to the catalog's filesystem path. Relative paths are resolved beside that configuration file by AM; use an absolute path for portability between clients. AM does not expand `~` or load a URL as a local catalog.
+3. Give each entry a unique `slug` matching the available Copilot model ID. Use `maxInputTokens` for its context budget. Reasoning levels, input modalities, service tiers, and optional tool formats must reflect tested route capabilities, not the model's brand. For example, a provider may reject `reasoning.effort: "none"`, Responses Lite, image-search declarations, or OpenAI-specific speed tiers.
+4. Run **Configure Codex Settings** and select an entry already in that catalog. AM updates its window and preserves other entries. Existing global `model_context_window` / `model_reasoning_effort` values move into the old default entry before being removed from the global config; the previous entry must exist and declare any migrated effort. Read/validation failures stop before either file is changed. Backups use the `.agent-maestro-<timestamp>.bak` suffix alongside each original.
+5. Fully quit and reopen the desktop app or restart the CLI. Check `model/list` or the picker and verify the selected model with text, streaming, a tool call, and a matching tool-result continuation.
+
+This command handles only the local catalog in the user configuration it edits; it does not merge active profile catalogs, generate model metadata, or update remote `model_catalog_url` endpoints. Without a local catalog it retains the single-model setup, including a global window for the selected default. Recheck global reasoning settings before changing model families.
+
 ## Request Examples
 
 Replace each example model with an available Copilot model. `YOUR_LLM_API_KEY` means the key set with **Agent Maestro: Set LLM API Key**; omit that header if server authentication is disabled. These requests generate model output and consume model quota.
