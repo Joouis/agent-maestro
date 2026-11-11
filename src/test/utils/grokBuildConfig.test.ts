@@ -102,6 +102,37 @@ suite("Grok Build Config", () => {
     assert.strictEqual(config.model?.[GROK_BUILD_MODEL_KEY]?.temperature, 0.2);
   });
 
+  test("removes backend search support from the proxy model", () => {
+    const config = buildGrokBuildConfig({
+      existingConfig: {
+        model: {
+          [GROK_BUILD_MODEL_KEY]: {
+            supports_backend_search: true,
+            temperature: 0.2,
+          },
+          "search-model": {
+            supports_backend_search: true,
+          },
+        },
+      },
+      modelId: "gpt-5.5",
+      baseUrl: "http://127.0.0.1:23333/api/openai/v1",
+    });
+
+    assert.strictEqual(
+      Object.hasOwn(
+        config.model?.[GROK_BUILD_MODEL_KEY] ?? {},
+        "supports_backend_search",
+      ),
+      false,
+    );
+    assert.strictEqual(config.model?.[GROK_BUILD_MODEL_KEY]?.temperature, 0.2);
+    assert.strictEqual(
+      config.model?.["search-model"]?.supports_backend_search,
+      true,
+    );
+  });
+
   test("drops a stale context window when the selected model has none", () => {
     const config = buildGrokBuildConfig({
       existingConfig: {

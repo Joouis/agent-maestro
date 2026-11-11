@@ -17,6 +17,8 @@ import {
   updateClaudeDesktopMetadata,
 } from "../utils/claudeDesktop";
 import {
+  GROK_BUILD_MODEL_KEY,
+  GROK_BUILD_PLACEHOLDER_API_KEY,
   type GrokBuildConfig,
   buildGrokBuildConfig,
   getGrokBuildConfigPath,
@@ -534,7 +536,18 @@ export function registerConfiguratorCommands(
           // Directory might already exist, ignore error
         }
 
-        fs.writeFileSync(grokConfigPath, stringify(updatedConfig));
+        const writtenApiKey =
+          updatedConfig.model?.[GROK_BUILD_MODEL_KEY]?.api_key;
+        const restrictsConfigFile =
+          typeof writtenApiKey === "string" &&
+          writtenApiKey !== GROK_BUILD_PLACEHOLDER_API_KEY;
+        // mode applies only when the file is created. chmod covers an existing readable file.
+        fs.writeFileSync(grokConfigPath, stringify(updatedConfig), {
+          mode: restrictsConfigFile ? 0o600 : undefined,
+        });
+        if (restrictsConfigFile) {
+          fs.chmodSync(grokConfigPath, 0o600);
+        }
 
         vscode.window.showInformationMessage(
           `Grok Build configuration ${fileExists ? "updated" : "created"} successfully! Start a new Grok Build session to use the Agent Maestro model.`,

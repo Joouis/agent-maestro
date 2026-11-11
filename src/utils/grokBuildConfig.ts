@@ -56,6 +56,9 @@ export function buildGrokBuildConfig(options: {
     api_key: apiKey,
   };
 
+  // The flag describes the endpoint. The proxy does not serve Grok's backend search.
+  delete modelEntry.supports_backend_search;
+
   if (contextWindow !== undefined) {
     modelEntry.context_window = contextWindow;
   } else {
