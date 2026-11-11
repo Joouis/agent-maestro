@@ -136,7 +136,7 @@ Protocol rationale and exact validation rules: [Anthropic search](2026-08-26-ant
 
 ### Grok Build
 
-**Configure Grok Build Settings** writes an `agent-maestro` Chat Completions model to `~/.grok/config.toml` (or `$GROK_HOME/config.toml`) and selects it with `models.default`. It does not set `supports_backend_search` or `models.web_search`. Grok Build backend search is a server tool the proxy does not serve, and the Chat Completions path does not replace a client search tool the way Codex Responses and standalone search do. Grok Build keeps its own client web search.
+**Configure Grok Build Settings** writes an `agent-maestro` model to `~/.grok/config.toml` (or `$GROK_HOME/config.toml`) and selects it with `models.default`. A new entry uses Chat Completions. An existing `api_backend` of `chat_completions`, `responses`, or `messages` is kept, and `base_url` points at the matching proxy prefix. Any other backend is removed. It does not set `supports_backend_search` or `models.web_search`. Grok Build backend search is a server tool the proxy does not serve, and the Chat Completions path does not replace a client search tool the way Codex Responses and standalone search do. Grok Build keeps its own client web search.
 
 ## Diagnostic Logs
 

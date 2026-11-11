@@ -5,6 +5,26 @@ export const GROK_BUILD_MODEL_KEY = "agent-maestro";
 export const GROK_BUILD_MODEL_NAME = "Agent Maestro";
 export const GROK_BUILD_PLACEHOLDER_API_KEY = "Powered by Agent Maestro";
 
+const GROK_BUILD_API_BACKENDS = {
+  chat_completions: "/api/openai/v1",
+  responses: "/api/openai/v1",
+  messages: "/api/anthropic/v1",
+} as const;
+
+export type GrokBuildApiBackend = keyof typeof GROK_BUILD_API_BACKENDS;
+
+export function resolveGrokBuildBaseUrl(
+  proxyBaseUrl: string,
+  apiBackend: unknown,
+): string {
+  const origin = new URL(proxyBaseUrl).origin;
+  const backendPath =
+    typeof apiBackend === "string" && apiBackend in GROK_BUILD_API_BACKENDS
+      ? GROK_BUILD_API_BACKENDS[apiBackend as GrokBuildApiBackend]
+      : GROK_BUILD_API_BACKENDS.chat_completions;
+  return `${origin}${backendPath}`;
+}
+
 export interface GrokBuildModelEntry {
   model: string;
   base_url: string;
@@ -51,14 +71,19 @@ export function buildGrokBuildConfig(options: {
   const modelEntry: GrokBuildModelEntry = {
     ...existingModel,
     model: modelId,
-    base_url: baseUrl,
+    base_url: resolveGrokBuildBaseUrl(baseUrl, existingModel.api_backend),
     name: GROK_BUILD_MODEL_NAME,
     api_key: apiKey,
   };
 
-  // These describe the previous endpoint. The proxy serves Chat Completions only.
+  // The flag describes the previous endpoint. The proxy does not serve it.
   delete modelEntry.supports_backend_search;
-  delete modelEntry.api_backend;
+  if (
+    typeof modelEntry.api_backend !== "string" ||
+    !(modelEntry.api_backend in GROK_BUILD_API_BACKENDS)
+  ) {
+    delete modelEntry.api_backend;
+  }
 
   if (contextWindow !== undefined && contextWindow > 0) {
     modelEntry.context_window = contextWindow;

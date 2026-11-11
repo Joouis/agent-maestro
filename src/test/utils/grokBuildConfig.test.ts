@@ -133,12 +133,54 @@ suite("Grok Build Config", () => {
     );
   });
 
-  test("clears an inherited API backend so Grok uses chat completions", () => {
-    const config = buildGrokBuildConfig({
+  test("keeps a supported API backend and points the base URL at it", () => {
+    const messages = buildGrokBuildConfig({
       existingConfig: {
         model: {
           [GROK_BUILD_MODEL_KEY]: {
             api_backend: "messages",
+          },
+        },
+      },
+      modelId: "claude-sonnet-4",
+      baseUrl: "http://127.0.0.1:23333/api/openai/v1",
+    });
+    const responses = buildGrokBuildConfig({
+      existingConfig: {
+        model: {
+          [GROK_BUILD_MODEL_KEY]: {
+            api_backend: "responses",
+          },
+        },
+      },
+      modelId: "gpt-5.5",
+      baseUrl: "http://127.0.0.1:24444/api/openai/v1",
+    });
+
+    assert.strictEqual(
+      messages.model?.[GROK_BUILD_MODEL_KEY]?.api_backend,
+      "messages",
+    );
+    assert.strictEqual(
+      messages.model?.[GROK_BUILD_MODEL_KEY]?.base_url,
+      "http://127.0.0.1:23333/api/anthropic/v1",
+    );
+    assert.strictEqual(
+      responses.model?.[GROK_BUILD_MODEL_KEY]?.api_backend,
+      "responses",
+    );
+    assert.strictEqual(
+      responses.model?.[GROK_BUILD_MODEL_KEY]?.base_url,
+      "http://127.0.0.1:24444/api/openai/v1",
+    );
+  });
+
+  test("drops an unsupported API backend", () => {
+    const config = buildGrokBuildConfig({
+      existingConfig: {
+        model: {
+          [GROK_BUILD_MODEL_KEY]: {
+            api_backend: "gemini",
           },
         },
       },
@@ -149,6 +191,10 @@ suite("Grok Build Config", () => {
     assert.strictEqual(
       Object.hasOwn(config.model?.[GROK_BUILD_MODEL_KEY] ?? {}, "api_backend"),
       false,
+    );
+    assert.strictEqual(
+      config.model?.[GROK_BUILD_MODEL_KEY]?.base_url,
+      "http://127.0.0.1:23333/api/openai/v1",
     );
   });
 
@@ -164,6 +210,23 @@ suite("Grok Build Config", () => {
       modelId: "gpt-5.5",
       baseUrl: "http://127.0.0.1:23333/api/openai/v1",
       contextWindow: 0,
+    });
+
+    assert.strictEqual(
+      Object.hasOwn(
+        config.model?.[GROK_BUILD_MODEL_KEY] ?? {},
+        "context_window",
+      ),
+      false,
+    );
+  });
+
+  test("omits a NaN context window", () => {
+    const config = buildGrokBuildConfig({
+      existingConfig: {},
+      modelId: "gpt-5.5",
+      baseUrl: "http://127.0.0.1:23333/api/openai/v1",
+      contextWindow: Number.NaN,
     });
 
     assert.strictEqual(
