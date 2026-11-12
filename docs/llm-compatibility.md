@@ -23,20 +23,7 @@ All paths below are relative to `http://127.0.0.1:23333` by default.
 
 The running [`/openapi.json`](http://127.0.0.1:23333/openapi.json) lists routes. Some LLM bodies deliberately use permissive schemas; the support rules below and the [Responses reference](openai-responses-api-design.md) describe limits that a generic schema does not capture.
 
-## Model Discovery and Selection
-
-The model family and client protocol are independent. An available Copilot Grok or Gemini model can use the existing OpenAI Chat Completions, Responses, or Anthropic Messages examples below. Choose an exact model ID from `GET /api/openai/v1/models` or `GET /api/anthropic/v1/models`; discovery does not run inference.
-
-```bash
-curl --fail-with-body http://127.0.0.1:23333/api/openai/v1/models \
-  -H 'Authorization: Bearer YOUR_LLM_API_KEY'
-```
-
-For OpenAI-compatible clients, set the base URL to `http://127.0.0.1:23333/api/openai/v1`; for Anthropic-compatible clients, use `http://127.0.0.1:23333/api/anthropic`. Apply the same [authentication settings](../README.md#access-and-authentication) as generation. Model access and quota come from Copilot, so Grok does not require an xAI key or Claude Code client.
-
-The OpenAI model list uses `{"object":"list","data":[...]}`. `owned_by` reports the VS Code vendor (`copilot`); `created: 0` means the creation time is unknown. This is standard API discovery, not a Codex-native capability catalog. Single-model retrieval requires an exact ID and returns 404 when unavailable; OpenAI model discovery failures return 500. Generation retains its existing fuzzy/fallback selection, so verify the resolved ID in the response and AM Output.
-
-Client tools, images, and reasoning options remain subject to model capabilities and the protocol limits below. These settings require a client with a custom API address; they do not enable consumer Grok App or xAI-specific hosted features.
+`GET /api/openai/v1/models` and `GET /api/openai/v1/models/{model_id}` list and retrieve proxy-eligible Copilot models (`owned_by: "copilot"`). Single-model retrieval requires an exact ID and returns HTTP 404 when unavailable; discovery failures return HTTP 500 rather than an empty list. VS Code does not expose model creation timestamps, so `created` is `0`; clients that sort by `created` or filter out zero timestamps may treat all models as tied or hide them.
 
 ## Request Examples
 

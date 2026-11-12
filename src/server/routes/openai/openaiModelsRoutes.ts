@@ -12,10 +12,7 @@ const modelSchema = z.object({
   created: z.number().int(),
   owned_by: z.string(),
 });
-// Closed schemas preserve Hono's inferred status-specific response types.
-const modelErrorSchema = z.object({
-  error: z.object(CommonResponseError.shape.error.shape),
-});
+
 const modelsRoute = createRoute({
   method: "get",
   path: "/v1/models",
@@ -36,7 +33,7 @@ const modelsRoute = createRoute({
       description: "Successfully listed models",
     },
     500: {
-      content: { "application/json": { schema: modelErrorSchema } },
+      content: { "application/json": { schema: CommonResponseError } },
       description: "Internal server error",
     },
   },
@@ -60,11 +57,11 @@ const modelRoute = createRoute({
       description: "Successfully retrieved model",
     },
     404: {
-      content: { "application/json": { schema: modelErrorSchema } },
+      content: { "application/json": { schema: CommonResponseError } },
       description: "Model not found",
     },
     500: {
-      content: { "application/json": { schema: modelErrorSchema } },
+      content: { "application/json": { schema: CommonResponseError } },
       description: "Internal server error",
     },
   },
@@ -78,7 +75,7 @@ function convertVSCodeModelToOpenAIModel(
     object: "model" as const,
     // VS Code does not expose a creation timestamp or the underlying owner.
     created: 0,
-    owned_by: model.vendor,
+    owned_by: "copilot",
   };
 }
 

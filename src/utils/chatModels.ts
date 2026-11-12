@@ -27,11 +27,18 @@ async function selectSupportedModels(): Promise<vscode.LanguageModelChat[]> {
   return supported;
 }
 
+interface ChatModelsInitializationResult {
+  models: vscode.LanguageModelChat[];
+  error?: Error;
+}
+
 class ChatModelsCache {
   private static instance: ChatModelsCache;
   private cachedModels: vscode.LanguageModelChat[] = [];
-  private initializationPromise: Promise<void> | null = null;
-  private initializationError: Error | undefined;
+  private initializationPromise: Promise<ChatModelsInitializationResult> | null =
+    null;
+  private initializationRunId = 0;
+  private hasShownNoClaudeWarning = false;
 
   private constructor() {}
 
@@ -42,50 +49,75 @@ class ChatModelsCache {
     return ChatModelsCache.instance;
   }
 
-  async initialize(): Promise<void> {
+  private startInitialization(): Promise<ChatModelsInitializationResult> {
     if (this.cachedModels.length > 0) {
-      return;
+      return Promise.resolve({ models: this.cachedModels });
     }
 
     if (this.initializationPromise) {
       return this.initializationPromise;
     }
 
-    this.initializationPromise = (async () => {
+    const runId = ++this.initializationRunId;
+    const runPromise = (async (): Promise<ChatModelsInitializationResult> => {
       try {
-        this.initializationError = undefined;
         logger.info("Initializing chat models cache...");
-        this.cachedModels = await selectSupportedModels();
+        const models = await selectSupportedModels();
+        if (this.initializationRunId === runId) {
+          this.cachedModels = models;
+        }
+
+        // Check for Claude models availability and show warning once if none found
+        if (models.length > 0 && !this.hasShownNoClaudeWarning) {
+          const hasClaudeModels = models.some((m) =>
+            m.id.toLowerCase().includes("claude"),
+          );
+          if (!hasClaudeModels) {
+            this.hasShownNoClaudeWarning = true;
+            vscode.window.showWarningMessage(
+              "No Claude models found. Please check your network or VPN settings.",
+            );
+          }
+        }
+
+        return { models };
       } catch (error) {
-        this.initializationError =
+        const initError =
           error instanceof Error
             ? error
             : new Error("Failed to discover Copilot models", { cause: error });
         logger.error("Failed to initialize chat models cache:", error);
-        this.cachedModels = [];
+        if (this.initializationRunId === runId) {
+          this.cachedModels = [];
+        }
+        return { models: [], error: initError };
       } finally {
-        this.initializationPromise = null;
+        if (this.initializationRunId === runId) {
+          this.initializationPromise = null;
+        }
       }
     })();
 
-    return this.initializationPromise;
+    this.initializationPromise = runPromise;
+    return runPromise;
+  }
+
+  async initialize(): Promise<void> {
+    await this.startInitialization();
   }
 
   async getChatModels(
     options: { throwOnError?: boolean } = {},
   ): Promise<vscode.LanguageModelChat[]> {
-    if (this.cachedModels.length > 0) {
-      return this.cachedModels;
+    const { models, error } = await this.startInitialization();
+    if (options.throwOnError && error) {
+      throw error;
     }
-
-    await this.initialize();
-    if (options.throwOnError && this.initializationError) {
-      throw this.initializationError;
-    }
-    return this.cachedModels;
+    return models;
   }
 
   async refresh(): Promise<void> {
+    this.initializationRunId++;
     this.cachedModels = [];
     this.initializationPromise = null;
     await this.initialize();
@@ -105,23 +137,17 @@ const chatModelToQuickPickItem = (model: vscode.LanguageModelChat) => ({
   maxInputTokens: model.maxInputTokens,
 });
 
-export type ModelFamily = "claude" | "gemini" | "openai" | "grok" | "other";
+export type ModelFamily = "claude" | "gemini" | "openai" | "other";
 
 export interface GetChatModelsOptions {
   recommendedModelId?: string;
-  priorityFamily?: Exclude<ModelFamily, "other">;
+  priorityFamily?: "claude" | "gemini" | "openai";
 }
 
 function getFamilyOrder(
-  priorityFamily?: Exclude<ModelFamily, "other">,
+  priorityFamily?: "claude" | "gemini" | "openai",
 ): ModelFamily[] {
-  const defaultOrder: ModelFamily[] = [
-    "claude",
-    "openai",
-    "gemini",
-    "grok",
-    "other",
-  ];
+  const defaultOrder: ModelFamily[] = ["claude", "openai", "gemini", "other"];
 
   if (!priorityFamily) {
     return defaultOrder;
@@ -140,7 +166,6 @@ function getFamilyLabel(family: ModelFamily): string {
     claude: "Claude",
     openai: "OpenAI",
     gemini: "Gemini",
-    grok: "Grok",
     other: "Other",
   };
   return labels[family];
@@ -159,7 +184,6 @@ export const getChatModelsQuickPickItems = async (
     claude: [],
     gemini: [],
     openai: [],
-    grok: [],
     other: [],
   };
   let recommendedModel: vscode.LanguageModelChat | null = null;
@@ -174,8 +198,6 @@ export const getChatModelsQuickPickItems = async (
       modelGroups.gemini.push(m);
     } else if (m.family.includes("gpt")) {
       modelGroups.openai.push(m);
-    } else if (m.family.includes("grok")) {
-      modelGroups.grok.push(m);
     } else {
       modelGroups.other.push(m);
     }
