@@ -131,4 +131,26 @@ suite("Chat Models QuickPick Test Suite", () => {
       1,
     );
   });
+
+  test("places the auto model in Other regardless of its routed family", async () => {
+    chatModelsCache.getChatModels = async () => [
+      createMockModel("auto", "Auto", "claude-sonnet-4.6"),
+      createMockModel(
+        "claude-sonnet-4.6",
+        "Claude Sonnet 4.6",
+        "claude-sonnet-4.6",
+      ),
+    ];
+
+    const items = await getChatModelsQuickPickItems();
+    const otherIndex = items.findIndex((item) => item.label === "Other");
+    assert.deepStrictEqual(
+      items.slice(1, otherIndex).map((item) => item.modelId),
+      ["claude-sonnet-4.6"],
+    );
+    assert.deepStrictEqual(
+      items.slice(otherIndex + 1).map((item) => item.modelId),
+      ["auto"],
+    );
+  });
 });
