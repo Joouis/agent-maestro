@@ -7,6 +7,7 @@ export interface AgentMaestroConfiguration {
   mcpServerPort: number;
   allowOutsideWorkspaceAccess: boolean;
   fallbackModelId: string;
+  responsesToolHistoryRecovery: boolean;
 }
 
 /**
@@ -19,6 +20,8 @@ export const CONFIG_KEYS = {
   MCP_SERVER_PORT: "agent-maestro.mcpServerPort",
   ALLOW_OUTSIDE_WORKSPACE_ACCESS: "agent-maestro.allowOutsideWorkspaceAccess",
   FALLBACK_MODEL_ID: "agent-maestro.fallbackModelId",
+  RESPONSES_TOOL_HISTORY_RECOVERY:
+    "agent-maestro.experimental.responsesToolHistoryRecovery",
 } as const;
 
 /**
@@ -31,6 +34,7 @@ export const DEFAULT_CONFIG: AgentMaestroConfiguration = {
   mcpServerPort: 23334,
   allowOutsideWorkspaceAccess: false,
   fallbackModelId: "",
+  responsesToolHistoryRecovery: false,
 };
 
 /**
@@ -63,6 +67,10 @@ export const readConfiguration = (): AgentMaestroConfiguration => {
     fallbackModelId: config.get<string>(
       CONFIG_KEYS.FALLBACK_MODEL_ID,
       DEFAULT_CONFIG.fallbackModelId,
+    ),
+    responsesToolHistoryRecovery: config.get<boolean>(
+      CONFIG_KEYS.RESPONSES_TOOL_HISTORY_RECOVERY,
+      DEFAULT_CONFIG.responsesToolHistoryRecovery,
     ),
   };
 };
