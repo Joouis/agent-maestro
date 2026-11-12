@@ -25,7 +25,6 @@ const mockModel = (id: string, family = id): vscode.LanguageModelChat => ({
 suite("OpenAI Model Discovery Test Suite", () => {
   const originalGetChatModels = chatModelsCache.getChatModels;
   const originalSelectChatModels = vscode.lm.selectChatModels;
-  const originalShowWarningMessage = vscode.window.showWarningMessage;
   let previousModels: vscode.LanguageModelChat[] = [];
 
   setup(() => {
@@ -34,7 +33,6 @@ suite("OpenAI Model Discovery Test Suite", () => {
 
   teardown(async () => {
     chatModelsCache.getChatModels = originalGetChatModels;
-    vscode.window.showWarningMessage = originalShowWarningMessage;
     vscode.lm.selectChatModels = async () => previousModels;
     await chatModelsCache.refresh();
     vscode.lm.selectChatModels = originalSelectChatModels;
@@ -136,8 +134,6 @@ suite("OpenAI Model Discovery Test Suite", () => {
   });
 
   test("exposes only copilot-vendor models from the shared cache", async () => {
-    vscode.window.showWarningMessage = (async () =>
-      undefined) as typeof vscode.window.showWarningMessage;
     vscode.lm.selectChatModels = async () => [
       mockModel("claude-test"),
       { ...mockModel("private-model"), vendor: "custom" },
@@ -157,8 +153,6 @@ suite("OpenAI Model Discovery Test Suite", () => {
   });
 
   test("the default discovery path reports VS Code failures while generation retains its existing fallback behavior", async () => {
-    vscode.window.showWarningMessage = (async () =>
-      undefined) as typeof vscode.window.showWarningMessage;
     vscode.lm.selectChatModels = async () => {
       throw new Error("private provider detail");
     };
@@ -181,8 +175,6 @@ suite("OpenAI Model Discovery Test Suite", () => {
   });
 
   test("isolates discovery errors per initialization run when refresh overlaps", async () => {
-    vscode.window.showWarningMessage = (async () =>
-      undefined) as typeof vscode.window.showWarningMessage;
     vscode.lm.selectChatModels = async () => [];
     await chatModelsCache.refresh();
 
