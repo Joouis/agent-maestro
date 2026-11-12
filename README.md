@@ -163,14 +163,14 @@ The HTTP server listens on a wildcard address. **The LLM key does not protect `/
 
 The default HTTP origin is `http://127.0.0.1:23333`. Inspect the running instance's [`/openapi.json`](http://127.0.0.1:23333/openapi.json) for routes and schemas; use the compatibility guides for supported protocol behavior and limits.
 
-| Interface               | Paths                                                                                                                      | Reference                                                    |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Anthropic               | `/api/anthropic/v1/messages`, `/api/anthropic/v1/messages/count_tokens`, `/api/anthropic/v1/models`                        | [LLM compatibility](docs/llm-compatibility.md#endpoints)     |
-| OpenAI                  | `/api/openai/v1/models`, `/api/openai/v1/models/{model_id}`, `/api/openai/v1/chat/completions`, `/api/openai/v1/responses` | [LLM compatibility](docs/llm-compatibility.md#endpoints)     |
-| Gemini                  | `/api/gemini/v1beta/models/{model}:generateContent`, `:streamGenerateContent`, `:countTokens`                              | [LLM compatibility](docs/llm-compatibility.md#endpoints)     |
-| Codex standalone search | `/api/openai/v1/alpha/search`                                                                                              | [Search compatibility](docs/llm-compatibility.md#web-search) |
-| Roo and Cline           | `/api/v1/roo/*`, `/api/v1/cline/task`                                                                                      | [Roo HTTP/SSE](docs/roo-routes-events.md)                    |
-| Model discovery         | `/api/v1/lm/chatModels`, `/api/v1/lm/tools`                                                                                | Running OpenAPI document                                     |
+| Interface               | Paths                                                                                                                      | Reference                                                                                                                |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Anthropic               | `/api/anthropic/v1/messages`, `/api/anthropic/v1/messages/count_tokens`, `/api/anthropic/v1/models`                        | [LLM compatibility](docs/llm-compatibility.md#endpoints)                                                                 |
+| OpenAI                  | `/api/openai/v1/models`, `/api/openai/v1/models/{model_id}`, `/api/openai/v1/chat/completions`, `/api/openai/v1/responses` | [LLM compatibility](docs/llm-compatibility.md#endpoints), [Responses compatibility](docs/openai-responses-api-design.md) |
+| Gemini                  | `/api/gemini/v1beta/models/{model}:generateContent`, `:streamGenerateContent`, `:countTokens`                              | [LLM compatibility](docs/llm-compatibility.md#endpoints)                                                                 |
+| Codex standalone search | `/api/openai/v1/alpha/search`                                                                                              | [Search compatibility](docs/llm-compatibility.md#web-search)                                                             |
+| Roo and Cline           | `/api/v1/roo/*`, `/api/v1/cline/task`                                                                                      | [Roo HTTP/SSE](docs/roo-routes-events.md)                                                                                |
+| Model discovery         | `/api/v1/lm/chatModels`, `/api/v1/lm/tools`                                                                                | Running OpenAPI document                                                                                                 |
 
 Use these Command Palette actions to manage the extension:
 
