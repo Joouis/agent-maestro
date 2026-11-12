@@ -69,7 +69,7 @@ const Hero = () => {
             className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10"
           >
             A super-lightweight, Copilot-compatible proxy that lets VS Code talk
-            to Claude Code, Gemini CLI, and Codex.
+            to Claude Code, Gemini CLI, Codex, and Grok Build.
           </motion.p>
 
           {/* CTA Buttons */}

@@ -4,7 +4,7 @@
 [![Visual Studio Marketplace downloads](https://badgen.net/vs-marketplace/d/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
 [![Visual Studio Marketplace rating](https://badgen.net/vs-marketplace/rating/Joouis.agent-maestro)](https://marketplace.visualstudio.com/items?itemName=Joouis.agent-maestro)
 
-Use your preferred coding client with the GitHub Copilot models available in VS Code. Agent Maestro provides a local API bridge for Claude Code, Claude Desktop, Codex, Gemini CLI, and other compatible clients. Model requests use VS Code's Copilot connection and remain subject to your account's model access and usage limits.
+Use your preferred coding client with the GitHub Copilot models available in VS Code. Agent Maestro provides a local API bridge for Claude Code, Claude Desktop, Codex, Gemini CLI, Grok Build, and other compatible clients. Model requests use VS Code's Copilot connection and remain subject to your account's model access and usage limits.
 
 For automation, Agent Maestro also exposes Roo Code tasks through REST and MCP: start work, follow progress, and respond to tool approvals from another application. Cline integration currently supports basic task creation.
 
@@ -12,12 +12,12 @@ For automation, Agent Maestro also exposes Roo Code tasks through REST and MCP: 
 
 ## Features
 
-- **Choose your client and model.** Connect through Anthropic Messages, OpenAI Chat Completions/Responses, or Gemini-compatible endpoints, with setup commands for four clients and a picker of available Copilot models.
+- **Choose your client and model.** Connect through Anthropic Messages, OpenAI Chat Completions/Responses, or Gemini-compatible endpoints, with setup commands for five clients and a picker of available Copilot models.
 - **Work with tools and images.** Supported tool histories and image inputs are converted to VS Code messages. Ordinary client tools still execute in the client; AM does not run them on its behalf.
 - **Discover Codex tools on demand.** Client-executed Responses `tool_search` calls and their returned tool definitions are preserved, so deferred MCP tools do not all need to be exposed upfront. Server-executed tool search is not supported.
 - **Replay Responses reasoning on compatible hosts.** Agent Maestro detects the host's optional thinking runtime and preserves encrypted state across tool continuations without enabling proposed APIs. See [reasoning compatibility](docs/openai-responses-api-design.md#reasoning-state).
 - **Search for current information.** Exa-backed search supports declared Anthropic/Responses web-search tools and experimental Codex standalone search, with source links and protocol-specific limits.
-- **Configure longer conversations.** Claude Code and Codex setup uses the selected model's advertised context window. Streaming heartbeats keep supported clients connected while a response is pending.
+- **Configure longer conversations.** Claude Code, Codex, and Grok Build setup uses the selected model's advertised context window. Streaming heartbeats keep supported clients connected while a response is pending.
 - **Automate Roo tasks.** Use HTTP/SSE for task progress and interaction, or the MCP task tool for up to 20 concurrent tasks.
 
 This README and the [documentation index](docs/README.md) describe this checkout. Features in pending `.changeset/` entries may not yet be available in the installed Marketplace release; check the [changelog](CHANGELOG.md) for released versions.
@@ -27,7 +27,7 @@ This README and the [documentation index](docs/README.md) describe this checkout
 ### Prerequisites
 
 - VS Code **1.142.0 or newer**, with GitHub Copilot signed in and eligible models available. The LLM proxy currently selects models from the `copilot` vendor.
-- Install the client you want to use: Claude Code, Claude Desktop, Codex, or Gemini CLI. Installing a client alone does not provide proxy models.
+- Install the client you want to use: Claude Code, Claude Desktop, Codex, Gemini CLI, or Grok Build. Installing a client alone does not provide proxy models.
 - Install Roo Code or a compatible variant such as Kilo Code only if you need task orchestration. Cline is optional and currently supports task creation only.
 
 For source development, use Node.js 22 or newer and the pnpm version specified in [package.json](package.json).
@@ -52,8 +52,9 @@ Open the Command Palette and run the relevant command:
 | Claude Desktop | **Agent Maestro: Configure Claude Desktop Settings** | Platform-specific `Claude-3p/configLibrary` gateway configuration                                 |
 | Codex          | **Agent Maestro: Configure Codex Settings**          | `~/.codex/config.toml`                                                                            |
 | Gemini CLI     | **Agent Maestro: Configure Gemini CLI Settings**     | Choose `~/.gemini/.env` or `<workspace>/.gemini/.env`, plus `settings.json` in the same directory |
+| Grok Build     | **Agent Maestro: Configure Grok Build Settings**     | `~/.grok/config.toml`, or `$GROK_HOME/config.toml` when that variable is set                      |
 
-For Claude Code, Codex, or Gemini CLI, choose a model from the picker. If the list is empty, check Copilot sign-in and model availability in VS Code before continuing. Claude Code and Gemini CLI also offer project settings when you want the configuration limited to this workspace.
+For Claude Code, Codex, Gemini CLI, or Grok Build, choose a model from the picker. If the list is empty, check Copilot sign-in and model availability in VS Code before continuing. Claude Code and Gemini CLI also offer project settings when you want the configuration limited to this workspace. Grok Build reads custom models only from its user config, so that command always writes there.
 
 Claude Code also offers an optional model for its client-side auto mode classifier (`CLAUDE_CODE_AUTO_MODE_MODEL`, Claude Code 2.1.301+). Choose **Skip** to let Claude Code use its default.
 
@@ -70,6 +71,7 @@ Start a fresh client session so it loads the new configuration. For CLI clients,
 | Claude Code CLI | Run `claude`                                         |
 | Codex CLI       | Run `codex`                                          |
 | Gemini CLI      | Run `gemini`                                         |
+| Grok Build      | Start a new `grok` session                           |
 | Claude Desktop  | Fully quit and reopen the app, then start a new chat |
 
 Send this small connectivity check:
@@ -108,6 +110,7 @@ These paths have different contracts: Gemini has no hosted-search integration he
 
 - **Claude Code:** Setup writes the selected model's compaction window and defaults the compaction threshold to 85% unless you already set one. For the supported 1M tier, it adds the client-side `[1m]` marker.
 - **Codex:** Setup writes `model_context_window` from the selected model's advertised `maxInputTokens`.
+- **Grok Build:** Setup writes `context_window` from the selected model's advertised `maxInputTokens`. Grok Build keeps its own client web search; the command does not point that tool at the proxy.
 
 AM prefers Copilot-provided usage metadata when available and estimates token counts otherwise. A local estimate can differ from provider usage; see [context-window handling](docs/claude-code-context-window.md) for the exact configuration and limits.
 

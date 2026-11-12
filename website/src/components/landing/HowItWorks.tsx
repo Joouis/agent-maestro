@@ -14,7 +14,7 @@ const steps = [
     step: "02",
     title: "Run Setup Command",
     description:
-      "Use Command Palette to configure Claude Code, Claude Desktop, Codex, or Gemini CLI.",
+      "Use Command Palette to configure Claude Code, Claude Desktop, Codex, Gemini CLI, or Grok Build.",
   },
   {
     icon: Rocket,

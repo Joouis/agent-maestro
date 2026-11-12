@@ -72,6 +72,7 @@ suite("Extension Test Suite", () => {
         "agent-maestro.configureClaudeCode",
         "agent-maestro.configureClaudeDesktop",
         "agent-maestro.configureCodex",
+        "agent-maestro.configureGrokBuild",
         "agent-maestro.configureGeminiCli",
         "agent-maestro.selectFallbackModel",
         "agent-maestro.configureCopilotPromptCache",

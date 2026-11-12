@@ -56,7 +56,7 @@ This opt-in check consumes Copilot model quota. It complements extension-host te
 
 Use loopback URLs and per-process configuration. If AM authentication is enabled, use a matching temporary test key; a dummy value only works when no AM key is configured. Never record keys, authorization headers, or credentials.
 
-### Exercise all three clients
+### Exercise the clients
 
 Use an available model from the appropriate family for each protocol:
 
@@ -65,8 +65,11 @@ Use an available model from the appropriate family for each protocol:
 | Codex CLI   | `http://127.0.0.1:<port>/api/openai/v1` | `POST /api/openai/v1/responses`                                |
 | Claude Code | `http://127.0.0.1:<port>/api/anthropic` | `POST /api/anthropic/v1/messages`                              |
 | Gemini CLI  | `http://127.0.0.1:<port>/api/gemini`    | `POST /api/gemini/v1beta/models/<model>:streamGenerateContent` |
+| Grok Build  | `http://127.0.0.1:<port>/api/openai/v1` | `POST /api/openai/v1/chat/completions`                         |
 
 For Codex, use a temporary Responses provider or `--config` overrides, `--ignore-user-config`, `--ephemeral`, `--sandbox read-only`, and `--json`. For Claude Code, set `ANTHROPIC_BASE_URL` and the test authentication variables; use read-only tools such as `Read,Grep,Glob` and streaming JSON output. Where supported, `--bare`, `--restricted`, and `--strict-mcp-config --mcp-config '{"mcpServers":{}}'` avoid unrelated hooks, plugins, and MCP servers. Do not use approval-bypass modes.
+
+For Grok Build, point a custom model at the OpenAI Chat Completions base URL with `api_key` set to the temporary test key, then start with `grok -m <catalog-key>`. Leave `supports_backend_search` unset so Grok Build keeps its own client web search. Use an isolated `GROK_HOME` so the run does not rewrite `~/.grok/config.toml`.
 
 For Gemini, set `GOOGLE_GEMINI_BASE_URL`, `GEMINI_API_KEY`, and the model, then use `--approval-mode plan` and `--output-format stream-json`. Disable unrelated extensions (`--extensions none` in the tested CLI). Verify that trust checks have not downgraded plan mode. With an isolated `GEMINI_CLI_HOME`, the tested CLI stores its main settings at `<GEMINI_CLI_HOME>/.gemini/settings.json`, not directly under that directory; API-key authentication uses `security.auth.selectedType: "gemini-api-key"`. Recheck these version-specific settings when updating the CLI. Authentication or trust failures before an HTTP inference request are client-setup blockers, not proxy failures.
 

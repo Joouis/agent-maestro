@@ -16,11 +16,36 @@ import {
   getClaudeDesktopConfigDirectory,
   updateClaudeDesktopMetadata,
 } from "../utils/claudeDesktop";
+import {
+  GROK_BUILD_MODEL_KEY,
+  GROK_BUILD_PLACEHOLDER_API_KEY,
+  type GrokBuildConfig,
+  buildGrokBuildConfig,
+  getGrokBuildConfigPath,
+} from "../utils/grokBuildConfig";
 import { logger } from "../utils/logger";
 import { updateEnvFile } from "../utils/updateEnvFile";
 import { createCommandHandler } from "./commandHandler";
 
 const LOOPBACK_HOST = "127.0.0.1";
+
+function writeGrokBuildConfig(
+  configPath: string,
+  contents: string,
+  restrictToOwner: boolean,
+): void {
+  const flags =
+    fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC;
+  const fd = fs.openSync(configPath, flags, restrictToOwner ? 0o600 : 0o644);
+  try {
+    if (restrictToOwner) {
+      fs.fchmodSync(fd, 0o600);
+    }
+    fs.writeFileSync(fd, contents);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 
 export function registerConfiguratorCommands(
   proxy: ProxyServer,
@@ -449,6 +474,105 @@ export function registerConfiguratorCommands(
           await vscode.commands.executeCommand("workbench.action.reloadWindow");
         }
       }, "Failed to configure Codex settings"),
+    ),
+
+    vscode.commands.registerCommand(
+      "agent-maestro.configureGrokBuild",
+      createCommandHandler(async () => {
+        const grokConfigPath = getGrokBuildConfigPath();
+
+        let existingConfig: GrokBuildConfig = {};
+        let fileExists = false;
+
+        try {
+          fs.accessSync(grokConfigPath);
+          fileExists = true;
+
+          try {
+            existingConfig = parse(
+              fs.readFileSync(grokConfigPath, "utf-8"),
+            ) as GrokBuildConfig;
+          } catch (error) {
+            logger.warn(
+              `Failed to parse existing Grok Build config: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            vscode.window.showErrorMessage(
+              `Grok Build config at ${grokConfigPath} could not be parsed. Fix the file before configuring Agent Maestro so existing settings are preserved.`,
+            );
+            return;
+          }
+
+          const shouldOverride = await vscode.window.showQuickPick(
+            ["Yes", "No"],
+            {
+              title: "Grok Build Configuration Found",
+              placeHolder:
+                "Config file already exists. Do you want to update it?",
+            },
+          );
+
+          if (shouldOverride !== "Yes") {
+            return;
+          }
+        } catch (error) {
+          // File doesn't exist, continue with creation
+        }
+
+        // TODO: Prefer a Grok family once the model picker has a Grok category.
+        const modelOptions = await getChatModelsQuickPickItems();
+
+        if (modelOptions.length === 0) {
+          vscode.window.showErrorMessage(
+            "No chat models are currently available from the VS Code Language Model API.",
+          );
+          return;
+        }
+
+        const selectedModel = await vscode.window.showQuickPick(modelOptions, {
+          title: "Select model",
+          placeHolder: "Choose which model to use with Grok Build",
+        });
+
+        if (!selectedModel?.modelId) {
+          return;
+        }
+
+        const proxyPort = proxy.getStatus().port;
+        const updatedConfig = buildGrokBuildConfig({
+          existingConfig,
+          modelId: selectedModel.modelId,
+          baseUrl: `http://${LOOPBACK_HOST}:${proxyPort}/api/openai/v1`,
+          contextWindow: selectedModel.maxInputTokens ?? undefined,
+          configuredApiKey: proxy.getLlmApiKey(),
+        });
+
+        const grokDir = path.dirname(grokConfigPath);
+
+        try {
+          fs.mkdirSync(grokDir, { recursive: true });
+        } catch (error) {
+          // Directory might already exist, ignore error
+        }
+
+        const writtenApiKey =
+          updatedConfig.model?.[GROK_BUILD_MODEL_KEY]?.api_key;
+        const restrictsConfigFile =
+          typeof writtenApiKey === "string" &&
+          writtenApiKey !== GROK_BUILD_PLACEHOLDER_API_KEY;
+        writeGrokBuildConfig(
+          grokConfigPath,
+          stringify(updatedConfig),
+          restrictsConfigFile,
+        );
+
+        vscode.window.showInformationMessage(
+          `Grok Build configuration ${fileExists ? "updated" : "created"} successfully! Start a new Grok Build session to use the Agent Maestro model.`,
+        );
+
+        logger.info(
+          `Grok Build configuration ${fileExists ? "updated" : "created"}: ${grokConfigPath}`,
+        );
+      }, "Failed to configure Grok Build settings"),
     ),
 
     vscode.commands.registerCommand(
