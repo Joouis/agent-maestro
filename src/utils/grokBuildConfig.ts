@@ -88,21 +88,6 @@ export function buildGrokBuildConfig(options: {
   delete modelEntry.supports_backend_search;
   if (!isGrokBuildApiBackend(modelEntry.api_backend)) {
     delete modelEntry.api_backend;
-  } else if (modelEntry.api_backend === "messages") {
-    // The Anthropic route accepts x-api-key, not the bearer token from api_key.
-    const existingHeaders =
-      modelEntry.extra_headers &&
-      typeof modelEntry.extra_headers === "object" &&
-      !Array.isArray(modelEntry.extra_headers)
-        ? modelEntry.extra_headers
-        : {};
-    const extraHeaders = Object.fromEntries(
-      Object.entries(existingHeaders).filter(
-        ([name]) => name.toLowerCase() !== "x-api-key",
-      ),
-    );
-    extraHeaders["x-api-key"] = apiKey;
-    modelEntry.extra_headers = extraHeaders;
   }
 
   if (contextWindow !== undefined && contextWindow > 0) {
