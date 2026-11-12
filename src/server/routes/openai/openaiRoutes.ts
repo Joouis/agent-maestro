@@ -4,6 +4,7 @@ import { CodexStandaloneWebSearch } from "../../webSearch/codexStandaloneWebSear
 import { WebSearchProvider } from "../../webSearch/webSearchProvider";
 import { registerCodexSearchRoutes } from "./codexSearchRoutes";
 import { registerOpenaiChatRoutes } from "./openaiChatRoutes";
+import { registerOpenaiModelsRoutes } from "./openaiModelsRoutes";
 import { registerOpenaiResponsesRoutes } from "./openaiResponsesRoutes";
 
 export interface OpenaiRoutesOptions {
@@ -15,6 +16,7 @@ export function registerOpenaiRoutes(
   app: OpenAPIHono,
   options: OpenaiRoutesOptions = {},
 ): void {
+  registerOpenaiModelsRoutes(app);
   registerOpenaiChatRoutes(app);
   registerOpenaiResponsesRoutes(app, {
     webSearchProvider: options.webSearchProvider,

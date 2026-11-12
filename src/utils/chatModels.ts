@@ -27,10 +27,17 @@ async function selectSupportedModels(): Promise<vscode.LanguageModelChat[]> {
   return supported;
 }
 
+interface ChatModelsInitializationResult {
+  models: vscode.LanguageModelChat[];
+  error?: Error;
+}
+
 class ChatModelsCache {
   private static instance: ChatModelsCache;
   private cachedModels: vscode.LanguageModelChat[] = [];
-  private initializationPromise: Promise<void> | null = null;
+  private initializationPromise: Promise<ChatModelsInitializationResult> | null =
+    null;
+  private initializationRunId = 0;
 
   private constructor() {}
 
@@ -41,40 +48,61 @@ class ChatModelsCache {
     return ChatModelsCache.instance;
   }
 
-  async initialize(): Promise<void> {
+  private startInitialization(): Promise<ChatModelsInitializationResult> {
     if (this.cachedModels.length > 0) {
-      return;
+      return Promise.resolve({ models: this.cachedModels });
     }
 
     if (this.initializationPromise) {
       return this.initializationPromise;
     }
 
-    this.initializationPromise = (async () => {
+    const runId = ++this.initializationRunId;
+    const runPromise = (async (): Promise<ChatModelsInitializationResult> => {
       try {
         logger.info("Initializing chat models cache...");
-        this.cachedModels = await selectSupportedModels();
+        const models = await selectSupportedModels();
+        if (this.initializationRunId === runId) {
+          this.cachedModels = models;
+        }
+        return { models };
       } catch (error) {
+        const initError =
+          error instanceof Error
+            ? error
+            : new Error("Failed to discover Copilot models", { cause: error });
         logger.error("Failed to initialize chat models cache:", error);
-        this.cachedModels = [];
+        if (this.initializationRunId === runId) {
+          this.cachedModels = [];
+        }
+        return { models: [], error: initError };
       } finally {
-        this.initializationPromise = null;
+        if (this.initializationRunId === runId) {
+          this.initializationPromise = null;
+        }
       }
     })();
 
-    return this.initializationPromise;
+    this.initializationPromise = runPromise;
+    return runPromise;
   }
 
-  async getChatModels(): Promise<vscode.LanguageModelChat[]> {
-    if (this.cachedModels.length > 0) {
-      return this.cachedModels;
-    }
+  async initialize(): Promise<void> {
+    await this.startInitialization();
+  }
 
-    await this.initialize();
-    return this.cachedModels;
+  async getChatModels(
+    options: { throwOnError?: boolean } = {},
+  ): Promise<vscode.LanguageModelChat[]> {
+    const { models, error } = await this.startInitialization();
+    if (options.throwOnError && error) {
+      throw error;
+    }
+    return models;
   }
 
   async refresh(): Promise<void> {
+    this.initializationRunId++;
     this.cachedModels = [];
     this.initializationPromise = null;
     await this.initialize();

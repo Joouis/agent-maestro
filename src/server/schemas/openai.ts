@@ -729,8 +729,8 @@ const ResponseErrorEvent = z.looseObject({
   param: z.string().nullable(),
 });
 
-export const CommonResponseError = z.looseObject({
-  error: z.looseObject({
+export const CommonResponseError = z.object({
+  error: z.object({
     type: z.string(),
     message: z.string(),
     param: z.string().nullable(),

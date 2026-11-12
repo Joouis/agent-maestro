@@ -15,12 +15,15 @@ All paths below are relative to `http://127.0.0.1:23333` by default.
 | Anthropic           | `GET /api/anthropic/v1/models` and `GET /api/anthropic/v1/models/{model_id}` | All available models, not only Claude     |
 | OpenAI Chat         | `POST /api/openai/v1/chat/completions`                                       | Chat and client-tool generation           |
 | OpenAI Responses    | `POST /api/openai/v1/responses`                                              | Responses items and streaming events      |
+| OpenAI Models       | `GET /api/openai/v1/models` and `GET /api/openai/v1/models/{model_id}`       | Proxy-eligible models, exact retrieval    |
 | Gemini              | `POST /api/gemini/v1beta/models/{model}:generateContent`                     | Non-streaming generation                  |
 | Gemini              | `POST /api/gemini/v1beta/models/{model}:streamGenerateContent`               | Streaming generation                      |
 | Gemini              | `POST /api/gemini/v1beta/models/{model}:countTokens`                         | Local token estimate                      |
 | Codex compatibility | `POST /api/openai/v1/alpha/search`                                           | Experimental standalone web search        |
 
 The running [`/openapi.json`](http://127.0.0.1:23333/openapi.json) lists routes. Some LLM bodies deliberately use permissive schemas; the support rules below and the [Responses reference](openai-responses-api-design.md) describe limits that a generic schema does not capture.
+
+`GET /api/openai/v1/models` and `GET /api/openai/v1/models/{model_id}` list and retrieve proxy-eligible Copilot models (`owned_by: "copilot"`). Single-model retrieval requires an exact ID and returns HTTP 404 when unavailable; discovery failures return HTTP 500 rather than an empty list. VS Code does not expose model creation timestamps, so `created` is `0`; clients that sort by `created` or filter out zero timestamps may treat all models as tied or hide them.
 
 ## Request Examples
 
