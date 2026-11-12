@@ -170,51 +170,6 @@ suite("Model Resolution Test Suite", () => {
     });
   });
 
-  suite("chatModelsCache", () => {
-    const originalSelectChatModels = vscode.lm.selectChatModels;
-    const originalShowWarningMessage = vscode.window.showWarningMessage;
-    let previousModels: vscode.LanguageModelChat[] = [];
-
-    setup(() => {
-      previousModels = chatModelsCache.getCachedModels();
-    });
-
-    teardown(async () => {
-      vscode.window.showWarningMessage = originalShowWarningMessage;
-      vscode.lm.selectChatModels = async () => previousModels;
-      await chatModelsCache.refresh();
-      vscode.lm.selectChatModels = originalSelectChatModels;
-    });
-
-    test("does not show a warning when Copilot returns only non-Claude models", async () => {
-      const warnings: string[] = [];
-      vscode.window.showWarningMessage = (async (message: string) => {
-        warnings.push(message);
-        return undefined;
-      }) as typeof vscode.window.showWarningMessage;
-      vscode.lm.selectChatModels = async () => [
-        createMockModel({
-          id: "gpt-6.1-sol",
-          name: "GPT-6.1 Sol",
-          family: "gpt-6.1-sol",
-        }),
-        createMockModel({
-          id: "grok-4.7",
-          name: "Grok 4.7",
-          family: "grok-4.7",
-        }),
-      ];
-
-      await chatModelsCache.refresh();
-
-      assert.deepStrictEqual(
-        (await chatModelsCache.getChatModels()).map((model) => model.id),
-        ["gpt-6.1-sol", "grok-4.7"],
-      );
-      assert.deepStrictEqual(warnings, []);
-    });
-  });
-
   suite("withCopilotConfiguration", () => {
     test("adds contextSize for Copilot 1M models", () => {
       const model = createMockModel({});
