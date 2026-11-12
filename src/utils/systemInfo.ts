@@ -1,7 +1,8 @@
-import * as vscode from "vscode";
 import * as os from "os";
-import { ExtensionController } from "../core/controller";
+import * as vscode from "vscode";
+
 import packageJson from "../../package.json";
+import { ExtensionController } from "../core/controller";
 
 export interface ExtensionStatus {
   isInstalled: boolean;

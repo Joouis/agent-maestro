@@ -116,11 +116,9 @@ DB_HOST=localhost`;
       // Create empty file
       fs.writeFileSync(testEnvFile, "");
 
-      await updateEnvFile(
-        testEnvFile,
-        { NEW_KEY: "default-value" },
-        ["NEW_KEY"],
-      );
+      await updateEnvFile(testEnvFile, { NEW_KEY: "default-value" }, [
+        "NEW_KEY",
+      ]);
 
       const content = fs.readFileSync(testEnvFile, "utf8");
       assert.ok(
@@ -167,7 +165,9 @@ DB_HOST=localhost`;
       });
 
       const content = fs.readFileSync(testEnvFile, "utf8");
-      assert.ok(content.includes("URL=http://example.com?param=value&other=123"));
+      assert.ok(
+        content.includes("URL=http://example.com?param=value&other=123"),
+      );
       assert.ok(content.includes('QUOTED="quoted value"'));
       assert.ok(content.includes("EQUALS=key=value=more"));
     });

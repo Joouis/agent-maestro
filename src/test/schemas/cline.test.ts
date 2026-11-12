@@ -1,9 +1,9 @@
 import * as assert from "assert";
 
 import {
-  ImagesDataUriSchema,
   ClineMessageRequestSchema,
   ClineTaskResponseSchema,
+  ImagesDataUriSchema,
 } from "../../server/schemas/cline";
 
 suite("Cline Schemas Test Suite", () => {
@@ -13,9 +13,15 @@ suite("Cline Schemas Test Suite", () => {
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
         "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
       ];
-      assert.strictEqual(ImagesDataUriSchema.safeParse(validImages).success, true);
+      assert.strictEqual(
+        ImagesDataUriSchema.safeParse(validImages).success,
+        true,
+      );
       assert.strictEqual(ImagesDataUriSchema.safeParse([]).success, true);
-      assert.strictEqual(ImagesDataUriSchema.safeParse(undefined).success, true);
+      assert.strictEqual(
+        ImagesDataUriSchema.safeParse(undefined).success,
+        true,
+      );
     });
 
     test("should reject invalid inputs", () => {
@@ -26,7 +32,10 @@ suite("Cline Schemas Test Suite", () => {
         ["/path/to/image.png"],
       ];
       for (const invalid of invalidCases) {
-        assert.strictEqual(ImagesDataUriSchema.safeParse(invalid).success, false);
+        assert.strictEqual(
+          ImagesDataUriSchema.safeParse(invalid).success,
+          false,
+        );
       }
     });
   });
@@ -56,7 +65,8 @@ suite("Cline Schemas Test Suite", () => {
         false,
       );
       assert.strictEqual(
-        ClineMessageRequestSchema.safeParse({ text: "Hi", images: ["invalid"] }).success,
+        ClineMessageRequestSchema.safeParse({ text: "Hi", images: ["invalid"] })
+          .success,
         false,
       );
     });
@@ -70,21 +80,31 @@ suite("Cline Schemas Test Suite", () => {
           status,
           message: "msg",
         });
-        assert.strictEqual(result.success, true, `Status ${status} should be valid`);
+        assert.strictEqual(
+          result.success,
+          true,
+          `Status ${status} should be valid`,
+        );
       }
     });
 
     test("should reject invalid responses", () => {
       assert.strictEqual(
-        ClineTaskResponseSchema.safeParse({ id: "1", status: "unknown", message: "m" }).success,
+        ClineTaskResponseSchema.safeParse({
+          id: "1",
+          status: "unknown",
+          message: "m",
+        }).success,
         false,
       );
       assert.strictEqual(
-        ClineTaskResponseSchema.safeParse({ status: "created", message: "m" }).success,
+        ClineTaskResponseSchema.safeParse({ status: "created", message: "m" })
+          .success,
         false,
       );
       assert.strictEqual(
-        ClineTaskResponseSchema.safeParse({ id: "1", status: "created" }).success,
+        ClineTaskResponseSchema.safeParse({ id: "1", status: "created" })
+          .success,
         false,
       );
     });
