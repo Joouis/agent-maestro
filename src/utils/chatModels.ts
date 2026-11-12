@@ -189,8 +189,9 @@ export const getChatModelsQuickPickItems = async (
       continue;
     }
 
+    // Copilot reports the routed model's family on "auto", so match by ID instead.
     const matchedFamily =
-      MODEL_FAMILIES.find((entry) => entry.matches(m)) ??
+      (m.id !== "auto" && MODEL_FAMILIES.find((entry) => entry.matches(m))) ||
       MODEL_FAMILIES[MODEL_FAMILIES.length - 1];
     modelGroups[matchedFamily.id].push(m);
   }
