@@ -175,6 +175,56 @@ suite("Grok Build Config", () => {
     );
   });
 
+  test("rejects an inherited property name as an API backend", () => {
+    const config = buildGrokBuildConfig({
+      existingConfig: {
+        model: {
+          [GROK_BUILD_MODEL_KEY]: {
+            api_backend: "constructor",
+          },
+        },
+      },
+      modelId: "gpt-5.5",
+      baseUrl: "http://127.0.0.1:23333/api/openai/v1",
+    });
+
+    assert.strictEqual(
+      Object.hasOwn(config.model?.[GROK_BUILD_MODEL_KEY] ?? {}, "api_backend"),
+      false,
+    );
+    assert.strictEqual(
+      config.model?.[GROK_BUILD_MODEL_KEY]?.base_url,
+      "http://127.0.0.1:23333/api/openai/v1",
+    );
+  });
+
+  test("adds the Anthropic API key header for the messages backend", () => {
+    const config = buildGrokBuildConfig({
+      existingConfig: {
+        model: {
+          [GROK_BUILD_MODEL_KEY]: {
+            api_backend: "messages",
+            extra_headers: {
+              "X-Api-Key": "stale",
+              "anthropic-version": "2023-06-01",
+            },
+          },
+        },
+      },
+      modelId: "claude-sonnet-4",
+      baseUrl: "http://127.0.0.1:23333/api/openai/v1",
+      configuredApiKey: "llm-key",
+    });
+
+    assert.deepStrictEqual(
+      config.model?.[GROK_BUILD_MODEL_KEY]?.extra_headers,
+      {
+        "anthropic-version": "2023-06-01",
+        "x-api-key": "llm-key",
+      },
+    );
+  });
+
   test("drops an unsupported API backend", () => {
     const config = buildGrokBuildConfig({
       existingConfig: {

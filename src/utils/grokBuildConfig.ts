@@ -13,15 +13,23 @@ const GROK_BUILD_API_BACKENDS = {
 
 export type GrokBuildApiBackend = keyof typeof GROK_BUILD_API_BACKENDS;
 
+export function isGrokBuildApiBackend(
+  apiBackend: unknown,
+): apiBackend is GrokBuildApiBackend {
+  return (
+    typeof apiBackend === "string" &&
+    Object.hasOwn(GROK_BUILD_API_BACKENDS, apiBackend)
+  );
+}
+
 export function resolveGrokBuildBaseUrl(
   proxyBaseUrl: string,
   apiBackend: unknown,
 ): string {
   const origin = new URL(proxyBaseUrl).origin;
-  const backendPath =
-    typeof apiBackend === "string" && apiBackend in GROK_BUILD_API_BACKENDS
-      ? GROK_BUILD_API_BACKENDS[apiBackend as GrokBuildApiBackend]
-      : GROK_BUILD_API_BACKENDS.chat_completions;
+  const backendPath = isGrokBuildApiBackend(apiBackend)
+    ? GROK_BUILD_API_BACKENDS[apiBackend]
+    : GROK_BUILD_API_BACKENDS.chat_completions;
   return `${origin}${backendPath}`;
 }
 
@@ -78,11 +86,23 @@ export function buildGrokBuildConfig(options: {
 
   // The flag describes the previous endpoint. The proxy does not serve it.
   delete modelEntry.supports_backend_search;
-  if (
-    typeof modelEntry.api_backend !== "string" ||
-    !(modelEntry.api_backend in GROK_BUILD_API_BACKENDS)
-  ) {
+  if (!isGrokBuildApiBackend(modelEntry.api_backend)) {
     delete modelEntry.api_backend;
+  } else if (modelEntry.api_backend === "messages") {
+    // The Anthropic route accepts x-api-key, not the bearer token from api_key.
+    const existingHeaders =
+      modelEntry.extra_headers &&
+      typeof modelEntry.extra_headers === "object" &&
+      !Array.isArray(modelEntry.extra_headers)
+        ? modelEntry.extra_headers
+        : {};
+    const extraHeaders = Object.fromEntries(
+      Object.entries(existingHeaders).filter(
+        ([name]) => name.toLowerCase() !== "x-api-key",
+      ),
+    );
+    extraHeaders["x-api-key"] = apiKey;
+    modelEntry.extra_headers = extraHeaders;
   }
 
   if (contextWindow !== undefined && contextWindow > 0) {
