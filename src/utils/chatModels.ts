@@ -108,6 +108,8 @@ const chatModelToQuickPickItem = (model: vscode.LanguageModelChat) => ({
   maxInputTokens: model.maxInputTokens,
 });
 
+const MAI_FAMILY_OR_ID_PATTERN = /^(?:.*[-_/])?mai(?:$|[-_/])/i;
+
 const MODEL_FAMILIES = [
   {
     id: "claude",
@@ -138,8 +140,8 @@ const MODEL_FAMILIES = [
     label: "MAI",
     // Copilot currently reports prompt-slot family names (e.g. vscModelF) on mai-* IDs.
     matches: (model: vscode.LanguageModelChat) =>
-      model.family.toLowerCase().includes("mai") ||
-      model.id.toLowerCase().startsWith("mai-"),
+      MAI_FAMILY_OR_ID_PATTERN.test(model.family) ||
+      MAI_FAMILY_OR_ID_PATTERN.test(model.id),
   },
   {
     id: "other",

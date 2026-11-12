@@ -35,6 +35,8 @@ suite("Chat Models QuickPick Test Suite", () => {
   test("groups Claude, OpenAI, Gemini, Grok, MAI, and Other in default order", async () => {
     chatModelsCache.getChatModels = async () => [
       createMockModel("copilot-utility", "Utility", "copilot-utility"),
+      createMockModel("domain-router", "Domain Router", "domain-router"),
+      createMockModel("main-helper", "Main Helper", "main"),
       createMockModel(
         "mai-code-1.1-flash",
         "MAI-Code-1.1-Flash",
@@ -77,9 +79,14 @@ suite("Chat Models QuickPick Test Suite", () => {
     );
 
     const maiIndex = items.findIndex((item) => item.label === "MAI");
+    const otherIndex = items.findIndex((item) => item.label === "Other");
     assert.deepStrictEqual(
-      items.slice(maiIndex + 1, maiIndex + 4).map((item) => item.modelId),
+      items.slice(maiIndex + 1, otherIndex).map((item) => item.modelId),
       ["mai-code-3", "mai-code-2", "mai-code-1.1-flash"],
+    );
+    assert.deepStrictEqual(
+      items.slice(otherIndex + 1).map((item) => item.modelId),
+      ["copilot-utility", "main-helper", "domain-router"],
     );
   });
 
