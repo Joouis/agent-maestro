@@ -108,70 +108,103 @@ const chatModelToQuickPickItem = (model: vscode.LanguageModelChat) => ({
   maxInputTokens: model.maxInputTokens,
 });
 
-export type ModelFamily = "claude" | "gemini" | "openai" | "other";
+const MODEL_FAMILIES = [
+  {
+    id: "claude",
+    label: "Claude",
+    matches: (model: vscode.LanguageModelChat) =>
+      model.family.toLowerCase().includes("claude"),
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    matches: (model: vscode.LanguageModelChat) =>
+      model.family.toLowerCase().includes("gpt"),
+  },
+  {
+    id: "gemini",
+    label: "Gemini",
+    matches: (model: vscode.LanguageModelChat) =>
+      model.family.toLowerCase().includes("gemini"),
+  },
+  {
+    id: "grok",
+    label: "Grok",
+    matches: (model: vscode.LanguageModelChat) =>
+      model.family.toLowerCase().includes("grok"),
+  },
+  {
+    id: "mai",
+    label: "MAI",
+    // Copilot currently reports prompt-slot family names (e.g. vscModelF) on mai-* IDs.
+    matches: (model: vscode.LanguageModelChat) =>
+      model.family.toLowerCase().includes("mai") ||
+      model.id.toLowerCase().startsWith("mai-"),
+  },
+  {
+    id: "other",
+    label: "Other",
+    matches: () => true,
+  },
+] as const;
+
+export type ModelFamily = (typeof MODEL_FAMILIES)[number]["id"];
+type PriorityModelFamily = Exclude<ModelFamily, "other">;
 
 export interface GetChatModelsOptions {
   recommendedModelId?: string;
-  priorityFamily?: "claude" | "gemini" | "openai";
+  priorityFamily?: PriorityModelFamily;
 }
 
 function getFamilyOrder(
-  priorityFamily?: "claude" | "gemini" | "openai",
-): ModelFamily[] {
-  const defaultOrder: ModelFamily[] = ["claude", "openai", "gemini", "other"];
-
+  priorityFamily?: PriorityModelFamily,
+): (typeof MODEL_FAMILIES)[number][] {
   if (!priorityFamily) {
-    return defaultOrder;
+    return [...MODEL_FAMILIES];
+  }
+
+  const prioritized = MODEL_FAMILIES.find(
+    (entry) => entry.id === priorityFamily,
+  );
+  if (!prioritized) {
+    return [...MODEL_FAMILIES];
   }
 
   // Move priority family to front, but keep "other" always at the end
   return [
-    priorityFamily,
-    ...defaultOrder.filter((f) => f !== priorityFamily && f !== "other"),
-    "other",
+    prioritized,
+    ...MODEL_FAMILIES.filter(
+      (entry) => entry.id !== priorityFamily && entry.id !== "other",
+    ),
+    MODEL_FAMILIES[MODEL_FAMILIES.length - 1],
   ];
-}
-
-function getFamilyLabel(family: ModelFamily): string {
-  const labels: Record<ModelFamily, string> = {
-    claude: "Claude",
-    openai: "OpenAI",
-    gemini: "Gemini",
-    other: "Other",
-  };
-  return labels[family];
 }
 
 export const getChatModelsQuickPickItems = async (
   options?: GetChatModelsOptions,
 ) => {
   // Get available models from cache first, fallback to direct API call
-  let allModels = await chatModelsCache.getChatModels();
+  const allModels = await chatModelsCache.getChatModels();
   if (allModels.length === 0) {
     return [];
   }
 
-  const modelGroups: Record<ModelFamily, vscode.LanguageModelChat[]> = {
-    claude: [],
-    gemini: [],
-    openai: [],
-    other: [],
-  };
+  const modelGroups = Object.fromEntries(
+    MODEL_FAMILIES.map((entry) => [entry.id, [] as vscode.LanguageModelChat[]]),
+  ) as Record<ModelFamily, vscode.LanguageModelChat[]>;
   let recommendedModel: vscode.LanguageModelChat | null = null;
 
   // Categorize models into families
   for (const m of allModels) {
     if (options?.recommendedModelId && m.id === options.recommendedModelId) {
       recommendedModel = m;
-    } else if (m.family.includes("claude")) {
-      modelGroups.claude.push(m);
-    } else if (m.family.includes("gemini")) {
-      modelGroups.gemini.push(m);
-    } else if (m.family.includes("gpt")) {
-      modelGroups.openai.push(m);
-    } else {
-      modelGroups.other.push(m);
+      continue;
     }
+
+    const matchedFamily =
+      MODEL_FAMILIES.find((entry) => entry.matches(m)) ??
+      MODEL_FAMILIES[MODEL_FAMILIES.length - 1];
+    modelGroups[matchedFamily.id].push(m);
   }
 
   const modelOptions = [];
@@ -196,7 +229,7 @@ export const getChatModelsQuickPickItems = async (
   const familyOrder = getFamilyOrder(options?.priorityFamily);
 
   for (const family of familyOrder) {
-    const models = modelGroups[family];
+    const models = modelGroups[family.id];
     if (models.length > 0) {
       models.sort((a, b) =>
         b.name.localeCompare(a.name, undefined, { numeric: true }),
@@ -204,7 +237,7 @@ export const getChatModelsQuickPickItems = async (
       modelOptions.push(
         {
           kind: vscode.QuickPickItemKind.Separator,
-          label: getFamilyLabel(family),
+          label: family.label,
           modelId: "",
           maxInputTokens: 0,
         },

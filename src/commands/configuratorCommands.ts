@@ -518,8 +518,9 @@ export function registerConfiguratorCommands(
           // File doesn't exist, continue with creation
         }
 
-        // TODO: Prefer a Grok family once the model picker has a Grok category.
-        const modelOptions = await getChatModelsQuickPickItems();
+        const modelOptions = await getChatModelsQuickPickItems({
+          priorityFamily: "grok",
+        });
 
         if (modelOptions.length === 0) {
           vscode.window.showErrorMessage(
