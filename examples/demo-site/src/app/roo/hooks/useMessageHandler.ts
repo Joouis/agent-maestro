@@ -1,18 +1,19 @@
 import { useCallback, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import {
-  RooCodeEventName,
-  MESSAGE_TYPES,
-  ASK_TYPES,
-  STATUS_MESSAGES,
-  UI_CONFIG,
-} from "../utils/constants";
+
+import type { Message } from "../types/chat";
 import {
   createMessage,
   parseFollowupData,
   parseMcpServerData,
 } from "../utils/chatHelpers";
-import type { Message } from "../types/chat";
+import {
+  ASK_TYPES,
+  MESSAGE_TYPES,
+  RooCodeEventName,
+  STATUS_MESSAGES,
+  UI_CONFIG,
+} from "../utils/constants";
 
 interface UseMessageHandlerProps {
   addMessage: (message: Message) => void;

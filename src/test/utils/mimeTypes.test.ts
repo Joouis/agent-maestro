@@ -1,6 +1,6 @@
 import * as assert from "assert";
 
-import { getMimeType, MIME_TYPES } from "../../server/utils/mimeTypes";
+import { MIME_TYPES, getMimeType } from "../../server/utils/mimeTypes";
 
 suite("MimeTypes Test Suite", () => {
   suite("MIME_TYPES constant", () => {
@@ -51,7 +51,10 @@ suite("MimeTypes Test Suite", () => {
         "application/typescript",
       );
       assert.strictEqual(getMimeType("src/components/App.tsx"), "text/tsx");
-      assert.strictEqual(getMimeType("./relative/path/doc.md"), "text/markdown");
+      assert.strictEqual(
+        getMimeType("./relative/path/doc.md"),
+        "text/markdown",
+      );
     });
 
     test("should handle uppercase extensions", () => {
@@ -61,13 +64,22 @@ suite("MimeTypes Test Suite", () => {
     });
 
     test("should return octet-stream for unknown extensions", () => {
-      assert.strictEqual(getMimeType("file.unknown"), "application/octet-stream");
-      assert.strictEqual(getMimeType("file.xyz123"), "application/octet-stream");
+      assert.strictEqual(
+        getMimeType("file.unknown"),
+        "application/octet-stream",
+      );
+      assert.strictEqual(
+        getMimeType("file.xyz123"),
+        "application/octet-stream",
+      );
     });
 
     test("should return octet-stream for files without extensions", () => {
       assert.strictEqual(getMimeType("LICENSE"), "application/octet-stream");
-      assert.strictEqual(getMimeType("noextension"), "application/octet-stream");
+      assert.strictEqual(
+        getMimeType("noextension"),
+        "application/octet-stream",
+      );
     });
 
     test("should handle special files correctly", () => {
@@ -85,9 +97,18 @@ suite("MimeTypes Test Suite", () => {
       assert.strictEqual(getMimeType("tsconfig.json"), "application/json");
 
       // Config files
-      assert.strictEqual(getMimeType("webpack.config.js"), "application/javascript");
-      assert.strictEqual(getMimeType("babel.config.js"), "application/javascript");
-      assert.strictEqual(getMimeType("eslint.config.js"), "application/javascript");
+      assert.strictEqual(
+        getMimeType("webpack.config.js"),
+        "application/javascript",
+      );
+      assert.strictEqual(
+        getMimeType("babel.config.js"),
+        "application/javascript",
+      );
+      assert.strictEqual(
+        getMimeType("eslint.config.js"),
+        "application/javascript",
+      );
 
       // RC files
       assert.strictEqual(getMimeType(".eslintrc"), "application/json");
@@ -103,10 +124,7 @@ suite("MimeTypes Test Suite", () => {
     test("should handle files with multiple dots", () => {
       assert.strictEqual(getMimeType("file.test.ts"), "application/typescript");
       assert.strictEqual(getMimeType("app.module.css"), "text/css");
-      assert.strictEqual(
-        getMimeType("component.stories.tsx"),
-        "text/tsx",
-      );
+      assert.strictEqual(getMimeType("component.stories.tsx"), "text/tsx");
     });
 
     test("should handle shell scripts", () => {
@@ -130,7 +148,10 @@ suite("MimeTypes Test Suite", () => {
       assert.strictEqual(getMimeType("archive.zip"), "application/zip");
       assert.strictEqual(getMimeType("archive.tar"), "application/x-tar");
       assert.strictEqual(getMimeType("archive.gz"), "application/gzip");
-      assert.strictEqual(getMimeType("archive.7z"), "application/x-7z-compressed");
+      assert.strictEqual(
+        getMimeType("archive.7z"),
+        "application/x-7z-compressed",
+      );
     });
   });
 });

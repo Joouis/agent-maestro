@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+
 import { logger } from "./logger";
 
 export const closeAllEmptyTabGroups = async (): Promise<void> => {

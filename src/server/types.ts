@@ -1,7 +1,7 @@
 import {
-  RooCodeSettings,
-  RooCodeEventName,
   ClineMessage,
+  RooCodeEventName,
+  RooCodeSettings,
 } from "@roo-code/types";
 
 // TaskEvent-related type definitions

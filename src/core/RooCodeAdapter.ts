@@ -1,15 +1,16 @@
-import { logger } from "../utils/logger";
+import { Anthropic } from "@anthropic-ai/sdk";
 import {
-  RooCodeAPI,
-  RooCodeSettings,
+  HistoryItem,
   ProviderSettings,
   ProviderSettingsEntry,
+  RooCodeAPI,
   RooCodeEventName,
-  HistoryItem,
+  RooCodeSettings,
 } from "@roo-code/types";
-import { Anthropic } from "@anthropic-ai/sdk";
-import { ExtensionBaseAdapter } from "./ExtensionBaseAdapter";
+
 import { TaskEvent } from "../server/types";
+import { logger } from "../utils/logger";
+import { ExtensionBaseAdapter } from "./ExtensionBaseAdapter";
 
 export interface RooCodeMessageOptions {
   taskId?: string;

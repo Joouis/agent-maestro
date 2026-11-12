@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
+
 import { UI_CONFIG } from "../utils/constants";
 
 export const useStatusManager = () => {

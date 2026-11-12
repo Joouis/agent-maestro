@@ -1,5 +1,6 @@
-import packageJson from "../../package.json";
 import * as vscode from "vscode";
+
+import packageJson from "../../package.json";
 
 export class Logger {
   private readonly outputChannel: vscode.LogOutputChannel;
