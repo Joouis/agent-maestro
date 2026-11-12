@@ -31,7 +31,6 @@ class ChatModelsCache {
   private static instance: ChatModelsCache;
   private cachedModels: vscode.LanguageModelChat[] = [];
   private initializationPromise: Promise<void> | null = null;
-  private hasShownNoClaudeWarning = false;
 
   private constructor() {}
 
@@ -55,19 +54,6 @@ class ChatModelsCache {
       try {
         logger.info("Initializing chat models cache...");
         this.cachedModels = await selectSupportedModels();
-
-        // Check for Claude models availability and show warning once if none found
-        if (this.cachedModels.length > 0 && !this.hasShownNoClaudeWarning) {
-          const hasClaudeModels = this.cachedModels.some((m) =>
-            m.id.toLowerCase().includes("claude"),
-          );
-          if (!hasClaudeModels) {
-            this.hasShownNoClaudeWarning = true;
-            vscode.window.showWarningMessage(
-              "No Claude models found. Please check your network or VPN settings.",
-            );
-          }
-        }
       } catch (error) {
         logger.error("Failed to initialize chat models cache:", error);
         this.cachedModels = [];
