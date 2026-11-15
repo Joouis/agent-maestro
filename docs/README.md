@@ -8,8 +8,6 @@ Start with the [project README](../README.md) for installation and client setup.
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | [LLM compatibility](llm-compatibility.md)                | Endpoint examples, content/history support, search differences, usage, and log privacy |
 | [OpenAI Responses](openai-responses-api-design.md)       | Responses-specific support/rejection rules and streaming semantics                     |
-| [Roo HTTP/SSE](roo-routes-events.md)                     | AM task endpoints, event payloads, and completion rules                                |
-| [Roo extension API notes](roo-code/README.md)            | Upstream API boundary and pinned type references                                       |
 | [Context-window handling](claude-code-context-window.md) | Copilot prompt budgets and Claude Code compaction                                      |
 | [SSE heartbeats](2026-08-11-sse-heartbeats.md)           | Authoritative heartbeat formats and serializer constraints                             |
 | [Image MIME workaround](vscode-image-mime-defect.md)     | Top-level resize workaround and Anthropic tool-result exception                        |
@@ -21,7 +19,6 @@ The running `/openapi.json` supplies route schemas. It complements these guides;
 
 - [Testing](testing.md): local checks, suite locations, manual validation, and pre-release live CLI regression.
 - [Codex collaboration E2E](codex-multi-agent-e2e.md): authenticated manual test.
-- [Remote Roo demo](../examples/demo-site/README.md): local UI and protected remote access.
 - [Contributor instructions](../AGENTS.md), [release procedure](../.claude/commands/release.md), and [issue tracker](agents/issue-tracker.md).
 - [Code-review workflow](../.github/skills/code-review/SKILL.md).
 
@@ -37,7 +34,7 @@ These explain why a feature was built or deferred. Their status blocks identify 
 | [Responses search, 2026-08-30](2026-08-30-openai-responses-web-search-design.md)                   | Implemented in #243; consult release notes for availability                       |
 | [Codex standalone search, 2026-08-31](2026-08-31-codex-standalone-web-search-design.md)            | Implemented in #247, including open/find and configuration gate                   |
 | [Tool-history normalization, 2026-09-04](2026-09-04-tool-history-normalization-design.md)          | Implemented in #252; current-checkout history rules                               |
-| [API authentication, 2026-11-15](2026-11-15-api-authentication-design.md)                          | Implemented; Admin API Key, origin policy, fastmcp upgrade TODO                   |
+| [API authentication, 2026-11-15](2026-11-15-api-authentication-design.md)                          | Implemented; MCP parts no longer apply after v3 removed the MCP server            |
 
 ## Maintaining Documentation
 

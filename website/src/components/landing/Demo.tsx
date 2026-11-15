@@ -7,12 +7,6 @@ const demos = [
       "Configure Claude Code to use VS Code's language models with a single command. Automatic endpoint configuration and model discovery.",
     gif: "https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/configure-claude-code-demo.gif",
   },
-  {
-    title: "Agent Maestro in Action",
-    description:
-      "See how Agent Maestro orchestrates AI agents, manages tasks, and provides real-time updates through its powerful API.",
-    gif: "https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/agent-maestro-demo.gif",
-  },
 ];
 
 const Demo = () => {

@@ -16,21 +16,21 @@ const features = [
   },
   {
     icon: Cpu,
-    title: "Headless AI Agent Control",
+    title: "Tools and Images",
     description:
-      "Manage Roo Code tasks through REST APIs, with basic task creation for Cline.",
+      "Tool calls, tool history, and image inputs are converted for VS Code models, while client tools still run in your client.",
   },
   {
     icon: Radio,
-    title: "Real-time Streaming",
+    title: "Streaming with Heartbeats",
     description:
-      "Server-Sent Events (SSE) for live task monitoring and message updates as your AI agents work.",
+      "Streaming responses keep supported clients connected while a model response is pending.",
   },
   {
     icon: Settings,
-    title: "Parallel Execution",
+    title: "Optional API Keys",
     description:
-      "Run up to 20 concurrent RooCode tasks with built-in MCP server integration for maximum productivity.",
+      "Separate LLM and Admin API keys plus a browser origin allowlist protect the proxy when you expose it beyond your machine.",
   },
   {
     icon: Shield,
@@ -78,8 +78,8 @@ const Features = () => {
             <span className="text-gradient"> AI Development</span>
           </h2>
           <p className="text-muted-foreground text-lg">
-            Everything you need to orchestrate AI coding assistants directly
-            from VS Code.
+            Everything you need to run your favorite AI coding clients on GitHub
+            Copilot models from VS Code.
           </p>
         </motion.div>
 

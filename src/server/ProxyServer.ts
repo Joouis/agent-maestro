@@ -3,7 +3,6 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { compress } from "hono/compress";
 import * as vscode from "vscode";
 
-import { ExtensionController } from "../core/controller";
 import { DEFAULT_CONFIG, readConfiguration } from "../utils/config";
 import {
   ADMIN_API_KEY_SECRET_KEY,
@@ -27,13 +26,11 @@ import {
   createOriginGuardMiddleware,
 } from "./middleware/originMiddleware";
 import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
-import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
 import { registerGeminiRoutes } from "./routes/geminiRoutes";
 import { registerInfoRoutes } from "./routes/infoRoutes";
 import { registerLmRoutes } from "./routes/lmRoutes";
 import { registerOpenaiRoutes } from "./routes/openai/openaiRoutes";
-import { registerRooRoutes } from "./routes/rooRoutes";
 import { registerWorkspaceRoutes } from "./routes/workspaceRoutes";
 import { CodexStandaloneWebSearch } from "./webSearch/codexStandaloneWebSearch";
 import { EXA_CODEX_TOOLS, ExaMcpClient } from "./webSearch/exaMcpClient";
@@ -60,7 +57,6 @@ function sameKeyState(a: ApiKeyState, b: ApiKeyState): boolean {
 
 export class ProxyServer {
   private app: OpenAPIHono;
-  private controller: ExtensionController;
   private context: vscode.ExtensionContext;
   private isRunning = false;
   private port: number;
@@ -70,7 +66,6 @@ export class ProxyServer {
     llm: { status: "unset" },
     admin: { status: "unset" },
   };
-  private apiKeysChangeListeners: (() => void)[] = [];
   // Bumped per key by every refresh and local set of that key. A refresh
   // publishes only if nothing newer touched the same key while it was
   // reading; the other key is never affected.
@@ -80,11 +75,9 @@ export class ProxyServer {
   private readonly webSearchProvider: ExaMcpWebSearchProvider;
 
   constructor(
-    controller: ExtensionController,
     port = DEFAULT_CONFIG.proxyServerPort,
     context: vscode.ExtensionContext,
   ) {
-    this.controller = controller;
     this.context = context;
     this.port = port;
     const exaMcpClient = new ExaMcpClient({
@@ -142,12 +135,10 @@ export class ProxyServer {
   private getApiV1Routes(): OpenAPIHono {
     const routes = new OpenAPIHono();
 
-    registerInfoRoutes(routes, this.controller);
+    registerInfoRoutes(routes);
     registerLmRoutes(routes);
-    registerClineRoutes(routes, this.controller);
     registerWorkspaceRoutes(routes);
     registerFsRoutes(routes);
-    registerRooRoutes(routes, this.controller, this.context);
 
     return routes;
   }
@@ -191,10 +182,6 @@ export class ProxyServer {
       ],
       tags: [
         {
-          name: "Tasks",
-          description: "Task management operations",
-        },
-        {
           name: "FileSystem",
           description: "File system operations",
         },
@@ -231,14 +218,6 @@ export class ProxyServer {
             "Gemini-compatible API endpoints using VSCode Language Models",
         },
         {
-          name: "MCP Configuration",
-          description: "MCP server configuration operations",
-        },
-        {
-          name: "Configuration",
-          description: "Profile and configuration management",
-        },
-        {
           name: "Documentation",
           description: "API documentation",
         },
@@ -252,7 +231,7 @@ export class ProxyServer {
     }
 
     // Analyze the current port usage
-    const analysis = await analyzePortUsage(this.port, "proxy");
+    const analysis = await analyzePortUsage(this.port);
     logger.debug(`Port analysis for ${this.port}:`, analysis);
 
     switch (analysis.action) {
@@ -371,7 +350,7 @@ export class ProxyServer {
 
     this.portMonitorInterval = setInterval(async () => {
       try {
-        const analysis = await analyzePortUsage(this.port, "proxy");
+        const analysis = await analyzePortUsage(this.port);
         logger.debug(
           `Proxy server port monitoring check for ${this.port}:`,
           analysis,
@@ -420,11 +399,6 @@ export class ProxyServer {
     return this.apiKeys.llm.status === "set" ? this.apiKeys.llm.value : null;
   }
 
-  /** Listeners run after any key change, including a restore. */
-  onApiKeysChanged(listener: () => void): void {
-    this.apiKeysChangeListeners.push(listener);
-  }
-
   private setApiKey(kind: keyof ApiKeys, key: string | null): void {
     const trimmed = key?.trim();
     const state: ApiKeyState = trimmed
@@ -446,13 +420,10 @@ export class ProxyServer {
       logger.info(`${KEY_LABELS[kind]} API key is now ${next[kind].status}`);
     }
     this.warnIfWildcardWithoutKeys();
-    for (const listener of this.apiKeysChangeListeners) {
-      listener();
-    }
   }
 
   /**
-   * Restores both keys from secret storage. Must run before either server
+   * Restores both keys from secret storage. Must run before the server
    * starts. A failed read locks the key so its routes fail closed instead of
    * silently opening.
    */
@@ -524,16 +495,10 @@ export class ProxyServer {
     if (llm.status !== "unset" || admin.status !== "unset") {
       return;
     }
-    const config = readConfiguration();
-    for (const [name, origins] of [
-      ["proxyServerCorsOrigins", config.proxyServerCorsOrigins],
-      ["mcpServerCorsOrigins", config.mcpServerCorsOrigins],
-    ] as const) {
-      if (origins.includes("*")) {
-        logger.warn(
-          `agent-maestro.${name} allows any origin ("*") but no API key is set: any web page can call this server. Set an Admin API Key or list specific origins.`,
-        );
-      }
+    if (readConfiguration().proxyServerCorsOrigins.includes("*")) {
+      logger.warn(
+        `agent-maestro.proxyServerCorsOrigins allows any origin ("*") but no API key is set: any web page can call this server. Set an Admin API Key or list specific origins.`,
+      );
     }
   }
 }

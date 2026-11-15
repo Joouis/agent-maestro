@@ -1,7 +1,7 @@
 {
   "name": "agent-maestro",
   "displayName": "Agent Maestro",
-  "description": "Turn VS Code into your compliant AI playground! With Agent Maestro, spin up Cline or Roo on demand and plug Claude Code, Codex, or Grok Build straight in through an OpenAI/Anthropic-compatible API.",
+  "description": "Turn VS Code into your compliant AI playground! Plug Claude Code, Codex, Gemini CLI, or Grok Build straight into GitHub Copilot models through OpenAI-, Anthropic-, and Gemini-compatible APIs.",
   "version": "2.16.0",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
@@ -24,12 +24,8 @@
     "Other"
   ],
   "keywords": [
-    "cline",
-    "roo-code",
-    "kilocode",
     "vibe coding",
     "developer",
-    "mcp",
     "coding",
     "agent",
     "autonomous",
@@ -55,31 +51,10 @@
       "type": "object",
       "title": "Agent Maestro Configuration",
       "properties": {
-        "agent-maestro.rooVariantIdentifiers": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [
-            "kilocode.kilo-code"
-          ],
-          "description": "List of extension identifiers that are considered Roo variants (need restart to take effect)",
-          "scope": "application"
-        },
-        "agent-maestro.defaultRooIdentifier": {
-          "type": "string",
-          "default": "rooveterinaryinc.roo-cline",
-          "description": "Default Roo extension identifier to use when multiple variants are available (need restart to take effect)"
-        },
         "agent-maestro.proxyServerPort": {
           "type": "number",
           "default": 23333,
           "description": "Port for the Agent Maestro proxy server (need restart to take effect)"
-        },
-        "agent-maestro.mcpServerPort": {
-          "type": "number",
-          "default": 23334,
-          "description": "Port for the Agent Maestro MCP server (need restart to take effect)"
         },
         "agent-maestro.allowOutsideWorkspaceAccess": {
           "type": "boolean",
@@ -101,24 +76,10 @@
           "default": [],
           "markdownDescription": "Browser origins allowed to call the API server, as exact `scheme://host[:port]` values (e.g. `http://localhost:5173`, `https://xxxx.devtunnels.ms`). `*` allows any origin; combine it with API keys. Requests from other origins are rejected with 403. Clients that send no `Origin` header (CLIs, SDKs) are unaffected.",
           "scope": "application"
-        },
-        "agent-maestro.mcpServerCorsOrigins": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "markdownDescription": "Browser origins allowed to open MCP sessions, as exact `scheme://host[:port]` values. `*` allows any origin; combine it with an Admin API Key. Clients that send no `Origin` header are unaffected.",
-          "scope": "application"
         }
       }
     },
     "commands": [
-      {
-        "command": "agent-maestro.getStatus",
-        "title": "Get Extensions Status",
-        "category": "Agent Maestro"
-      },
       {
         "command": "agent-maestro.startProxyServer",
         "title": "Start API Server",
@@ -137,26 +98,6 @@
       {
         "command": "agent-maestro.getProxyServerStatus",
         "title": "Get API Server Status",
-        "category": "Agent Maestro"
-      },
-      {
-        "command": "agent-maestro.startMcpServer",
-        "title": "Start MCP Server",
-        "category": "Agent Maestro"
-      },
-      {
-        "command": "agent-maestro.stopMcpServer",
-        "title": "Stop MCP Server",
-        "category": "Agent Maestro"
-      },
-      {
-        "command": "agent-maestro.getMcpServerStatus",
-        "title": "Get MCP Server Status",
-        "category": "Agent Maestro"
-      },
-      {
-        "command": "agent-maestro.installMcpConfig",
-        "title": "Install MCP Configuration",
         "category": "Agent Maestro"
       },
       {
@@ -220,9 +161,6 @@
     "@google/genai": "^1.29.1",
     "@hono/node-server": "^1.17.1",
     "@hono/zod-openapi": "^1.0.2",
-    "@roo-code/types": "^1.86.0",
-    "es-toolkit": "^1.39.3",
-    "fastmcp": "^3.5.0",
     "hono": "^4.8.9",
     "image-size": "^2.0.4",
     "openai": "^6.46.0",
@@ -270,8 +208,7 @@
     "prepare": "husky",
     "changeset": "changeset",
     "changeset:version": "pnpm changeset version && node .changeset/changelog-polish.js",
-    "changeset:tag": "changeset tag",
-    "mcp-inspector": "npx @modelcontextprotocol/inspector"
+    "changeset:tag": "changeset tag"
   },
   "lint-staged": {
     "**/*": "prettier --write --ignore-unknown"

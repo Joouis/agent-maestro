@@ -1,28 +1,20 @@
 import * as vscode from "vscode";
 
-import { ExtensionController } from "../core/controller";
-import { McpServer } from "../server/McpServer";
 import { ProxyServer } from "../server/ProxyServer";
 import { registerAdminApiKeyCommands } from "./adminApiKeyCommands";
 import { registerConfiguratorCommands } from "./configuratorCommands";
 import { registerLlmApiKeyCommands } from "./llmApiKeyCommands";
-import { registerMcpCommands } from "./mcpCommands";
 import { registerModelCommands } from "./modelCommands";
 import { registerProxyCommands } from "./proxyCommands";
-import { registerStatusCommands } from "./statusCommands";
 import { registerWebSearchCommands } from "./webSearchCommands";
 
 export function registerAllCommands(
   context: vscode.ExtensionContext,
-  controller: ExtensionController,
   proxy: ProxyServer,
-  mcpServer: McpServer,
 ) {
   registerProxyCommands(proxy, context);
-  registerMcpCommands(mcpServer, context);
   registerConfiguratorCommands(proxy, context);
   registerModelCommands(context);
-  registerStatusCommands(controller, context);
   registerLlmApiKeyCommands(proxy, context);
   registerAdminApiKeyCommands(proxy, context);
   registerWebSearchCommands(context);

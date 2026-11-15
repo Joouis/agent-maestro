@@ -2,13 +2,6 @@ import * as os from "os";
 import * as vscode from "vscode";
 
 import packageJson from "../../package.json";
-import { ExtensionController } from "../core/controller";
-
-export interface ExtensionStatus {
-  isInstalled: boolean;
-  isActive: boolean;
-  version?: string;
-}
 
 export interface OsInfo {
   platform: string;
@@ -20,9 +13,6 @@ export interface OsInfo {
 export interface SystemInfo {
   name: string;
   version: string;
-  extensions: {
-    [ext: string]: ExtensionStatus;
-  };
   vscodeVersion: string;
   os: OsInfo;
   workspace: string;
@@ -30,16 +20,13 @@ export interface SystemInfo {
 }
 
 /**
- * Gather comprehensive system information including extension status,
- * VSCode version, OS details, workspace, and MCP server status
+ * Gather system information: extension version, VS Code version, OS details,
+ * and workspace.
  */
-export function getSystemInfo(controller: ExtensionController): SystemInfo {
+export function getSystemInfo(): SystemInfo {
   // Get extension name and version from package.json
   const name = packageJson.displayName || packageJson.name;
   const version = packageJson.version;
-
-  // Get extension status from controller
-  const extensionStatus = controller.getExtensionStatus();
 
   // Get VSCode version
   const vscodeVersion = vscode.version;
@@ -60,9 +47,6 @@ export function getSystemInfo(controller: ExtensionController): SystemInfo {
   return {
     name,
     version,
-    extensions: {
-      ...extensionStatus,
-    },
     vscodeVersion,
     os: osInfo,
     workspace,

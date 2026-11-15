@@ -10,15 +10,7 @@ import {
 suite("Config Test Suite", () => {
   suite("DEFAULT_CONFIG", () => {
     test("should have correct default values", () => {
-      assert.deepStrictEqual(DEFAULT_CONFIG.rooVariantIdentifiers, [
-        "kilocode.kilo-code",
-      ]);
-      assert.strictEqual(
-        DEFAULT_CONFIG.defaultRooIdentifier,
-        "rooveterinaryinc.roo-cline",
-      );
       assert.strictEqual(DEFAULT_CONFIG.proxyServerPort, 23333);
-      assert.strictEqual(DEFAULT_CONFIG.mcpServerPort, 23334);
       assert.strictEqual(DEFAULT_CONFIG.allowOutsideWorkspaceAccess, false);
       assert.strictEqual(DEFAULT_CONFIG.fallbackModelId, "");
     });
@@ -27,20 +19,8 @@ suite("Config Test Suite", () => {
   suite("CONFIG_KEYS", () => {
     test("should have correct configuration key prefixes", () => {
       assert.strictEqual(
-        CONFIG_KEYS.ROO_VARIANT_IDENTIFIERS,
-        "agent-maestro.rooVariantIdentifiers",
-      );
-      assert.strictEqual(
-        CONFIG_KEYS.DEFAULT_ROO_IDENTIFIER,
-        "agent-maestro.defaultRooIdentifier",
-      );
-      assert.strictEqual(
         CONFIG_KEYS.PROXY_SERVER_PORT,
         "agent-maestro.proxyServerPort",
-      );
-      assert.strictEqual(
-        CONFIG_KEYS.MCP_SERVER_PORT,
-        "agent-maestro.mcpServerPort",
       );
       assert.strictEqual(
         CONFIG_KEYS.ALLOW_OUTSIDE_WORKSPACE_ACCESS,
@@ -59,20 +39,8 @@ suite("Config Test Suite", () => {
 
       // Check that all fields exist
       assert.ok(
-        Array.isArray(config.rooVariantIdentifiers),
-        "rooVariantIdentifiers should be an array",
-      );
-      assert.ok(
-        typeof config.defaultRooIdentifier === "string",
-        "defaultRooIdentifier should be a string",
-      );
-      assert.ok(
         typeof config.proxyServerPort === "number",
         "proxyServerPort should be a number",
-      );
-      assert.ok(
-        typeof config.mcpServerPort === "number",
-        "mcpServerPort should be a number",
       );
       assert.ok(
         typeof config.allowOutsideWorkspaceAccess === "boolean",
@@ -84,30 +52,12 @@ suite("Config Test Suite", () => {
       );
     });
 
-    test("should return valid port numbers", () => {
+    test("should return a valid port number", () => {
       const config = readConfiguration();
 
-      // Ports should be reasonable values
       assert.ok(
         config.proxyServerPort > 0 && config.proxyServerPort < 65536,
         "proxyServerPort should be a valid port number",
-      );
-      assert.ok(
-        config.mcpServerPort > 0 && config.mcpServerPort < 65536,
-        "mcpServerPort should be a valid port number",
-      );
-    });
-
-    test("should return non-empty default extension identifier", () => {
-      const config = readConfiguration();
-
-      assert.ok(
-        config.defaultRooIdentifier.length > 0,
-        "defaultRooIdentifier should not be empty",
-      );
-      assert.ok(
-        config.defaultRooIdentifier.includes("."),
-        "defaultRooIdentifier should be in publisher.extension format",
       );
     });
   });

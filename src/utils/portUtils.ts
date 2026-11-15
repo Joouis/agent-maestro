@@ -29,14 +29,8 @@ export function isPortAvailable(port: number): Promise<boolean> {
  */
 export async function detectAgentMaestroService(
   port: number,
-  serviceType: "proxy" | "mcp" = "proxy",
 ): Promise<"current" | "legacy" | undefined> {
   const health = await probe(port, "/health");
-  if (serviceType === "mcp") {
-    return health?.body.trim() === "Agent Maestro MCP Server is running"
-      ? "current"
-      : undefined;
-  }
   if (isAgentMaestroInfo(health?.body)) {
     return "current";
   }
@@ -108,10 +102,7 @@ export async function findAvailablePort(
 /**
  * Analyze port usage and determine the best course of action
  */
-export async function analyzePortUsage(
-  port: number,
-  serviceType: "proxy" | "mcp" = "proxy",
-): Promise<{
+export async function analyzePortUsage(port: number): Promise<{
   available: boolean;
   isOurServer: boolean;
   legacy: boolean;
@@ -130,7 +121,7 @@ export async function analyzePortUsage(
     };
   }
 
-  const instance = await detectAgentMaestroService(port, serviceType);
+  const instance = await detectAgentMaestroService(port);
 
   if (instance) {
     return {

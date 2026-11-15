@@ -13,8 +13,7 @@
       "outFiles": ["${workspaceFolder}/dist/**/*.cjs"],
       "preLaunchTask": "${defaultBuildTask}",
       "env": {
-        "AGENT_MAESTRO_PROXY_PORT": "33333",
-        "AGENT_MAESTRO_MCP_PORT": "33334"
+        "AGENT_MAESTRO_PROXY_PORT": "33333"
       }
     }
   ]

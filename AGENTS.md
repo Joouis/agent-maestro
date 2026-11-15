@@ -6,9 +6,10 @@ Guidance for AI coding agents working in this repository. Human contributors sho
 
 Agent Maestro is a VS Code extension that:
 
-- Orchestrates third-party AI coding extensions (Cline, Roo Code, Kilo Code, etc.) via internal adapters.
 - Exposes a local proxy server (default port `23333`) presenting OpenAI-, Anthropic-, and Gemini-compatible APIs backed by the VS Code Language Model API (GitHub Copilot models), used by clients such as Claude Code, Codex, and Gemini.
-- Runs an MCP server (default port `23334`) for Model Context Protocol clients.
+- Configures those clients, and serves a small authenticated control API for files, workspace, and model discovery.
+
+Task orchestration of third-party extensions (Roo Code, Cline, Kilo Code) and the MCP task server were removed in v3; do not reintroduce them.
 
 Primary language: **TypeScript** (ESM). Runtime and package-manager requirements are defined in `package.json` (`engines` and `packageManager`).
 
@@ -16,8 +17,7 @@ Primary language: **TypeScript** (ESM). Runtime and package-manager requirements
 
 - `src/extension.ts` — extension entry point.
 - `src/commands/` — VS Code command handlers registered in `package.json`.
-- `src/core/` — adapters for third-party extensions (`ClineAdapter`, `RooCodeAdapter`, etc.) and the central `controller`.
-- `src/server/` — proxy + MCP servers.
+- `src/server/` — the proxy server.
   - `routes/anthropicRoutes.ts`, `routes/openai/` — API-compatible endpoints.
   - `schemas/` — Zod request/response schemas (also drive OpenAPI).
   - `utils/` — request conversion helpers between Anthropic/OpenAI and the VS Code LM API.

@@ -57,12 +57,6 @@ export const FileWriteResponseSchema = z.object({
 // SYSTEM INFORMATION SCHEMAS
 // ============================================================================
 
-export const ExtensionInfoSchema = z.object({
-  isInstalled: z.boolean().describe("Whether the extension is installed"),
-  isActive: z.boolean().describe("Whether the extension is active"),
-  version: z.string().optional().describe("Extension version if available"),
-});
-
 export const OSInfoSchema = z.object({
   platform: z
     .string()
@@ -90,9 +84,6 @@ export const SystemInfoSchema = z.object({
     .string()
     .describe("Extension version")
     .openapi({ example: "1.3.1" }),
-  extensions: z
-    .record(z.string(), ExtensionInfoSchema)
-    .describe("Information about installed extensions"),
   vscodeVersion: z
     .string()
     .describe("VSCode version")
