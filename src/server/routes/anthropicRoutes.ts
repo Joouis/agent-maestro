@@ -376,6 +376,18 @@ export function registerAnthropicRoutes(
         output_config,
         ...msgCreateParams
       } = requestBody;
+      if (typeof model !== "string" || !model) {
+        return c.json(
+          {
+            type: "error",
+            error: {
+              type: "invalid_request_error",
+              message: "model: Field required",
+            },
+          },
+          400,
+        );
+      }
       const preparedTools = prepareAnthropicTools({
         tools,
         toolChoice: tool_choice,
@@ -870,6 +882,18 @@ export function registerAnthropicRoutes(
     try {
       const requestBody =
         (await c.req.json()) as Anthropic.Messages.MessageCreateParams;
+      if (typeof requestBody.model !== "string" || !requestBody.model) {
+        return c.json(
+          {
+            type: "error",
+            error: {
+              type: "invalid_request_error",
+              message: "model: Field required",
+            },
+          },
+          400,
+        );
+      }
       const { client, error: clientError } = await resolveChatModelClient(
         requestBody.model,
       );
