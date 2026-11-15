@@ -15,9 +15,9 @@ Open `http://localhost:3000/roo` and connect to the AM HTTP origin, normally `ht
 
 ## Remote Access
 
-**Configure authenticated access before publishing a tunnel or opening a firewall port.** AM's LLM API key covers only Anthropic/OpenAI/Gemini routes. It does not protect Roo task actions, filesystem operations, or workspace management under `/api/v1`. Keep the MCP port private unless separately protected.
+**Configure authenticated access before publishing a tunnel or opening a firewall port.** AM rejects browser requests from origins it does not allow, so first add the demo's origin (for example `http://localhost:3000` or your Vercel URL) to `agent-maestro.proxyServerCorsOrigins`.
 
-Use an access-controlled tunnel, VPN, or reverse proxy and verify that an unauthenticated request to the AM origin is rejected. Apply the policy to the API origin, not just the frontend deployment. The demo sends no API authentication header and does not opt into cross-origin cookie credentials; an access solution must account for browser authentication, preflight requests, and streaming POSTs. A frontend login alone is insufficient.
+The demo sends no API authentication header. Once any AM key is set, `/api/v1` requires the Admin API Key, so the demo stops working. To use it remotely, put it behind an access-controlled tunnel, VPN, or reverse proxy that does not require AM keys, and verify that unauthenticated requests from elsewhere are rejected. Apply the policy to the API origin, not just the frontend deployment. A frontend login alone is insufficient.
 
 To host the UI on Vercel, import this directory as the project root and use the checked-in [vercel.json](vercel.json). Enter the protected AM origin in the connection screen after verifying access from the intended browser/device.
 
@@ -33,7 +33,7 @@ flowchart LR
     AM --> Roo[Roo extension]
 ```
 
-Changing CORS headers on Vercel's frontend does not configure AM's API. AM currently uses permissive CORS. CORS controls browser response access and is not authentication; use network or gateway access controls regardless of origin policy.
+Changing CORS headers on Vercel's frontend does not configure AM's API; use `agent-maestro.proxyServerCorsOrigins`. Origin policy is not authentication; use network or gateway access controls as well.
 
 ## SSE Integration
 

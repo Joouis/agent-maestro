@@ -6,7 +6,7 @@ import { McpServer } from "./server/McpServer";
 import { ProxyServer } from "./server/ProxyServer";
 import { chatModelsCache } from "./utils/chatModels";
 import { performClaudeCodeSelfCheck } from "./utils/claude";
-import { readConfiguration } from "./utils/config";
+import { CONFIG_KEYS, readConfiguration } from "./utils/config";
 import { checkCopilotPromptCacheSetting } from "./utils/copilotPromptCache";
 import { logger } from "./utils/logger";
 
@@ -50,22 +50,44 @@ export async function activate(context: vscode.ExtensionContext) {
   // Get configuration
   const config = readConfiguration();
 
-  mcpServer = new McpServer({
-    controller,
-    port: envMcpPort ? envMcpPort : config.mcpServerPort,
-  });
-
   const proxyPort = envProxyPort ? envProxyPort : config.proxyServerPort;
   proxy = new ProxyServer(controller, proxyPort, context);
 
-  // Restore LLM API key from secrets storage
-  await proxy.restoreLlmApiKey();
+  mcpServer = new McpServer({
+    controller,
+    port: envMcpPort ? envMcpPort : config.mcpServerPort,
+    getApiKeys: () => proxy.getApiKeys(),
+  });
+
+  // Watch before the first read so a change made by another window during
+  // the read is not missed. Keys must be loaded before either server starts.
+  context.subscriptions.push(proxy.watchApiKeySecrets());
+  await proxy.restoreApiKeys();
+  proxy.onApiKeysChanged(
+    () => void mcpServer.restartIfRunning("API keys changed"),
+  );
 
   // Register all commands
   registerAllCommands(context, controller, proxy, mcpServer);
 
   await vscode.commands.executeCommand("agent-maestro.startProxyServer");
   await vscode.commands.executeCommand("agent-maestro.startMcpServer");
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (
+        event.affectsConfiguration(CONFIG_KEYS.PROXY_SERVER_CORS_ORIGINS) ||
+        event.affectsConfiguration(CONFIG_KEYS.MCP_SERVER_CORS_ORIGINS)
+      ) {
+        proxy.warnIfWildcardWithoutKeys();
+      }
+      // MCP checks origins only when a session opens; restart so sessions
+      // from a newly removed origin cannot keep calling tools.
+      if (event.affectsConfiguration(CONFIG_KEYS.MCP_SERVER_CORS_ORIGINS)) {
+        void mcpServer.restartIfRunning("MCP origin allowlist changed");
+      }
+    }),
+  );
 
   return controller;
 }

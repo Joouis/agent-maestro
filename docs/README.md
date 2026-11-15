@@ -37,6 +37,7 @@ These explain why a feature was built or deferred. Their status blocks identify 
 | [Responses search, 2026-08-30](2026-08-30-openai-responses-web-search-design.md)                   | Implemented in #243; consult release notes for availability                       |
 | [Codex standalone search, 2026-08-31](2026-08-31-codex-standalone-web-search-design.md)            | Implemented in #247, including open/find and configuration gate                   |
 | [Tool-history normalization, 2026-09-04](2026-09-04-tool-history-normalization-design.md)          | Implemented in #252; current-checkout history rules                               |
+| [API authentication, 2026-11-15](2026-11-15-api-authentication-design.md)                          | Implemented; Admin API Key, origin policy, fastmcp upgrade TODO                   |
 
 ## Maintaining Documentation
 

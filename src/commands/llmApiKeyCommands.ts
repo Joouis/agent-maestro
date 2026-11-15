@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { ProxyServer } from "../server/ProxyServer";
 import { LLM_API_KEY_SECRET_KEY } from "../utils/constant";
 import { logger } from "../utils/logger";
+import { confirmDistinctFromOtherKey } from "./apiKeyPrompts";
 import { createCommandHandler } from "./commandHandler";
 
 export function registerLlmApiKeyCommands(
@@ -12,13 +13,12 @@ export function registerLlmApiKeyCommands(
   const disposable = vscode.commands.registerCommand(
     "agent-maestro.setLlmApiKey",
     createCommandHandler(async () => {
-      const currentKey = proxy.getLlmApiKey();
-      const hasKey = !!currentKey;
+      const hasKey = proxy.getApiKeys().llm.status !== "unset";
 
       const input = await vscode.window.showInputBox({
         title: "Set LLM API Key",
         prompt: hasKey
-          ? "Enter a new LLM API key, or leave empty to disable authentication"
+          ? "Enter a new LLM API key, or leave empty to clear the LLM key"
           : "Enter an LLM API key to enable authentication (leave empty to skip)",
         placeHolder: "Enter your LLM API key",
         password: true,
@@ -33,8 +33,8 @@ export function registerLlmApiKeyCommands(
       const trimmedInput = input.trim();
 
       if (trimmedInput === "") {
-        // User wants to clear/disable the key
-        proxy.setLlmApiKey(null);
+        // Delete from storage first: if that fails, keep enforcing the key
+        // rather than leaving memory and storage out of sync.
         try {
           await context.secrets.delete(LLM_API_KEY_SECRET_KEY);
         } catch (error) {
@@ -42,16 +42,40 @@ export function registerLlmApiKeyCommands(
             "Failed to delete LLM API key from secrets storage:",
             error,
           );
-          vscode.window.showWarningMessage(
-            "LLM API key cleared from memory, but failed to remove from secure storage. The old key may be restored on restart.",
+          vscode.window.showErrorMessage(
+            "Failed to remove the LLM API key from secure storage. The key is still active.",
           );
           return;
         }
-        vscode.window.showInformationMessage(
-          "LLM API key has been cleared. Authentication is now disabled.",
-        );
+        // Re-read instead of forcing unset: if another window stored a new key
+        // after this delete, that newer key must stay in effect.
+        await proxy.refreshApiKey("llm");
+        const { llm, admin } = proxy.getApiKeys();
+        if (llm.status === "locked") {
+          vscode.window.showErrorMessage(
+            "The LLM API key was deleted, but secure storage could not be read to confirm it. LLM routes return 503 until you set the key again.",
+          );
+        } else if (llm.status === "set") {
+          vscode.window.showWarningMessage(
+            "The LLM API key was deleted, but another window has since set a new one. That key is still active.",
+          );
+        } else {
+          vscode.window.showInformationMessage(
+            admin.status === "unset"
+              ? "LLM API key has been cleared. LLM routes no longer require a key."
+              : "LLM API key has been cleared. LLM routes now accept only the Admin API Key.",
+          );
+        }
       } else {
-        // User provided a key
+        const adminKey = proxy.getApiKeys().admin;
+        if (
+          !(await confirmDistinctFromOtherKey(
+            trimmedInput,
+            adminKey.status === "set" ? adminKey.value : null,
+          ))
+        ) {
+          return;
+        }
         proxy.setLlmApiKey(trimmedInput);
         try {
           await context.secrets.store(LLM_API_KEY_SECRET_KEY, trimmedInput);

@@ -7,6 +7,8 @@ export interface AgentMaestroConfiguration {
   mcpServerPort: number;
   allowOutsideWorkspaceAccess: boolean;
   fallbackModelId: string;
+  proxyServerCorsOrigins: string[];
+  mcpServerCorsOrigins: string[];
 }
 
 /**
@@ -19,6 +21,8 @@ export const CONFIG_KEYS = {
   MCP_SERVER_PORT: "agent-maestro.mcpServerPort",
   ALLOW_OUTSIDE_WORKSPACE_ACCESS: "agent-maestro.allowOutsideWorkspaceAccess",
   FALLBACK_MODEL_ID: "agent-maestro.fallbackModelId",
+  PROXY_SERVER_CORS_ORIGINS: "agent-maestro.proxyServerCorsOrigins",
+  MCP_SERVER_CORS_ORIGINS: "agent-maestro.mcpServerCorsOrigins",
 } as const;
 
 /**
@@ -31,6 +35,8 @@ export const DEFAULT_CONFIG: AgentMaestroConfiguration = {
   mcpServerPort: 23334,
   allowOutsideWorkspaceAccess: false,
   fallbackModelId: "",
+  proxyServerCorsOrigins: [],
+  mcpServerCorsOrigins: [],
 };
 
 /**
@@ -63,6 +69,14 @@ export const readConfiguration = (): AgentMaestroConfiguration => {
     fallbackModelId: config.get<string>(
       CONFIG_KEYS.FALLBACK_MODEL_ID,
       DEFAULT_CONFIG.fallbackModelId,
+    ),
+    proxyServerCorsOrigins: config.get<string[]>(
+      CONFIG_KEYS.PROXY_SERVER_CORS_ORIGINS,
+      DEFAULT_CONFIG.proxyServerCorsOrigins,
+    ),
+    mcpServerCorsOrigins: config.get<string[]>(
+      CONFIG_KEYS.MCP_SERVER_CORS_ORIGINS,
+      DEFAULT_CONFIG.mcpServerCorsOrigins,
     ),
   };
 };

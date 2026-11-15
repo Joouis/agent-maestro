@@ -1,12 +1,12 @@
 import { ServerType, serve } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { compress } from "hono/compress";
-import { cors } from "hono/cors";
 import * as vscode from "vscode";
 
 import { ExtensionController } from "../core/controller";
-import { DEFAULT_CONFIG } from "../utils/config";
+import { DEFAULT_CONFIG, readConfiguration } from "../utils/config";
 import {
+  ADMIN_API_KEY_SECRET_KEY,
   ANOTHER_INSTANCE_RUNNING_MESSAGE,
   EXA_API_KEY_SECRET_KEY,
   LLM_API_KEY_SECRET_KEY,
@@ -15,10 +15,17 @@ import {
 import { logger } from "../utils/logger";
 import { analyzePortUsage } from "../utils/portUtils";
 import {
+  type ApiKeyState,
+  type ApiKeys,
+  createAdminAuthMiddleware,
   createAnthropicAuthMiddleware,
   createGeminiAuthMiddleware,
   createOpenAIAuthMiddleware,
 } from "./middleware/authMiddleware";
+import {
+  createCorsMiddleware,
+  createOriginGuardMiddleware,
+} from "./middleware/originMiddleware";
 import { registerAnthropicRoutes } from "./routes/anthropicRoutes";
 import { registerClineRoutes } from "./routes/clineRoutes";
 import { registerFsRoutes } from "./routes/fsRoutes";
@@ -32,6 +39,25 @@ import { CodexStandaloneWebSearch } from "./webSearch/codexStandaloneWebSearch";
 import { EXA_CODEX_TOOLS, ExaMcpClient } from "./webSearch/exaMcpClient";
 import { ExaMcpWebSearchProvider } from "./webSearch/exaMcpWebSearchProvider";
 
+export const HEALTH_PATH = "/health";
+
+const SECRET_KEYS: Record<keyof ApiKeys, string> = {
+  llm: LLM_API_KEY_SECRET_KEY,
+  admin: ADMIN_API_KEY_SECRET_KEY,
+};
+
+const KEY_LABELS: Record<keyof ApiKeys, string> = {
+  llm: "LLM",
+  admin: "Admin",
+};
+
+function sameKeyState(a: ApiKeyState, b: ApiKeyState): boolean {
+  if (a.status === "set" && b.status === "set") {
+    return a.value === b.value;
+  }
+  return a.status === b.status;
+}
+
 export class ProxyServer {
   private app: OpenAPIHono;
   private controller: ExtensionController;
@@ -40,7 +66,16 @@ export class ProxyServer {
   private port: number;
   private server?: ServerType;
   private portMonitorInterval?: NodeJS.Timeout;
-  private llmApiKey: string | null = null;
+  private apiKeys: ApiKeys = {
+    llm: { status: "unset" },
+    admin: { status: "unset" },
+  };
+  private apiKeysChangeListeners: (() => void)[] = [];
+  // Bumped per key by every refresh and local set of that key. A refresh
+  // publishes only if nothing newer touched the same key while it was
+  // reading; the other key is never affected.
+  private keyGeneration: Record<keyof ApiKeys, number> = { llm: 0, admin: 0 };
+  private pendingRefreshes: Promise<void> = Promise.resolve();
   private readonly codexSearch: CodexStandaloneWebSearch;
   private readonly webSearchProvider: ExaMcpWebSearchProvider;
 
@@ -66,26 +101,27 @@ export class ProxyServer {
 
     // Initialize OpenAPIHono app with basic middleware
     this.app = new OpenAPIHono();
-    this.app.use(cors());
-    this.app.use(compress());
     this.app.use("*", async (c, next) => {
       logger.debug(`Incoming request: ${c.req.method} ${c.req.url}`);
       await next();
     });
 
-    // Register authentication middleware for API routes
-    this.app.use(
-      "/api/anthropic/*",
-      createAnthropicAuthMiddleware(this.getLlmApiKey.bind(this)),
-    );
-    this.app.use(
-      "/api/openai/*",
-      createOpenAIAuthMiddleware(this.getLlmApiKey.bind(this)),
-    );
-    this.app.use(
-      "/api/gemini/*",
-      createGeminiAuthMiddleware(this.getLlmApiKey.bind(this)),
-    );
+    // Origin checks run before compression, auth, and handlers so a rejected
+    // browser request never reaches route code.
+    const getCorsOrigins = () => readConfiguration().proxyServerCorsOrigins;
+    this.app.use(createOriginGuardMiddleware(getCorsOrigins, [HEALTH_PATH]));
+    this.app.use(createCorsMiddleware(getCorsOrigins));
+    this.app.use(compress());
+
+    // Port-conflict detection probes this route, so it needs no key.
+    this.app.get(HEALTH_PATH, (c) => c.json({ name: "Agent Maestro" }));
+
+    const getApiKeys = () => this.apiKeys;
+    this.app.use("/api/anthropic/*", createAnthropicAuthMiddleware(getApiKeys));
+    this.app.use("/api/openai/*", createOpenAIAuthMiddleware(getApiKeys));
+    this.app.use("/api/gemini/*", createGeminiAuthMiddleware(getApiKeys));
+    this.app.use("/api/v1/*", createAdminAuthMiddleware(getApiKeys));
+    this.app.use("/openapi.json", createAdminAuthMiddleware(getApiKeys));
 
     // Register routes under the /api/v1 namespace
     this.app.route("/api/v1", this.getApiV1Routes());
@@ -247,6 +283,9 @@ export class ProxyServer {
         logger.info(
           `${analysis.message}. API available at http://0.0.0.0:${this.port}/openapi.json`,
         );
+        if (analysis.legacy) {
+          this.warnLegacyInstance();
+        }
         // Start monitoring for when the port becomes available
         this.startPortMonitoring();
         return {
@@ -311,6 +350,16 @@ export class ProxyServer {
     return `http://0.0.0.0:${this.port}/openapi.json`;
   }
 
+  /**
+   * The instance serving the port predates the Admin API Key, so keys set in
+   * this window do not protect it. Not awaited: activation must not block.
+   */
+  private warnLegacyInstance(): void {
+    const message = `Port ${this.port} is served by an older Agent Maestro in another window. It does not support the Admin API Key, so its /api/v1 routes stay unauthenticated. Reload or close that window before relying on API key protection.`;
+    logger.warn(message);
+    void vscode.window.showWarningMessage(message);
+  }
+
   private startPortMonitoring() {
     if (this.portMonitorInterval) {
       return; // Monitoring is already active
@@ -355,43 +404,136 @@ export class ProxyServer {
     }
   }
 
-  /**
-   * Sets the LLM API key for authentication.
-   * Pass null or empty string to disable authentication.
-   */
   setLlmApiKey(key: string | null): void {
-    this.llmApiKey = key && key.trim() ? key.trim() : null;
-    if (this.llmApiKey) {
-      logger.info("LLM API key has been configured for authentication");
-    } else {
-      logger.info("LLM API key authentication has been disabled");
+    this.setApiKey("llm", key);
+  }
+
+  setAdminApiKey(key: string | null): void {
+    this.setApiKey("admin", key);
+  }
+
+  getApiKeys(): ApiKeys {
+    return this.apiKeys;
+  }
+
+  getLlmApiKey(): string | null {
+    return this.apiKeys.llm.status === "set" ? this.apiKeys.llm.value : null;
+  }
+
+  /** Listeners run after any key change, including a restore. */
+  onApiKeysChanged(listener: () => void): void {
+    this.apiKeysChangeListeners.push(listener);
+  }
+
+  private setApiKey(kind: keyof ApiKeys, key: string | null): void {
+    const trimmed = key?.trim();
+    const state: ApiKeyState = trimmed
+      ? { status: "set", value: trimmed }
+      : { status: "unset" };
+    this.keyGeneration[kind]++;
+    this.updateApiKeys({ ...this.apiKeys, [kind]: state });
+  }
+
+  private updateApiKeys(next: ApiKeys): void {
+    const changed = (Object.keys(next) as (keyof ApiKeys)[]).filter(
+      (kind) => !sameKeyState(this.apiKeys[kind], next[kind]),
+    );
+    this.apiKeys = next;
+    if (changed.length === 0) {
+      return;
+    }
+    for (const kind of changed) {
+      logger.info(`${KEY_LABELS[kind]} API key is now ${next[kind].status}`);
+    }
+    this.warnIfWildcardWithoutKeys();
+    for (const listener of this.apiKeysChangeListeners) {
+      listener();
     }
   }
 
   /**
-   * Gets the current LLM API key.
+   * Restores both keys from secret storage. Must run before either server
+   * starts. A failed read locks the key so its routes fail closed instead of
+   * silently opening.
    */
-  getLlmApiKey(): string | null {
-    return this.llmApiKey;
+  restoreApiKeys(): Promise<void> {
+    void this.refreshApiKey("llm");
+    return this.refreshApiKey("admin");
   }
 
   /**
-   * Restores the LLM API key from secrets storage.
-   * Should be called during extension activation.
-   * Errors are logged but do not throw to prevent extension activation failure.
+   * Re-reads one key from secret storage, replacing its in-memory value.
+   *
+   * Refreshes are per key, so a change to one secret never reloads the other.
+   * That keeps a key that is set only in memory (its save failed) from being
+   * replaced by an unrelated secret event. Overlapping refreshes of the same
+   * key publish only the latest, so a slow read cannot re-enable a revoked
+   * key, and a local set during the read wins. The returned promise settles
+   * once no refresh is in flight, so activation never starts on superseded
+   * state.
    */
-  async restoreLlmApiKey(): Promise<void> {
-    try {
-      const storedKey = await this.context.secrets.get(LLM_API_KEY_SECRET_KEY);
-      if (storedKey) {
-        this.setLlmApiKey(storedKey);
-        logger.info("LLM API key restored from secrets storage");
+  refreshApiKey(kind: keyof ApiKeys): Promise<void> {
+    const generation = ++this.keyGeneration[kind];
+    const run = this.readStoredApiKey(kind).then((state) => {
+      if (generation === this.keyGeneration[kind]) {
+        this.updateApiKeys({ ...this.apiKeys, [kind]: state });
       }
+    });
+    this.pendingRefreshes = Promise.all([this.pendingRefreshes, run]).then(
+      () => undefined,
+    );
+    return this.waitForPendingRefreshes();
+  }
+
+  private async waitForPendingRefreshes(): Promise<void> {
+    let current: Promise<void>;
+    do {
+      current = this.pendingRefreshes;
+      await current;
+    } while (current !== this.pendingRefreshes);
+  }
+
+  private async readStoredApiKey(kind: keyof ApiKeys): Promise<ApiKeyState> {
+    try {
+      const stored = (
+        await this.context.secrets.get(SECRET_KEYS[kind])
+      )?.trim();
+      return stored ? { status: "set", value: stored } : { status: "unset" };
     } catch (error) {
       logger.error(
-        "Failed to restore LLM API key from secrets storage. Authentication will be disabled until manually configured:",
+        `Failed to restore ${KEY_LABELS[kind]} API key from secret storage. Routes it protects will return 503 until the key is set again:`,
         error,
       );
+      return { status: "locked" };
+    }
+  }
+
+  /** Keeps in-memory keys in sync with key changes made in other windows. */
+  watchApiKeySecrets(): vscode.Disposable {
+    return this.context.secrets.onDidChange((event) => {
+      for (const kind of Object.keys(SECRET_KEYS) as (keyof ApiKeys)[]) {
+        if (SECRET_KEYS[kind] === event.key) {
+          void this.refreshApiKey(kind);
+        }
+      }
+    });
+  }
+
+  warnIfWildcardWithoutKeys(): void {
+    const { llm, admin } = this.apiKeys;
+    if (llm.status !== "unset" || admin.status !== "unset") {
+      return;
+    }
+    const config = readConfiguration();
+    for (const [name, origins] of [
+      ["proxyServerCorsOrigins", config.proxyServerCorsOrigins],
+      ["mcpServerCorsOrigins", config.mcpServerCorsOrigins],
+    ] as const) {
+      if (origins.includes("*")) {
+        logger.warn(
+          `agent-maestro.${name} allows any origin ("*") but no API key is set: any web page can call this server. Set an Admin API Key or list specific origins.`,
+        );
+      }
     }
   }
 }

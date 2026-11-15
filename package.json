@@ -92,6 +92,24 @@
           "default": "",
           "description": "Model ID to use when a requested model is unavailable after exact and fuzzy matching. Leave empty to use VS Code's automatic model fallback.",
           "scope": "application"
+        },
+        "agent-maestro.proxyServerCorsOrigins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Browser origins allowed to call the API server, as exact `scheme://host[:port]` values (e.g. `http://localhost:5173`, `https://xxxx.devtunnels.ms`). `*` allows any origin; combine it with API keys. Requests from other origins are rejected with 403. Clients that send no `Origin` header (CLIs, SDKs) are unaffected.",
+          "scope": "application"
+        },
+        "agent-maestro.mcpServerCorsOrigins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Browser origins allowed to open MCP sessions, as exact `scheme://host[:port]` values. `*` allows any origin; combine it with an Admin API Key. Clients that send no `Origin` header are unaffected.",
+          "scope": "application"
         }
       }
     },
@@ -179,6 +197,11 @@
       {
         "command": "agent-maestro.setLlmApiKey",
         "title": "Set LLM API Key",
+        "category": "Agent Maestro"
+      },
+      {
+        "command": "agent-maestro.setAdminApiKey",
+        "title": "Set Admin API Key",
         "category": "Agent Maestro"
       },
       {

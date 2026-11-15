@@ -2,10 +2,26 @@ import * as assert from "assert";
 import type { Context, Next } from "hono";
 
 import {
-  createAnthropicAuthMiddleware,
-  createGeminiAuthMiddleware,
-  createOpenAIAuthMiddleware,
+  type ApiKeys,
+  createAnthropicAuthMiddleware as createAnthropicMiddleware,
+  createGeminiAuthMiddleware as createGeminiMiddleware,
+  createOpenAIAuthMiddleware as createOpenAIMiddleware,
 } from "../server/middleware/authMiddleware";
+
+// These cases cover the LLM key alone; adapt its getter to the key-state API.
+const llmOnly = (getLlmApiKey: () => string | null) => (): ApiKeys => {
+  const key = getLlmApiKey();
+  return {
+    llm: key ? { status: "set", value: key } : { status: "unset" },
+    admin: { status: "unset" },
+  };
+};
+const createAnthropicAuthMiddleware = (get: () => string | null) =>
+  createAnthropicMiddleware(llmOnly(get));
+const createOpenAIAuthMiddleware = (get: () => string | null) =>
+  createOpenAIMiddleware(llmOnly(get));
+const createGeminiAuthMiddleware = (get: () => string | null) =>
+  createGeminiMiddleware(llmOnly(get));
 
 // Mock Context for testing
 function createMockContext(

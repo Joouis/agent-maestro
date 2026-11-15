@@ -1,9 +1,10 @@
 import { FastMCP } from "fastmcp";
+import type { IncomingMessage } from "http";
 import { z } from "zod";
 
 import { McpTaskManager } from "../core/McpTaskManager";
 import { ExtensionController } from "../core/controller";
-import { DEFAULT_CONFIG } from "../utils/config";
+import { DEFAULT_CONFIG, readConfiguration } from "../utils/config";
 import {
   ANOTHER_INSTANCE_RUNNING_MESSAGE,
   MCP_TASK_MANAGER_UNAVAILABLE_MESSAGE,
@@ -11,6 +12,13 @@ import {
 } from "../utils/constant";
 import { logger } from "../utils/logger";
 import { analyzePortUsage } from "../utils/portUtils";
+import {
+  type ApiKeys,
+  adminAccessMessage,
+  checkAdminAccess,
+  readAdminCredentials,
+} from "./middleware/authMiddleware";
+import { isOriginAllowed } from "./middleware/originMiddleware";
 
 // Input schema for the Execute_Roo_Tasks tool
 const defaultMaxConcurrency = 5;
@@ -33,6 +41,39 @@ const ExecuteRooTasksSchema = z.object({
 export interface McpServerConfig {
   port?: number;
   controller: ExtensionController;
+  getApiKeys: () => ApiKeys;
+}
+
+/**
+ * Runs once per session (fastmcp 3.x / mcp-proxy 5.x call it only on session
+ * creation), so key changes must restart the server to revoke live sessions.
+ * mcp-proxy reflects any Origin in CORS headers and cannot be configured; a
+ * rejected origin still never obtains a session id.
+ */
+export function authorizeMcpRequest(
+  request: Pick<IncomingMessage, "headers">,
+  keys: ApiKeys,
+  allowedOrigins: string[],
+): void {
+  const header = (name: string) => {
+    const value = request.headers[name];
+    return Array.isArray(value) ? value[0] : value;
+  };
+
+  const origin = header("origin");
+  if (origin !== undefined && !isOriginAllowed(origin, allowedOrigins)) {
+    logger.warn(`MCP request rejected from disallowed origin: ${origin}`);
+    throw new Response(null, { status: 403, statusText: "Origin not allowed" });
+  }
+
+  const result = checkAdminAccess(keys, readAdminCredentials(header));
+  if (!result.ok) {
+    logger.warn(`MCP authentication failed: ${result.reason}`);
+    throw new Response(null, {
+      status: result.status,
+      statusText: adminAccessMessage(result),
+    });
+  }
 }
 
 export class McpServer {
@@ -42,6 +83,7 @@ export class McpServer {
   private server: FastMCP;
   private isRunning = false;
   private portMonitorInterval?: NodeJS.Timeout;
+  private restartQueue: Promise<unknown> = Promise.resolve();
 
   constructor(config: McpServerConfig) {
     this.controller = config.controller;
@@ -52,13 +94,60 @@ export class McpServer {
       health: {
         message: "Agent Maestro MCP Server is running",
       },
+      authenticate: async (request) => {
+        authorizeMcpRequest(
+          request,
+          config.getApiKeys(),
+          readConfiguration().mcpServerCorsOrigins,
+        );
+        return undefined;
+      },
     });
+    this.registerTools();
 
     const rooAdapter = this.controller.getRooAdapter();
     if (!rooAdapter) {
       return;
     }
     this.taskManager = new McpTaskManager(rooAdapter);
+  }
+
+  private registerTools(): void {
+    this.server.addTool({
+      name: "Execute Roo Tasks",
+      description:
+        "Execute multiple RooCode tasks in parallel. Returns real-time progress and results for each task.",
+      parameters: ExecuteRooTasksSchema,
+      annotations: {
+        streamingHint: true, // Enable streaming for real-time updates
+        readOnlyHint: true,
+      },
+      execute: async (args, { streamContent }) => {
+        const { tasks, maxConcurrency = defaultMaxConcurrency } = args;
+        logger.info(
+          `MCP Tool Execute Roo Tasks called with ${tasks.length} tasks, maxConcurrency: ${maxConcurrency}`,
+        );
+
+        try {
+          // Execute tasks through task manager with streaming
+          const taskResults = await this.taskManager!.executeRooTasks(tasks, {
+            maxConcurrency,
+            streamContent,
+          });
+
+          logger.info(`MCP Tool Execute Roo Tasks completed.`);
+          logger.debug(`Task Results:\n${JSON.stringify(taskResults)}`);
+
+          return {
+            type: "text",
+            text: JSON.stringify(taskResults),
+          };
+        } catch (error) {
+          logger.error("Error in Execute Roo Tasks tool:", error);
+          throw error;
+        }
+      },
+    });
   }
 
   /**
@@ -117,42 +206,6 @@ export class McpServer {
     try {
       // Initialize task manager
       await this.taskManager.initialize();
-
-      this.server.addTool({
-        name: "Execute Roo Tasks",
-        description:
-          "Execute multiple RooCode tasks in parallel. Returns real-time progress and results for each task.",
-        parameters: ExecuteRooTasksSchema,
-        annotations: {
-          streamingHint: true, // Enable streaming for real-time updates
-          readOnlyHint: true,
-        },
-        execute: async (args, { streamContent }) => {
-          const { tasks, maxConcurrency = defaultMaxConcurrency } = args;
-          logger.info(
-            `MCP Tool Execute Roo Tasks called with ${tasks.length} tasks, maxConcurrency: ${maxConcurrency}`,
-          );
-
-          try {
-            // Execute tasks through task manager with streaming
-            const taskResults = await this.taskManager!.executeRooTasks(tasks, {
-              maxConcurrency,
-              streamContent,
-            });
-
-            logger.info(`MCP Tool Execute Roo Tasks completed.`);
-            logger.debug(`Task Results:\n${JSON.stringify(taskResults)}`);
-
-            return {
-              type: "text",
-              text: JSON.stringify(taskResults),
-            };
-          } catch (error) {
-            logger.error("Error in Execute Roo Tasks tool:", error);
-            throw error;
-          }
-        },
-      });
 
       // Start the server
       await this.server.start({
@@ -217,6 +270,25 @@ export class McpServer {
     logger.info("Restarting MCP server...");
     await this.stop();
     return await this.start();
+  }
+
+  /**
+   * Restarts only a running server, dropping existing sessions so they must
+   * re-authenticate. Serialized so rapid key changes do not interleave.
+   */
+  restartIfRunning(reason: string): Promise<unknown> {
+    this.restartQueue = this.restartQueue.then(async () => {
+      if (!this.isRunning) {
+        return;
+      }
+      logger.info(`${reason}; restarting MCP server to end sessions`);
+      try {
+        await this.restart();
+      } catch (error) {
+        logger.error("Failed to restart MCP server after key change:", error);
+      }
+    });
+    return this.restartQueue;
   }
 
   /**
