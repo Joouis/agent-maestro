@@ -151,6 +151,19 @@ export function registerOpenaiChatRoutes(
       const copilotConfiguration = getCopilotModelConfiguration({
         reasoningEffort,
       });
+      if (typeof modelId !== "string" || !modelId) {
+        return c.json(
+          {
+            error: {
+              type: "invalid_request_error",
+              message: "model is required",
+              param: "model",
+              code: "missing_required_parameter",
+            },
+          },
+          400,
+        );
+      }
       requestedModelId = modelId;
 
       // 1. Get chat model client
