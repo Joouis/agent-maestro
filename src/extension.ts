@@ -59,9 +59,10 @@ export async function activate(context: vscode.ExtensionContext) {
     getApiKeys: () => proxy.getApiKeys(),
   });
 
-  // Keys must be loaded before either server starts listening.
-  await proxy.restoreApiKeys();
+  // Watch before the first read so a change made by another window during
+  // the read is not missed. Keys must be loaded before either server starts.
   context.subscriptions.push(proxy.watchApiKeySecrets());
+  await proxy.restoreApiKeys();
   proxy.onApiKeysChanged(() => void mcpServer.restartIfRunning());
 
   // Register all commands

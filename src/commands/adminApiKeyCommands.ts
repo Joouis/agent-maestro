@@ -40,16 +40,18 @@ export function registerAdminApiKeyCommands(
       }
 
       if (picked.action === "clear") {
-        proxy.setAdminApiKey(null);
+        // Delete from storage first: if that fails, keep enforcing the key
+        // rather than leaving memory and storage out of sync.
         try {
           await context.secrets.delete(ADMIN_API_KEY_SECRET_KEY);
         } catch (error) {
           logger.error("Failed to delete Admin API key from secrets:", error);
-          vscode.window.showWarningMessage(
-            "Admin API key cleared from memory, but failed to remove from secure storage. The old key may be restored on restart.",
+          vscode.window.showErrorMessage(
+            "Failed to remove the Admin API key from secure storage. The key is still active.",
           );
           return;
         }
+        proxy.setAdminApiKey(null);
         vscode.window.showInformationMessage("Admin API key has been cleared.");
         return;
       }

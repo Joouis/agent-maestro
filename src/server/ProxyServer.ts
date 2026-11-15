@@ -71,6 +71,10 @@ export class ProxyServer {
     admin: { status: "unset" },
   };
   private apiKeysChangeListeners: (() => void)[] = [];
+  // Bumped by every restore and local set; a restore only publishes if no
+  // newer restore or set happened while it was reading secret storage.
+  private apiKeysGeneration = 0;
+  private pendingRestores: Promise<void> = Promise.resolve();
   private readonly codexSearch: CodexStandaloneWebSearch;
   private readonly webSearchProvider: ExaMcpWebSearchProvider;
 
@@ -412,6 +416,7 @@ export class ProxyServer {
     const state: ApiKeyState = trimmed
       ? { status: "set", value: trimmed }
       : { status: "unset" };
+    this.apiKeysGeneration++;
     this.updateApiKeys({ ...this.apiKeys, [kind]: state });
   }
 
@@ -437,8 +442,34 @@ export class ProxyServer {
    * starts. A failed read locks the key so its routes fail closed instead of
    * silently opening. Also re-runs when another window changes a key, since
    * SecretStorage is shared but each window holds keys in memory.
+   *
+   * Overlapping restores are possible (several secret events in a row). Only
+   * the latest restore publishes, so a slow read can never re-enable a key
+   * that was revoked in the meantime. The returned promise settles only once
+   * no restore is in flight, so activation never starts on superseded state.
    */
-  async restoreApiKeys(): Promise<void> {
+  restoreApiKeys(): Promise<void> {
+    const generation = ++this.apiKeysGeneration;
+    const run = this.readStoredApiKeys().then((next) => {
+      if (generation === this.apiKeysGeneration) {
+        this.updateApiKeys(next);
+      }
+    });
+    this.pendingRestores = Promise.all([this.pendingRestores, run]).then(
+      () => undefined,
+    );
+    return this.waitForPendingRestores();
+  }
+
+  private async waitForPendingRestores(): Promise<void> {
+    let current: Promise<void>;
+    do {
+      current = this.pendingRestores;
+      await current;
+    } while (current !== this.pendingRestores);
+  }
+
+  private async readStoredApiKeys(): Promise<ApiKeys> {
     const restore = async (kind: keyof ApiKeys): Promise<ApiKeyState> => {
       try {
         const stored = (
@@ -453,10 +484,8 @@ export class ProxyServer {
         return { status: "locked" };
       }
     };
-    this.updateApiKeys({
-      llm: await restore("llm"),
-      admin: await restore("admin"),
-    });
+    const [llm, admin] = await Promise.all([restore("llm"), restore("admin")]);
+    return { llm, admin };
   }
 
   /** Keeps in-memory keys in sync with key changes made in other windows. */

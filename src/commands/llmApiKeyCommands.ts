@@ -33,8 +33,8 @@ export function registerLlmApiKeyCommands(
       const trimmedInput = input.trim();
 
       if (trimmedInput === "") {
-        // User wants to clear/disable the key
-        proxy.setLlmApiKey(null);
+        // Delete from storage first: if that fails, keep enforcing the key
+        // rather than leaving memory and storage out of sync.
         try {
           await context.secrets.delete(LLM_API_KEY_SECRET_KEY);
         } catch (error) {
@@ -42,11 +42,12 @@ export function registerLlmApiKeyCommands(
             "Failed to delete LLM API key from secrets storage:",
             error,
           );
-          vscode.window.showWarningMessage(
-            "LLM API key cleared from memory, but failed to remove from secure storage. The old key may be restored on restart.",
+          vscode.window.showErrorMessage(
+            "Failed to remove the LLM API key from secure storage. The key is still active.",
           );
           return;
         }
+        proxy.setLlmApiKey(null);
         vscode.window.showInformationMessage(
           "LLM API key has been cleared. Authentication is now disabled.",
         );

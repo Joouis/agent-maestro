@@ -284,6 +284,65 @@ suite("API Authentication Test Suite", () => {
       assert.strictEqual(changes, 1, "an unchanged restore notifies nobody");
     });
 
+    /** Secret reads that stay pending until the test resolves them. */
+    function controlledSecrets() {
+      const reads: { key: string; resolve: (value?: string) => void }[] = [];
+      const get = (key: string) =>
+        new Promise<string | undefined>((resolve) =>
+          reads.push({ key, resolve }),
+        );
+      const answer = (batch: number, values: Record<string, string>) => {
+        for (const read of reads.slice(batch * 2, batch * 2 + 2)) {
+          read.resolve(values[read.key]);
+        }
+      };
+      return { get, answer };
+    }
+
+    test("a slower, older restore cannot overwrite a newer one", async () => {
+      const secrets = controlledSecrets();
+      const { proxy } = createProxy({ get: secrets.get });
+      const revoked = "revoked-admin-key-0001";
+
+      const older = proxy.restoreApiKeys();
+      const newer = proxy.restoreApiKeys();
+      // The newer read sees the revocation and finishes first; the older read
+      // still holds the revoked key and finishes last.
+      secrets.answer(1, {});
+      secrets.answer(0, { "agent-maestro.adminApiKey": revoked });
+      await Promise.all([older, newer]);
+
+      assert.deepStrictEqual(proxy.getApiKeys(), combos.none);
+    });
+
+    test("a restore in flight cannot overwrite a key set locally", async () => {
+      const secrets = controlledSecrets();
+      const { proxy } = createProxy({ get: secrets.get });
+
+      const restore = proxy.restoreApiKeys();
+      proxy.setAdminApiKey(ADMIN);
+      secrets.answer(0, {});
+      await restore;
+
+      assert.deepStrictEqual(proxy.getApiKeys(), combos.adminOnly);
+    });
+
+    test("an awaited restore waits for restores started after it", async () => {
+      const secrets = controlledSecrets();
+      const { proxy } = createProxy({ get: secrets.get });
+
+      let firstSettled = false;
+      const first = proxy.restoreApiKeys().then(() => (firstSettled = true));
+      secrets.answer(0, {});
+      const second = proxy.restoreApiKeys();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.strictEqual(firstSettled, false, "must not start on stale state");
+
+      secrets.answer(1, { "agent-maestro.adminApiKey": ADMIN });
+      await Promise.all([first, second]);
+      assert.deepStrictEqual(proxy.getApiKeys(), combos.adminOnly);
+    });
+
     test("rejects disallowed origins before the handler runs", async () => {
       const { app } = createProxy();
       // A text/plain POST skips the browser preflight; it must not execute.
