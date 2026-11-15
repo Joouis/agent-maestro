@@ -283,6 +283,9 @@ export class ProxyServer {
         logger.info(
           `${analysis.message}. API available at http://0.0.0.0:${this.port}/openapi.json`,
         );
+        if (analysis.legacy) {
+          this.warnLegacyInstance();
+        }
         // Start monitoring for when the port becomes available
         this.startPortMonitoring();
         return {
@@ -345,6 +348,16 @@ export class ProxyServer {
 
   getOpenApiUrl(): string {
     return `http://0.0.0.0:${this.port}/openapi.json`;
+  }
+
+  /**
+   * The instance serving the port predates the Admin API Key, so keys set in
+   * this window do not protect it. Not awaited: activation must not block.
+   */
+  private warnLegacyInstance(): void {
+    const message = `Port ${this.port} is served by an older Agent Maestro in another window. It does not support the Admin API Key, so its /api/v1 routes stay unauthenticated. Reload or close that window before relying on API key protection.`;
+    logger.warn(message);
+    void vscode.window.showWarningMessage(message);
   }
 
   private startPortMonitoring() {

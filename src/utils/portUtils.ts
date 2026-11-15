@@ -23,26 +23,33 @@ export function isPortAvailable(port: number): Promise<boolean> {
 }
 
 /**
- * Check if the port is being used by our Agent Maestro service
+ * Identifies an Agent Maestro instance on the port. `legacy` is a proxy that
+ * predates `/health`, and with it the Admin API Key: its `/api/v1` routes stay
+ * unauthenticated regardless of the keys configured in this window.
  */
-export async function isAgentMaestroService(
+export async function detectAgentMaestroService(
   port: number,
   serviceType: "proxy" | "mcp" = "proxy",
-): Promise<boolean> {
+): Promise<"current" | "legacy" | undefined> {
   const health = await probe(port, "/health");
   if (serviceType === "mcp") {
-    return health?.body.trim() === "Agent Maestro MCP Server is running";
+    return health?.body.trim() === "Agent Maestro MCP Server is running"
+      ? "current"
+      : undefined;
   }
   if (isAgentMaestroInfo(health?.body)) {
-    return true;
+    return "current";
   }
   // Proxies older than /health only answer the public /api/v1/info. Without
   // this fallback, a window still running an old version during an update
   // looks like an unrelated app, and this window never takes the port over.
-  if (health?.status === 404) {
-    return isAgentMaestroInfo((await probe(port, "/api/v1/info"))?.body);
+  if (
+    health?.status === 404 &&
+    isAgentMaestroInfo((await probe(port, "/api/v1/info"))?.body)
+  ) {
+    return "legacy";
   }
-  return false;
+  return undefined;
 }
 
 function isAgentMaestroInfo(body: string | undefined): boolean {
@@ -107,6 +114,7 @@ export async function analyzePortUsage(
 ): Promise<{
   available: boolean;
   isOurServer: boolean;
+  legacy: boolean;
   action: "use" | "skip" | "findAlternative";
   message: string;
 }> {
@@ -116,17 +124,19 @@ export async function analyzePortUsage(
     return {
       available: true,
       isOurServer: false,
+      legacy: false,
       action: "use",
       message: `Port ${port} is available`,
     };
   }
 
-  const isOurs = await isAgentMaestroService(port, serviceType);
+  const instance = await detectAgentMaestroService(port, serviceType);
 
-  if (isOurs) {
+  if (instance) {
     return {
       available: false,
       isOurServer: true,
+      legacy: instance === "legacy",
       action: "skip",
       message: `Port ${port} is already in use by another instance of our proxy server`,
     };
@@ -135,6 +145,7 @@ export async function analyzePortUsage(
   return {
     available: false,
     isOurServer: false,
+    legacy: false,
     action: "findAlternative",
     message: `Port ${port} is in use by another application`,
   };

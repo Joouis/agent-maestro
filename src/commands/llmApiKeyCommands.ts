@@ -18,7 +18,7 @@ export function registerLlmApiKeyCommands(
       const input = await vscode.window.showInputBox({
         title: "Set LLM API Key",
         prompt: hasKey
-          ? "Enter a new LLM API key, or leave empty to disable authentication"
+          ? "Enter a new LLM API key, or leave empty to clear the LLM key"
           : "Enter an LLM API key to enable authentication (leave empty to skip)",
         placeHolder: "Enter your LLM API key",
         password: true,
@@ -50,9 +50,22 @@ export function registerLlmApiKeyCommands(
         // Re-read instead of forcing unset: if another window stored a new key
         // after this delete, that newer key must stay in effect.
         await proxy.refreshApiKey("llm");
-        vscode.window.showInformationMessage(
-          "LLM API key has been cleared. Authentication is now disabled.",
-        );
+        const { llm, admin } = proxy.getApiKeys();
+        if (llm.status === "locked") {
+          vscode.window.showErrorMessage(
+            "The LLM API key was deleted, but secure storage could not be read to confirm it. LLM routes return 503 until you set the key again.",
+          );
+        } else if (llm.status === "set") {
+          vscode.window.showWarningMessage(
+            "The LLM API key was deleted, but another window has since set a new one. That key is still active.",
+          );
+        } else {
+          vscode.window.showInformationMessage(
+            admin.status === "unset"
+              ? "LLM API key has been cleared. LLM routes no longer require a key."
+              : "LLM API key has been cleared. LLM routes now accept only the Admin API Key.",
+          );
+        }
       } else {
         const adminKey = proxy.getApiKeys().admin;
         if (

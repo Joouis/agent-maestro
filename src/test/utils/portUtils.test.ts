@@ -2,7 +2,7 @@ import * as assert from "assert";
 import * as http from "http";
 import type { AddressInfo } from "net";
 
-import { isAgentMaestroService } from "../../utils/portUtils";
+import { detectAgentMaestroService } from "../../utils/portUtils";
 
 /** Serves fixed responses by path and returns the bound port. */
 async function serve(
@@ -21,24 +21,24 @@ async function serve(
 
 const AM_INFO = JSON.stringify({ name: "Agent Maestro" });
 
-suite("isAgentMaestroService", () => {
+suite("detectAgentMaestroService", () => {
   const cases: [
     string,
     Record<string, { status: number; body: string }>,
     "proxy" | "mcp",
-    boolean,
+    "current" | "legacy" | undefined,
   ][] = [
     [
       "current proxy via /health",
       { "/health": { status: 200, body: AM_INFO } },
       "proxy",
-      true,
+      "current",
     ],
     [
-      "legacy proxy without /health falls back to /api/v1/info",
+      "legacy proxy without /health is detected via /api/v1/info",
       { "/api/v1/info": { status: 200, body: AM_INFO } },
       "proxy",
-      true,
+      "legacy",
     ],
     [
       "no fallback when /health answers with another app",
@@ -47,22 +47,22 @@ suite("isAgentMaestroService", () => {
         "/api/v1/info": { status: 200, body: AM_INFO },
       },
       "proxy",
-      false,
+      undefined,
     ],
-    ["unrelated app with neither route", {}, "proxy", false],
+    ["unrelated app with neither route", {}, "proxy", undefined],
     [
       "MCP server via /health",
       {
         "/health": { status: 200, body: "Agent Maestro MCP Server is running" },
       },
       "mcp",
-      true,
+      "current",
     ],
     [
       "MCP never falls back to /api/v1/info",
       { "/api/v1/info": { status: 200, body: AM_INFO } },
       "mcp",
-      false,
+      undefined,
     ],
   ];
 
@@ -71,7 +71,7 @@ suite("isAgentMaestroService", () => {
       const server = await serve(routes);
       try {
         assert.strictEqual(
-          await isAgentMaestroService(server.port, serviceType),
+          await detectAgentMaestroService(server.port, serviceType),
           expected,
         );
       } finally {

@@ -54,7 +54,20 @@ export function registerAdminApiKeyCommands(
         // Re-read instead of forcing unset: if another window stored a new key
         // after this delete, that newer key must stay in effect.
         await proxy.refreshApiKey("admin");
-        vscode.window.showInformationMessage("Admin API key has been cleared.");
+        const admin = proxy.getApiKeys().admin;
+        if (admin.status === "locked") {
+          vscode.window.showErrorMessage(
+            "The Admin API key was deleted, but secure storage could not be read to confirm it. Routes it protects return 503 until you set the key again.",
+          );
+        } else if (admin.status === "set") {
+          vscode.window.showWarningMessage(
+            "The Admin API key was deleted, but another window has since set a new one. That key is still active.",
+          );
+        } else {
+          vscode.window.showInformationMessage(
+            "Admin API key has been cleared.",
+          );
+        }
         return;
       }
 

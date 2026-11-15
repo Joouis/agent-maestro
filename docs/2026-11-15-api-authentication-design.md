@@ -182,7 +182,7 @@ When an origin list contains `*` and no key is configured, AM logs a `warn` at s
 
 Add `GET /health` to the Proxy Server. It returns `{ "name": "Agent Maestro" }` and needs no key or origin check.
 
-`isAgentMaestroService` in `src/utils/portUtils.ts` switches from `/api/v1/info` to `/health`, so port-conflict detection keeps working when keys are set. If `/health` returns 404, it falls back to `/api/v1/info`, so a window still running a version without `/health` during an update is recognized and monitored instead of being reported as a port conflict. `/api/v1/info` is unchanged and requires the Admin key like the other `/api/v1` routes.
+`detectAgentMaestroService` in `src/utils/portUtils.ts` switches from `/api/v1/info` to `/health`, so port-conflict detection keeps working when keys are set. If `/health` returns 404, it falls back to `/api/v1/info`, so a window still running a version without `/health` during an update is recognized and monitored instead of being reported as a port conflict. Such a legacy instance predates the Admin API Key, so its `/api/v1` routes stay unauthenticated whatever keys this window sets; AM warns the user to reload or close that window. `/api/v1/info` is unchanged and requires the Admin key like the other `/api/v1` routes.
 
 The MCP Server's existing `/health` remains public.
 
@@ -251,7 +251,7 @@ Release as a **minor** changeset that calls out each breaking row.
   - A settings change applies without restart.
 - **Health:**
   - `GET /health` is public, including when both keys are set.
-  - `isAgentMaestroService` detects AM with keys set.
+  - `detectAgentMaestroService` detects AM with keys set, and flags a legacy instance found only through `/api/v1/info`.
 - **Commands:**
   - Generated keys match `^am_[A-Za-z0-9_-]{43}$`.
   - Manual-entry validation enforces at least 16 printable ASCII characters.
