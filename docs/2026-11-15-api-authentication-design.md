@@ -161,7 +161,7 @@ This blocks both browser cross-origin reads and simple-request writes without au
 #### Proxy Server
 
 - Replace `cors()` with middleware that applies the rules above to every route except `GET /health`.
-- For allowed origins, respond with `Access-Control-Allow-Origin` set to the request origin and `Vary: Origin`. Answer preflights, allowing the methods `GET, POST, PUT, DELETE, OPTIONS` and the headers `Authorization`, `x-api-key`, `x-goog-api-key`, and `content-type`. Do not set `Allow-Credentials`; AM does not use cookies.
+- For allowed origins, respond with `Access-Control-Allow-Origin` set to the request origin and `Vary: Origin`. Answer preflights, allowing the methods `GET, POST, PUT, DELETE, OPTIONS` and echoing the headers the browser requests. SDKs send their own headers (`anthropic-version`, `x-stainless-*`, `x-goog-api-client`); restricting them adds no security once the origin is allowed and the key is checked. Do not set `Allow-Credentials`; AM does not use cookies.
 
 #### MCP Server
 

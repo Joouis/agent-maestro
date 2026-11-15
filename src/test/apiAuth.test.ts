@@ -327,6 +327,21 @@ suite("API Authentication Test Suite", () => {
       assert.deepStrictEqual(proxy.getApiKeys(), combos.adminOnly);
     });
 
+    test("a local set of one key keeps the restored change to the other", async () => {
+      const secrets = controlledSecrets();
+      const { proxy } = createProxy({ get: secrets.get });
+      proxy.setAdminApiKey("revoked-admin-key-0001");
+
+      // Another window revoked the Admin key; this window sets its LLM key
+      // while the restore is reading.
+      const restore = proxy.restoreApiKeys();
+      proxy.setLlmApiKey(LLM);
+      secrets.answer(0, {});
+      await restore;
+
+      assert.deepStrictEqual(proxy.getApiKeys(), combos.llmOnly);
+    });
+
     test("an awaited restore waits for restores started after it", async () => {
       const secrets = controlledSecrets();
       const { proxy } = createProxy({ get: secrets.get });
@@ -387,13 +402,16 @@ suite("API Authentication Test Suite", () => {
         headers: {
           origin: "http://localhost:5173",
           "access-control-request-method": "POST",
-          "access-control-request-headers": "authorization,content-type",
+          "access-control-request-headers":
+            "authorization,content-type,anthropic-version,x-stainless-os",
         },
       });
       assert.strictEqual(preflight.status, 204);
-      assert.match(
-        preflight.headers.get("access-control-allow-headers") ?? "",
-        /Authorization/,
+      // SDK headers such as anthropic-version must be echoed, or the browser
+      // aborts before sending the real request.
+      assert.strictEqual(
+        preflight.headers.get("access-control-allow-headers"),
+        "authorization,content-type,anthropic-version,x-stainless-os",
       );
 
       const other = await app.request("/openapi.json", {

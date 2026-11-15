@@ -31,17 +31,17 @@ export function createOriginGuardMiddleware(
   };
 }
 
-/** Emits CORS headers only for allowlisted origins; never wildcard or credentials. */
+/**
+ * Emits CORS headers only for allowlisted origins; never wildcard or
+ * credentials. Preflight echoes the requested headers: SDKs send many of
+ * their own (`anthropic-version`, `x-stainless-*`, `x-goog-api-client`), and
+ * restricting them adds no security once the origin is allowed and the key
+ * is checked.
+ */
 export function createCorsMiddleware(getAllowlist: () => string[]) {
   return cors({
     origin: (origin) =>
       isOriginAllowed(origin, getAllowlist()) ? origin : null,
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowHeaders: [
-      "Authorization",
-      "x-api-key",
-      "x-goog-api-key",
-      "content-type",
-    ],
   });
 }

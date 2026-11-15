@@ -71,9 +71,14 @@ export class ProxyServer {
     admin: { status: "unset" },
   };
   private apiKeysChangeListeners: (() => void)[] = [];
-  // Bumped by every restore and local set; a restore only publishes if no
-  // newer restore or set happened while it was reading secret storage.
-  private apiKeysGeneration = 0;
+  // A restore publishes only if it is still the latest restore, and skips any
+  // key that was set locally while it was reading. Per-key counters keep a
+  // local set of one key from discarding a restored change to the other.
+  private restoreGeneration = 0;
+  private localSetGeneration: Record<keyof ApiKeys, number> = {
+    llm: 0,
+    admin: 0,
+  };
   private pendingRestores: Promise<void> = Promise.resolve();
   private readonly codexSearch: CodexStandaloneWebSearch;
   private readonly webSearchProvider: ExaMcpWebSearchProvider;
@@ -416,7 +421,7 @@ export class ProxyServer {
     const state: ApiKeyState = trimmed
       ? { status: "set", value: trimmed }
       : { status: "unset" };
-    this.apiKeysGeneration++;
+    this.localSetGeneration[kind]++;
     this.updateApiKeys({ ...this.apiKeys, [kind]: state });
   }
 
@@ -445,15 +450,25 @@ export class ProxyServer {
    *
    * Overlapping restores are possible (several secret events in a row). Only
    * the latest restore publishes, so a slow read can never re-enable a key
-   * that was revoked in the meantime. The returned promise settles only once
-   * no restore is in flight, so activation never starts on superseded state.
+   * that was revoked in the meantime. A key set locally during the read keeps
+   * its local value; the other key still takes the restored value. The
+   * returned promise settles only once no restore is in flight, so activation
+   * never starts on superseded state.
    */
   restoreApiKeys(): Promise<void> {
-    const generation = ++this.apiKeysGeneration;
-    const run = this.readStoredApiKeys().then((next) => {
-      if (generation === this.apiKeysGeneration) {
-        this.updateApiKeys(next);
+    const generation = ++this.restoreGeneration;
+    const localSetsAtStart = { ...this.localSetGeneration };
+    const run = this.readStoredApiKeys().then((restored) => {
+      if (generation !== this.restoreGeneration) {
+        return;
       }
+      const next = { ...this.apiKeys };
+      for (const kind of Object.keys(next) as (keyof ApiKeys)[]) {
+        if (this.localSetGeneration[kind] === localSetsAtStart[kind]) {
+          next[kind] = restored[kind];
+        }
+      }
+      this.updateApiKeys(next);
     });
     this.pendingRestores = Promise.all([this.pendingRestores, run]).then(
       () => undefined,
