@@ -47,7 +47,9 @@ export function registerLlmApiKeyCommands(
           );
           return;
         }
-        proxy.setLlmApiKey(null);
+        // Re-read instead of forcing unset: if another window stored a new key
+        // after this delete, that newer key must stay in effect.
+        await proxy.refreshApiKey("llm");
         vscode.window.showInformationMessage(
           "LLM API key has been cleared. Authentication is now disabled.",
         );

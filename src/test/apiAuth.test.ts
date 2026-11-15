@@ -279,9 +279,10 @@ suite("API Authentication Test Suite", () => {
       proxy.onApiKeysChanged(() => changes++);
       await proxy.restoreApiKeys();
       assert.deepStrictEqual(proxy.getApiKeys(), combos.both);
-      assert.strictEqual(changes, 1);
+      // Keys are published per key, so restoring two keys notifies twice.
+      assert.strictEqual(changes, 2);
       await proxy.restoreApiKeys();
-      assert.strictEqual(changes, 1, "an unchanged restore notifies nobody");
+      assert.strictEqual(changes, 2, "an unchanged restore notifies nobody");
     });
 
     /** Secret reads that stay pending until the test resolves them. */
@@ -356,6 +357,38 @@ suite("API Authentication Test Suite", () => {
       secrets.answer(1, { "agent-maestro.adminApiKey": ADMIN });
       await Promise.all([first, second]);
       assert.deepStrictEqual(proxy.getApiKeys(), combos.adminOnly);
+    });
+
+    test("a change to one secret never reloads the other key", async () => {
+      // The Admin key was set this session but its save failed, so storage
+      // still holds the old value. An LLM secret event must not revert it.
+      const stored: Record<string, string> = {
+        "agent-maestro.adminApiKey": "old-admin-key-0001",
+      };
+      const { proxy } = createProxy({ get: async (key) => stored[key] });
+      proxy.setAdminApiKey(ADMIN);
+
+      stored["agent-maestro.llmApiKey"] = LLM;
+      await proxy.refreshApiKey("llm");
+
+      assert.deepStrictEqual(proxy.getApiKeys(), combos.both);
+    });
+
+    test("refreshing a cleared key keeps a key stored by another window", async () => {
+      // Clearing deletes the secret, then re-reads it. If another window has
+      // stored a new key by then, the re-read must keep that key.
+      const stored: Record<string, string> = {
+        "agent-maestro.adminApiKey": "newer-admin-key-0001",
+      };
+      const { proxy } = createProxy({ get: async (key) => stored[key] });
+      proxy.setAdminApiKey("old-admin-key-0001");
+
+      await proxy.refreshApiKey("admin");
+
+      assert.deepStrictEqual(proxy.getApiKeys().admin, {
+        status: "set",
+        value: "newer-admin-key-0001",
+      });
     });
 
     test("rejects disallowed origins before the handler runs", async () => {
@@ -539,11 +572,18 @@ suite("API Authentication Test Suite", () => {
       }
     });
 
-    test("manual keys need 16+ characters and no whitespace", () => {
+    test("manual keys need 16+ printable ASCII characters", () => {
       assert.strictEqual(validateAdminApiKey("a".repeat(16)), undefined);
+      assert.strictEqual(
+        validateAdminApiKey("!~#$%&'()*+,-./:;<=>?@[]^_`{|}"),
+        undefined,
+      );
       assert.ok(validateAdminApiKey("a".repeat(15)));
       assert.ok(validateAdminApiKey("a".repeat(16) + " "));
       assert.ok(validateAdminApiKey("abcdefgh\tijklmnop"));
+      assert.ok(validateAdminApiKey("abcdefghijklmnop\u0007"));
+      assert.ok(validateAdminApiKey("密钥".repeat(8)));
+      assert.ok(validateAdminApiKey("abcdefghijklmnopé"));
     });
   });
 });

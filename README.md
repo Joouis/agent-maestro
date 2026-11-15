@@ -144,7 +144,7 @@ The configurator warns about a workspace-root `.env` that can override user sett
 Authentication is disabled by default. Two optional keys are stored in VS Code SecretStorage:
 
 - **Agent Maestro: Set LLM API Key** grants only the LLM routes. An empty value clears it.
-- **Agent Maestro: Set Admin API Key** grants every route, including `/api/v1` (tasks, files, workspace) and the MCP server. Choose **Generate a random key** (copied to the clipboard and not shown again), enter one manually (at least 16 characters, no whitespace), or clear it.
+- **Agent Maestro: Set Admin API Key** grants every route, including `/api/v1` (tasks, files, workspace) and the MCP server. Choose **Generate a random key** (copied to the clipboard and not shown again), enter one manually (at least 16 printable ASCII characters, no spaces), or clear it.
 
 Generated placeholder client keys do not configure the server keys. Use separate values; AM warns if both keys are identical.
 

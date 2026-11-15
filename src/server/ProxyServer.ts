@@ -71,15 +71,11 @@ export class ProxyServer {
     admin: { status: "unset" },
   };
   private apiKeysChangeListeners: (() => void)[] = [];
-  // A restore publishes only if it is still the latest restore, and skips any
-  // key that was set locally while it was reading. Per-key counters keep a
-  // local set of one key from discarding a restored change to the other.
-  private restoreGeneration = 0;
-  private localSetGeneration: Record<keyof ApiKeys, number> = {
-    llm: 0,
-    admin: 0,
-  };
-  private pendingRestores: Promise<void> = Promise.resolve();
+  // Bumped per key by every refresh and local set of that key. A refresh
+  // publishes only if nothing newer touched the same key while it was
+  // reading; the other key is never affected.
+  private keyGeneration: Record<keyof ApiKeys, number> = { llm: 0, admin: 0 };
+  private pendingRefreshes: Promise<void> = Promise.resolve();
   private readonly codexSearch: CodexStandaloneWebSearch;
   private readonly webSearchProvider: ExaMcpWebSearchProvider;
 
@@ -421,7 +417,7 @@ export class ProxyServer {
     const state: ApiKeyState = trimmed
       ? { status: "set", value: trimmed }
       : { status: "unset" };
-    this.localSetGeneration[kind]++;
+    this.keyGeneration[kind]++;
     this.updateApiKeys({ ...this.apiKeys, [kind]: state });
   }
 
@@ -445,69 +441,67 @@ export class ProxyServer {
   /**
    * Restores both keys from secret storage. Must run before either server
    * starts. A failed read locks the key so its routes fail closed instead of
-   * silently opening. Also re-runs when another window changes a key, since
-   * SecretStorage is shared but each window holds keys in memory.
-   *
-   * Overlapping restores are possible (several secret events in a row). Only
-   * the latest restore publishes, so a slow read can never re-enable a key
-   * that was revoked in the meantime. A key set locally during the read keeps
-   * its local value; the other key still takes the restored value. The
-   * returned promise settles only once no restore is in flight, so activation
-   * never starts on superseded state.
+   * silently opening.
    */
   restoreApiKeys(): Promise<void> {
-    const generation = ++this.restoreGeneration;
-    const localSetsAtStart = { ...this.localSetGeneration };
-    const run = this.readStoredApiKeys().then((restored) => {
-      if (generation !== this.restoreGeneration) {
-        return;
+    void this.refreshApiKey("llm");
+    return this.refreshApiKey("admin");
+  }
+
+  /**
+   * Re-reads one key from secret storage, replacing its in-memory value.
+   *
+   * Refreshes are per key, so a change to one secret never reloads the other.
+   * That keeps a key that is set only in memory (its save failed) from being
+   * replaced by an unrelated secret event. Overlapping refreshes of the same
+   * key publish only the latest, so a slow read cannot re-enable a revoked
+   * key, and a local set during the read wins. The returned promise settles
+   * once no refresh is in flight, so activation never starts on superseded
+   * state.
+   */
+  refreshApiKey(kind: keyof ApiKeys): Promise<void> {
+    const generation = ++this.keyGeneration[kind];
+    const run = this.readStoredApiKey(kind).then((state) => {
+      if (generation === this.keyGeneration[kind]) {
+        this.updateApiKeys({ ...this.apiKeys, [kind]: state });
       }
-      const next = { ...this.apiKeys };
-      for (const kind of Object.keys(next) as (keyof ApiKeys)[]) {
-        if (this.localSetGeneration[kind] === localSetsAtStart[kind]) {
-          next[kind] = restored[kind];
-        }
-      }
-      this.updateApiKeys(next);
     });
-    this.pendingRestores = Promise.all([this.pendingRestores, run]).then(
+    this.pendingRefreshes = Promise.all([this.pendingRefreshes, run]).then(
       () => undefined,
     );
-    return this.waitForPendingRestores();
+    return this.waitForPendingRefreshes();
   }
 
-  private async waitForPendingRestores(): Promise<void> {
+  private async waitForPendingRefreshes(): Promise<void> {
     let current: Promise<void>;
     do {
-      current = this.pendingRestores;
+      current = this.pendingRefreshes;
       await current;
-    } while (current !== this.pendingRestores);
+    } while (current !== this.pendingRefreshes);
   }
 
-  private async readStoredApiKeys(): Promise<ApiKeys> {
-    const restore = async (kind: keyof ApiKeys): Promise<ApiKeyState> => {
-      try {
-        const stored = (
-          await this.context.secrets.get(SECRET_KEYS[kind])
-        )?.trim();
-        return stored ? { status: "set", value: stored } : { status: "unset" };
-      } catch (error) {
-        logger.error(
-          `Failed to restore ${KEY_LABELS[kind]} API key from secret storage. Routes it protects will return 503 until the key is set again:`,
-          error,
-        );
-        return { status: "locked" };
-      }
-    };
-    const [llm, admin] = await Promise.all([restore("llm"), restore("admin")]);
-    return { llm, admin };
+  private async readStoredApiKey(kind: keyof ApiKeys): Promise<ApiKeyState> {
+    try {
+      const stored = (
+        await this.context.secrets.get(SECRET_KEYS[kind])
+      )?.trim();
+      return stored ? { status: "set", value: stored } : { status: "unset" };
+    } catch (error) {
+      logger.error(
+        `Failed to restore ${KEY_LABELS[kind]} API key from secret storage. Routes it protects will return 503 until the key is set again:`,
+        error,
+      );
+      return { status: "locked" };
+    }
   }
 
   /** Keeps in-memory keys in sync with key changes made in other windows. */
   watchApiKeySecrets(): vscode.Disposable {
     return this.context.secrets.onDidChange((event) => {
-      if (Object.values(SECRET_KEYS).includes(event.key)) {
-        void this.restoreApiKeys();
+      for (const kind of Object.keys(SECRET_KEYS) as (keyof ApiKeys)[]) {
+        if (SECRET_KEYS[kind] === event.key) {
+          void this.refreshApiKey(kind);
+        }
       }
     });
   }

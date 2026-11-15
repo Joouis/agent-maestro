@@ -63,7 +63,7 @@ Both keys are compared in constant time with the existing `constantTimeEqual`. K
 A QuickPick offers:
 
 1. **Generate a random key.** The format is `am_` followed by 32 random bytes from `crypto.randomBytes` encoded as base64url, for 46 characters total. The prefix makes keys recognizable in logs and secret scanners. AM copies the key to the clipboard and shows a notification with a **Copy** button to copy it again. The key is not shown again after the notification closes. A lost key must be regenerated.
-2. **Enter a key manually.** The input is a password box. Validation requires at least 16 characters and no whitespace.
+2. **Enter a key manually.** The input is a password box. Validation requires at least 16 printable ASCII characters (`!` to `~`), so no spaces, control characters, or non-ASCII text. HTTP header values must be ASCII; any other key could be saved but never sent.
 3. **Clear the key.** This option is shown only when a key is set.
 
 The LLM API Key command keeps its current rules: an empty value clears it, and there is no length or format check.
@@ -80,6 +80,12 @@ If reading a secret fails, AM must not fall back to "no key". Today a failed LLM
 
 - The affected key enters a **locked** state, and every route that key would grant returns `503`, with a message to re-set the key.
 - Setting the key again clears the locked state.
+
+#### Cross-window sync
+
+VS Code SecretStorage is shared across windows, but each window holds keys in memory. AM subscribes to secret changes before the first read and refreshes **only the key whose secret changed**. Refreshing per key keeps a key that is set only in memory (its save failed) from being replaced by an unrelated secret event.
+
+Refreshes of the same key can overlap. Only the latest publishes, so a slow read cannot re-enable a revoked key, and a local set during a read wins. Clearing a key deletes the secret first and then re-reads it rather than forcing it unset, so a key stored by another window after the delete stays in effect. Activation waits until no refresh is in flight before starting either server.
 
 ### Authorization rules
 
@@ -176,7 +182,7 @@ When an origin list contains `*` and no key is configured, AM logs a `warn` at s
 
 Add `GET /health` to the Proxy Server. It returns `{ "name": "Agent Maestro" }` and needs no key or origin check.
 
-`isAgentMaestroService` in `src/utils/portUtils.ts` switches from `/api/v1/info` to `/health`, so port-conflict detection keeps working when keys are set. `/api/v1/info` is unchanged and requires the Admin key like the other `/api/v1` routes.
+`isAgentMaestroService` in `src/utils/portUtils.ts` switches from `/api/v1/info` to `/health`, so port-conflict detection keeps working when keys are set. If `/health` returns 404, it falls back to `/api/v1/info`, so a window still running a version without `/health` during an update is recognized and monitored instead of being reported as a port conflict. `/api/v1/info` is unchanged and requires the Admin key like the other `/api/v1` routes.
 
 The MCP Server's existing `/health` remains public.
 
@@ -189,7 +195,7 @@ Use FastMCP's `authenticate(request)` option. mcp-proxy calls it only when a ses
 
 On failure it throws a `Response` with the matching status (`403`, `401`, or `503`). mcp-proxy turns a thrown `Response` into an HTTP response with that status.
 
-Because later requests are authorized only by `mcp-session-id`, AM **restarts the MCP Server whenever the Admin API Key or the LLM API Key changes.** The LLM key matters too, because it changes which row of the rules table applies. A restart drops existing sessions. Clients must reconnect with the new key.
+Because later requests are authorized only by `mcp-session-id`, AM **restarts the MCP Server whenever the Admin API Key or the LLM API Key changes.** The LLM key matters too, because it changes which row of the rules table applies. A restart drops existing sessions. Clients must reconnect with the new key. A change to `mcpServerCorsOrigins` restarts the server the same way, so a session from a newly removed origin cannot keep calling tools.
 
 Public MCP endpoints that remain: `/health`, `/ready`, `/ping`. `/ready` reveals only session counts.
 
@@ -248,7 +254,7 @@ Release as a **minor** changeset that calls out each breaking row.
   - `isAgentMaestroService` detects AM with keys set.
 - **Commands:**
   - Generated keys match `^am_[A-Za-z0-9_-]{43}$`.
-  - Manual-entry validation enforces at least 16 characters and no whitespace.
+  - Manual-entry validation enforces at least 16 printable ASCII characters.
   - The same-value warning appears.
   - These are unit-tested where possible; the QuickPick and clipboard flows are UI and need manual verification.
 - **MCP:**

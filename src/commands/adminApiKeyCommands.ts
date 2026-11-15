@@ -51,7 +51,9 @@ export function registerAdminApiKeyCommands(
           );
           return;
         }
-        proxy.setAdminApiKey(null);
+        // Re-read instead of forcing unset: if another window stored a new key
+        // after this delete, that newer key must stay in effect.
+        await proxy.refreshApiKey("admin");
         vscode.window.showInformationMessage("Admin API key has been cleared.");
         return;
       }
@@ -63,7 +65,7 @@ export function registerAdminApiKeyCommands(
         const input = await vscode.window.showInputBox({
           title: "Set Admin API Key",
           prompt:
-            "Enter an Admin API key of at least 16 characters with no whitespace.",
+            "Enter an Admin API key of at least 16 printable ASCII characters with no spaces.",
           password: true,
           ignoreFocusOut: true,
           validateInput: validateAdminApiKey,

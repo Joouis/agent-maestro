@@ -25,49 +25,54 @@ export function isPortAvailable(port: number): Promise<boolean> {
 /**
  * Check if the port is being used by our Agent Maestro service
  */
-export function isAgentMaestroService(
+export async function isAgentMaestroService(
   port: number,
   serviceType: "proxy" | "mcp" = "proxy",
 ): Promise<boolean> {
+  const health = await probe(port, "/health");
+  if (serviceType === "mcp") {
+    return health?.body.trim() === "Agent Maestro MCP Server is running";
+  }
+  if (isAgentMaestroInfo(health?.body)) {
+    return true;
+  }
+  // Proxies older than /health only answer the public /api/v1/info. Without
+  // this fallback, a window still running an old version during an update
+  // looks like an unrelated app, and this window never takes the port over.
+  if (health?.status === 404) {
+    return isAgentMaestroInfo((await probe(port, "/api/v1/info"))?.body);
+  }
+  return false;
+}
+
+function isAgentMaestroInfo(body: string | undefined): boolean {
+  try {
+    return body !== undefined && JSON.parse(body).name === "Agent Maestro";
+  } catch {
+    return false;
+  }
+}
+
+function probe(
+  port: number,
+  path: string,
+): Promise<{ status?: number; body: string } | undefined> {
   return new Promise((resolve) => {
-    const endpoint = "/health";
-
     const req = http.get(
-      `http://0.0.0.0:${port}${endpoint}`,
-      {
-        timeout: 2000,
-      },
+      `http://0.0.0.0:${port}${path}`,
+      { timeout: 2000 },
       (res) => {
-        let data = "";
+        let body = "";
         res.on("data", (chunk) => {
-          data += chunk;
+          body += chunk;
         });
-
-        res.on("end", () => {
-          if (serviceType === "proxy") {
-            try {
-              const parsed = JSON.parse(data);
-              const isOurs = parsed.name === "Agent Maestro";
-              resolve(isOurs);
-            } catch {
-              resolve(false);
-            }
-          } else {
-            const isOurs =
-              data.trim() === "Agent Maestro MCP Server is running";
-            resolve(isOurs);
-          }
-        });
+        res.on("end", () => resolve({ status: res.statusCode, body }));
       },
     );
-
-    req.on("error", () => {
-      resolve(false);
-    });
-
+    req.on("error", () => resolve(undefined));
     req.on("timeout", () => {
       req.destroy();
-      resolve(false);
+      resolve(undefined);
     });
   });
 }

@@ -276,12 +276,12 @@ export class McpServer {
    * Restarts only a running server, dropping existing sessions so they must
    * re-authenticate. Serialized so rapid key changes do not interleave.
    */
-  restartIfRunning(): Promise<unknown> {
+  restartIfRunning(reason: string): Promise<unknown> {
     this.restartQueue = this.restartQueue.then(async () => {
       if (!this.isRunning) {
         return;
       }
-      logger.info("API keys changed; restarting MCP server to end sessions");
+      logger.info(`${reason}; restarting MCP server to end sessions`);
       try {
         await this.restart();
       } catch (error) {

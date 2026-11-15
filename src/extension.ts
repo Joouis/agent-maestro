@@ -63,7 +63,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // the read is not missed. Keys must be loaded before either server starts.
   context.subscriptions.push(proxy.watchApiKeySecrets());
   await proxy.restoreApiKeys();
-  proxy.onApiKeysChanged(() => void mcpServer.restartIfRunning());
+  proxy.onApiKeysChanged(
+    () => void mcpServer.restartIfRunning("API keys changed"),
+  );
 
   // Register all commands
   registerAllCommands(context, controller, proxy, mcpServer);
@@ -78,6 +80,11 @@ export async function activate(context: vscode.ExtensionContext) {
         event.affectsConfiguration(CONFIG_KEYS.MCP_SERVER_CORS_ORIGINS)
       ) {
         proxy.warnIfWildcardWithoutKeys();
+      }
+      // MCP checks origins only when a session opens; restart so sessions
+      // from a newly removed origin cannot keep calling tools.
+      if (event.affectsConfiguration(CONFIG_KEYS.MCP_SERVER_CORS_ORIGINS)) {
+        void mcpServer.restartIfRunning("MCP origin allowlist changed");
       }
     }),
   );
