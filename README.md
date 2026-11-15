@@ -141,13 +141,31 @@ The configurator warns about a workspace-root `.env` that can override user sett
 
 ## Access and Authentication
 
-Authentication is disabled by default. **Agent Maestro: Set LLM API Key** stores an optional key in VS Code SecretStorage; an empty value disables it again. Generated placeholder client keys do not configure the server key. When authentication is enabled, configure the same key in your client, using:
+Authentication is disabled by default. Two optional keys are stored in VS Code SecretStorage:
 
-| Route prefix       | Header                        |
-| ------------------ | ----------------------------- |
-| `/api/anthropic/*` | `x-api-key: <key>`            |
-| `/api/openai/*`    | `Authorization: Bearer <key>` |
-| `/api/gemini/*`    | `x-goog-api-key: <key>`       |
+- **Agent Maestro: Set LLM API Key** grants only the LLM routes. An empty value clears it.
+- **Agent Maestro: Set Admin API Key** grants every route, including `/api/v1` (tasks, files, workspace) and the MCP server. Choose **Generate a random key** (copied to the clipboard and not shown again), enter one manually (at least 16 characters, no whitespace), or clear it.
+
+Generated placeholder client keys do not configure the server keys. Use separate values; AM warns if both keys are identical.
+
+| Configured keys | LLM routes           | `/api/v1/*`, `/openapi.json`, MCP |
+| --------------- | -------------------- | --------------------------------- |
+| None            | Allowed              | Allowed                           |
+| LLM only        | LLM key or Admin key | Rejected (403)                    |
+| Admin only      | Admin key            | Admin key                         |
+| Both            | LLM key or Admin key | Admin key                         |
+
+`GET /health` is always public. Send the key with:
+
+| Route prefix                 | Header                                              |
+| ---------------------------- | --------------------------------------------------- |
+| `/api/anthropic/*`           | `x-api-key: <key>`                                  |
+| `/api/openai/*`              | `Authorization: Bearer <key>`                       |
+| `/api/gemini/*`              | `x-goog-api-key: <key>`                             |
+| `/api/v1/*`, `/openapi.json` | `Authorization: Bearer <key>` or `x-api-key: <key>` |
+| MCP server                   | `Authorization: Bearer <key>` or `x-api-key: <key>` |
+
+If a stored key cannot be read at startup, the routes it protects return 503 until you set it again; AM never falls back to open access. Changing either key restarts the MCP server, so connected MCP clients must reconnect.
 
 See [complete request examples](docs/llm-compatibility.md#request-examples).
 
@@ -157,7 +175,18 @@ Set `ANTHROPIC_API_KEY` in the chosen settings file's `env` section and remove `
 
 ### Remote Access
 
-The HTTP server listens on a wildcard address. **The LLM key does not protect `/api/v1` task, file, or workspace operations, or the separate MCP server.** Before making either port accessible beyond a trusted local environment, put authenticated access controls in front of it. CORS is not an access-control substitute; AM currently allows cross-origin browser requests. See the [remote demo requirements](examples/demo-site/README.md#remote-access).
+Both servers listen on all interfaces. **Without keys, AM trusts anything that can reach its ports**, including LAN peers. Set an Admin API Key before exposing either port beyond your machine.
+
+To reach AM from another machine with VS Code port forwarding, forward ports `23333` and `23334` and keep the Ports-panel protocol at **HTTP**: AM serves plain HTTP and the tunnel supplies HTTPS. A **public** tunnel lets anyone reach AM, so the keys are the only protection. A **private** tunnel requires a dev tunnels sign-in that CLI clients cannot complete without extra tokens.
+
+### Browser Origins
+
+Requests that carry an `Origin` header (browsers) are rejected with 403 unless the origin is allowed. CLIs and SDKs send no `Origin` and are unaffected. To allow a web app, add its exact origin (`scheme://host[:port]`, such as `http://localhost:5173` or `https://xxxx.devtunnels.ms`) to:
+
+- `agent-maestro.proxyServerCorsOrigins` for the API server.
+- `agent-maestro.mcpServerCorsOrigins` for the MCP server.
+
+Changes apply without a restart. `*` allows any origin; combine it with keys, because AM logs a warning when `*` is used without any key. Origin checks stop drive-by web pages but are not authentication, and they do not cover DNS rebinding when no key is set. See the [remote demo requirements](examples/demo-site/README.md#remote-access).
 
 ## API and Commands
 
@@ -177,6 +206,7 @@ Use these Command Palette actions to manage the extension:
 - **Agent Maestro: Start API Server**, **Stop API Server**, **Restart API Server**, **Get API Server Status**.
 - **Agent Maestro: Start MCP Server**, **Stop MCP Server**, **Get MCP Server Status**, **Install MCP Configuration**.
 - **Agent Maestro: Get Extensions Status**.
+- **Agent Maestro: Set LLM API Key** and **Set Admin API Key** to configure server authentication; see [Access and Authentication](#access-and-authentication).
 - **Agent Maestro: Set Exa API Key** to configure or clear an optional search-provider key.
 - **Agent Maestro: Configure Copilot Prompt Cache** to choose **Implicit** (`false`, recommended for AM) or **Explicit** (`true`, uses prompt cache breakpoints). Startup cache warnings use a modal dialog; settings change only after confirmation. Successfully applying implicit mode resets the reminder, so a later mode change can trigger a new warning.
 
@@ -187,6 +217,8 @@ Use these Command Palette actions to manage the extension:
 | Connection refused                            | Keep the VS Code window open; check **Get API Server Status** and the client's configured port.                          |
 | No models in the setup picker                 | Check Copilot sign-in, model access, and model-discovery messages in AM Output.                                          |
 | HTTP 401                                      | Match the server key and provider-specific header; see the Claude Code authentication note above.                        |
+| HTTP 403 from a browser app                   | Add the app's exact origin to `agent-maestro.proxyServerCorsOrigins` or `mcpServerCorsOrigins`.                          |
+| HTTP 403 on `/api/v1` or MCP                  | Only the LLM key is set; run **Set Admin API Key** and send that key.                                                    |
 | Client answers but AM has no matching request | Start a new client session and inspect its active provider/base URL and project/environment overrides.                   |
 | MCP unavailable with Kilo                     | Select Kilo as the default Roo extension and reload; check the generated MCP URL for custom ports.                       |
 | GPT requests always show `cache_read: 0`      | Run **Configure Copilot Prompt Cache** and choose **Implicit** (`false`, recommended for AM); see the explanation below. |

@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { ProxyServer } from "../server/ProxyServer";
 import { LLM_API_KEY_SECRET_KEY } from "../utils/constant";
 import { logger } from "../utils/logger";
+import { confirmDistinctFromOtherKey } from "./apiKeyPrompts";
 import { createCommandHandler } from "./commandHandler";
 
 export function registerLlmApiKeyCommands(
@@ -12,8 +13,7 @@ export function registerLlmApiKeyCommands(
   const disposable = vscode.commands.registerCommand(
     "agent-maestro.setLlmApiKey",
     createCommandHandler(async () => {
-      const currentKey = proxy.getLlmApiKey();
-      const hasKey = !!currentKey;
+      const hasKey = proxy.getApiKeys().llm.status !== "unset";
 
       const input = await vscode.window.showInputBox({
         title: "Set LLM API Key",
@@ -51,7 +51,15 @@ export function registerLlmApiKeyCommands(
           "LLM API key has been cleared. Authentication is now disabled.",
         );
       } else {
-        // User provided a key
+        const adminKey = proxy.getApiKeys().admin;
+        if (
+          !(await confirmDistinctFromOtherKey(
+            trimmedInput,
+            adminKey.status === "set" ? adminKey.value : null,
+          ))
+        ) {
+          return;
+        }
         proxy.setLlmApiKey(trimmedInput);
         try {
           await context.secrets.store(LLM_API_KEY_SECRET_KEY, trimmedInput);

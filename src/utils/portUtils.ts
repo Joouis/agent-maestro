@@ -30,7 +30,7 @@ export function isAgentMaestroService(
   serviceType: "proxy" | "mcp" = "proxy",
 ): Promise<boolean> {
   return new Promise((resolve) => {
-    const endpoint = serviceType === "proxy" ? "/api/v1/info" : "/health";
+    const endpoint = "/health";
 
     const req = http.get(
       `http://0.0.0.0:${port}${endpoint}`,

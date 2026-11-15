@@ -1839,7 +1839,10 @@ suite("Codex standalone web search", () => {
       const app = new OpenAPIHono();
       app.use(
         "*",
-        createOpenAIAuthMiddleware(() => "secret"),
+        createOpenAIAuthMiddleware(() => ({
+          llm: { status: "set", value: "secret" },
+          admin: { status: "unset" },
+        })),
       );
       registerCodexSearchRoutes(app, {
         codexSearch: createStandaloneSearch({

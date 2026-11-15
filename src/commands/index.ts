@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { ExtensionController } from "../core/controller";
 import { McpServer } from "../server/McpServer";
 import { ProxyServer } from "../server/ProxyServer";
+import { registerAdminApiKeyCommands } from "./adminApiKeyCommands";
 import { registerConfiguratorCommands } from "./configuratorCommands";
 import { registerLlmApiKeyCommands } from "./llmApiKeyCommands";
 import { registerMcpCommands } from "./mcpCommands";
@@ -23,5 +24,6 @@ export function registerAllCommands(
   registerModelCommands(context);
   registerStatusCommands(controller, context);
   registerLlmApiKeyCommands(proxy, context);
+  registerAdminApiKeyCommands(proxy, context);
   registerWebSearchCommands(context);
 }
