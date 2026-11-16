@@ -1,10 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import * as assert from "assert";
-import type { IncomingMessage } from "http";
 import * as vscode from "vscode";
 
-import type { ExtensionController } from "../core/controller";
-import { authorizeMcpRequest } from "../server/McpServer";
 import { ProxyServer } from "../server/ProxyServer";
 import {
   type ApiKeyState,
@@ -41,7 +38,7 @@ function outcome(result: ReturnType<typeof checkAdminAccess>): Outcome {
 
 /** Proxy instance whose keys and in-process Hono app are driven directly. */
 function createProxy(secrets?: Partial<vscode.SecretStorage>) {
-  const proxy = new ProxyServer({} as ExtensionController, 23333, {
+  const proxy = new ProxyServer(23333, {
     secrets,
   } as vscode.ExtensionContext);
   const app = (proxy as unknown as { app: OpenAPIHono }).app;
@@ -275,14 +272,8 @@ suite("API Authentication Test Suite", () => {
         "agent-maestro.adminApiKey": ADMIN,
       };
       const { proxy } = createProxy({ get: async (key) => stored[key] });
-      let changes = 0;
-      proxy.onApiKeysChanged(() => changes++);
       await proxy.restoreApiKeys();
       assert.deepStrictEqual(proxy.getApiKeys(), combos.both);
-      // Keys are published per key, so restoring two keys notifies twice.
-      assert.strictEqual(changes, 2);
-      await proxy.restoreApiKeys();
-      assert.strictEqual(changes, 2, "an unchanged restore notifies nobody");
     });
 
     /** Secret reads that stay pending until the test resolves them. */
@@ -481,84 +472,6 @@ suite("API Authentication Test Suite", () => {
       );
       assert.strictEqual(isOriginAllowed("https://x.example", ["*"]), true);
       assert.strictEqual(isOriginAllowed("https://x.example", []), false);
-    });
-  });
-
-  suite("authorizeMcpRequest", () => {
-    const request = (headers: Record<string, string>) =>
-      ({ headers }) as unknown as IncomingMessage;
-
-    function statusOf(fn: () => void): number | "ok" {
-      try {
-        fn();
-        return "ok";
-      } catch (error) {
-        assert.ok(error instanceof Response);
-        return error.status;
-      }
-    }
-
-    test("allows clients without Origin when no keys are set", () => {
-      assert.strictEqual(
-        statusOf(() => authorizeMcpRequest(request({}), combos.none, [])),
-        "ok",
-      );
-    });
-
-    test("rejects disallowed origins even without keys", () => {
-      assert.strictEqual(
-        statusOf(() =>
-          authorizeMcpRequest(
-            request({ origin: "https://evil.example" }),
-            combos.none,
-            [],
-          ),
-        ),
-        403,
-      );
-      assert.strictEqual(
-        statusOf(() =>
-          authorizeMcpRequest(
-            request({ origin: "https://ok.example" }),
-            combos.none,
-            ["https://ok.example"],
-          ),
-        ),
-        "ok",
-      );
-    });
-
-    test("applies the Admin rules with either header", () => {
-      assert.strictEqual(
-        statusOf(() => authorizeMcpRequest(request({}), combos.llmOnly, [])),
-        403,
-      );
-      assert.strictEqual(
-        statusOf(() => authorizeMcpRequest(request({}), combos.both, [])),
-        401,
-      );
-      assert.strictEqual(
-        statusOf(() =>
-          authorizeMcpRequest(
-            request({ authorization: `Bearer ${ADMIN}` }),
-            combos.both,
-            [],
-          ),
-        ),
-        "ok",
-      );
-      assert.strictEqual(
-        statusOf(() =>
-          authorizeMcpRequest(request({ "x-api-key": ADMIN }), combos.both, []),
-        ),
-        "ok",
-      );
-      assert.strictEqual(
-        statusOf(() =>
-          authorizeMcpRequest(request({ "x-api-key": LLM }), combos.both, []),
-        ),
-        401,
-      );
     });
   });
 

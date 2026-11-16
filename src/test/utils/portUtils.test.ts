@@ -25,19 +25,16 @@ suite("detectAgentMaestroService", () => {
   const cases: [
     string,
     Record<string, { status: number; body: string }>,
-    "proxy" | "mcp",
     "current" | "legacy" | undefined,
   ][] = [
     [
       "current proxy via /health",
       { "/health": { status: 200, body: AM_INFO } },
-      "proxy",
       "current",
     ],
     [
       "legacy proxy without /health is detected via /api/v1/info",
       { "/api/v1/info": { status: 200, body: AM_INFO } },
-      "proxy",
       "legacy",
     ],
     [
@@ -46,32 +43,17 @@ suite("detectAgentMaestroService", () => {
         "/health": { status: 200, body: "ok" },
         "/api/v1/info": { status: 200, body: AM_INFO },
       },
-      "proxy",
       undefined,
     ],
-    ["unrelated app with neither route", {}, "proxy", undefined],
-    [
-      "MCP server via /health",
-      {
-        "/health": { status: 200, body: "Agent Maestro MCP Server is running" },
-      },
-      "mcp",
-      "current",
-    ],
-    [
-      "MCP never falls back to /api/v1/info",
-      { "/api/v1/info": { status: 200, body: AM_INFO } },
-      "mcp",
-      undefined,
-    ],
+    ["unrelated app with neither route", {}, undefined],
   ];
 
-  for (const [name, routes, serviceType, expected] of cases) {
+  for (const [name, routes, expected] of cases) {
     test(name, async () => {
       const server = await serve(routes);
       try {
         assert.strictEqual(
-          await detectAgentMaestroService(server.port, serviceType),
+          await detectAgentMaestroService(server.port),
           expected,
         );
       } finally {

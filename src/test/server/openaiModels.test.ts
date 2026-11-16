@@ -3,7 +3,6 @@ import * as assert from "assert";
 import OpenAI from "openai";
 import * as vscode from "vscode";
 
-import type { ExtensionController } from "../../core/controller";
 import { ProxyServer } from "../../server/ProxyServer";
 import { registerOpenaiModelsRoutes } from "../../server/routes/openai/openaiModelsRoutes";
 import { registerOpenaiRoutes } from "../../server/routes/openai/openaiRoutes";
@@ -100,11 +99,7 @@ suite("OpenAI Model Discovery Test Suite", () => {
       queries++;
       return [mockModel("grok-test")];
     };
-    const proxy = new ProxyServer(
-      {} as ExtensionController,
-      23333,
-      {} as vscode.ExtensionContext,
-    );
+    const proxy = new ProxyServer(23333, {} as vscode.ExtensionContext);
     proxy.setLlmApiKey("server-key");
     const app = (proxy as unknown as { app: OpenAPIHono }).app;
     for (const route of [

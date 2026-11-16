@@ -1,0 +1,5 @@
+---
+"agent-maestro": major
+---
+
+**Breaking:** remove third-party extension task orchestration and the MCP task server; Agent Maestro now focuses on the model API proxy. Removed: all `/api/v1/roo/*` routes and `POST /api/v1/cline/task`; the MCP server (default port `23334`) and its **Execute Roo Tasks** tool; the **Start MCP Server**, **Stop MCP Server**, **Get MCP Server Status**, **Install MCP Configuration**, and **Get Extensions Status** commands; the `agent-maestro.mcpServerPort`, `agent-maestro.mcpServerCorsOrigins`, `agent-maestro.rooVariantIdentifiers`, and `agent-maestro.defaultRooIdentifier` settings and the `AGENT_MAESTRO_MCP_PORT` environment variable; the `extensions` field of `GET /api/v1/info`; and the Roo task demo site. Agent Maestro no longer activates Roo Code, Cline, or Kilo Code; use the Cline or Kilo Code CLIs to drive those agents from scripts, and remove any "Agent Maestro" entry (`http://localhost:23334/mcp`) that **Install MCP Configuration** added to Roo Code or Kilo Code MCP settings. The LLM proxy, client configurators, Exa search, file, workspace, and model-discovery routes, API keys, and origin policy are unchanged.

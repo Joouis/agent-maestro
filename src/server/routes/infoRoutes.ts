@@ -1,6 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 
-import { ExtensionController } from "../../core/controller";
 import { logger } from "../../utils/logger";
 import { getSystemInfo } from "../../utils/systemInfo";
 import { ErrorResponseSchema, SystemInfoSchema } from "../schemas/common";
@@ -12,7 +11,7 @@ const systemInfoRoute = createRoute({
   tags: ["System"],
   summary: "Get Agent Maestro system information",
   description:
-    "Returns comprehensive system information including extension status, VSCode version, OS details, workspace, and MCP server status",
+    "Returns the extension version, VS Code version, OS details, and workspace",
   responses: {
     200: {
       content: {
@@ -33,14 +32,11 @@ const systemInfoRoute = createRoute({
   },
 });
 
-export function registerInfoRoutes(
-  app: OpenAPIHono,
-  controller: ExtensionController,
-) {
+export function registerInfoRoutes(app: OpenAPIHono) {
   // GET /api/v1/info - Get system and extension information
   app.openapi(systemInfoRoute, async (c) => {
     try {
-      const systemInfo = getSystemInfo(controller);
+      const systemInfo = getSystemInfo();
       return c.json(systemInfo, 200);
     } catch (error) {
       logger.error("Error retrieving system information:", error);

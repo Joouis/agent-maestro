@@ -17,7 +17,7 @@ export interface ApiKeys {
   admin: ApiKeyState;
 }
 
-export type AccessResult =
+type AccessResult =
   | { ok: true }
   | {
       ok: false;
@@ -69,7 +69,7 @@ export function checkLlmAccess(
 }
 
 /**
- * Control routes (`/api/v1/*`, `/openapi.json`, MCP) accept only the Admin key.
+ * Control routes (`/api/v1/*`, `/openapi.json`) accept only the Admin key.
  * A configured LLM key without an Admin key signals remote exposure, so
  * control routes are refused rather than left open.
  */
@@ -92,7 +92,7 @@ export function checkAdminAccess(
   return ALLOW;
 }
 
-export function readBearerToken(
+function readBearerToken(
   authorization: string | undefined,
 ): string | undefined {
   return authorization?.startsWith("Bearer ")
@@ -100,10 +100,8 @@ export function readBearerToken(
     : undefined;
 }
 
-/** Credentials accepted on control routes and the MCP Server. */
-export function readAdminCredentials(
-  header: HeaderReader,
-): (string | undefined)[] {
+/** Credentials accepted on control routes. */
+function readAdminCredentials(header: HeaderReader): (string | undefined)[] {
   return [readBearerToken(header("authorization")), header("x-api-key")];
 }
 
@@ -195,7 +193,7 @@ export function createGeminiAuthMiddleware(getKeys: () => ApiKeys) {
   );
 }
 
-export function adminAccessMessage(
+function adminAccessMessage(
   result: Extract<AccessResult, { ok: false }>,
 ): string {
   switch (result.reason) {

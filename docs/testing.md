@@ -50,7 +50,7 @@ This opt-in check consumes Copilot model quota. It complements extension-host te
 
 1. Record the candidate commit, AM version, VS Code build, bundled Copilot version, all three CLI versions, and the exact model IDs. Use the intended release host; testing Insiders does not establish compatibility with stable VS Code.
 2. Build the candidate and launch its **full extension** in a dedicated VS Code development window. Use an empty window so proxy error diagnostics cannot write into the inspected repository. A route-only harness does not cover extension activation, authentication, or the full proxy server.
-3. Set unused ports through `AGENT_MAESTRO_PROXY_PORT` and `AGENT_MAESTRO_MCP_PORT`, and verify the actual listener. Leave existing AM windows and services untouched. Check `/openapi.json` and `/api/v1/lm/chatModels`, and confirm the resolved models use the intended provider.
+3. Set an unused port through `AGENT_MAESTRO_PROXY_PORT`, and verify the actual listener. Leave existing AM windows and services untouched. Check `/openapi.json` and `/api/v1/lm/chatModels`, and confirm the resolved models use the intended provider.
 4. Record the fixture repository's commit and working-tree status. Obtain any required workspace-trust approval; VS Code and the CLIs maintain separate trust state. Do not silently trust a folder or bypass tool permissions.
 5. Record the [Copilot cache mode](copilot-gpt-prompt-cache.md). Recommend implicit mode for AM's GPT requests, but never change shared User/Workspace settings without approval. If the user keeps an unset value, record the mode as unknown rather than inferring it from the visible default.
 
@@ -77,8 +77,8 @@ Give each client the **same user prompt** against the same fixture revision. Kee
 
 ```text
 Perform a bounded, read-only security inspection of this checkout.
-Follow one MCP tool-invocation flow through its input, approval/trust checks,
-and execution or resource-access endpoint. Inspect at most 10 source files.
+Follow one authenticated control-API flow through its input, access checks,
+and file or workspace endpoint. Inspect at most 10 source files.
 Use only local source reads and searches. Do not modify files or settings,
 run builds/tests/application code or exploits, install anything, start agents
 or services, use network tools, or access credentials/private user data.

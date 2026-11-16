@@ -6,8 +6,6 @@
 
 Use your preferred coding client with the GitHub Copilot models available in VS Code. Agent Maestro provides a local API bridge for Claude Code, Claude Desktop, Codex, Gemini CLI, Grok Build, and other compatible clients. Model requests use VS Code's Copilot connection and remain subject to your account's model access and usage limits.
 
-For automation, Agent Maestro also exposes Roo Code tasks through REST and MCP: start work, follow progress, and respond to tool approvals from another application. Cline integration currently supports basic task creation.
-
 ![Claude Code setup](https://media.githubusercontent.com/media/Joouis/agent-maestro/main/assets/configure-claude-code-demo.gif)
 
 ## Features
@@ -18,7 +16,6 @@ For automation, Agent Maestro also exposes Roo Code tasks through REST and MCP: 
 - **Replay Responses reasoning on compatible hosts.** Agent Maestro detects the host's optional thinking runtime and preserves encrypted state across tool continuations without enabling proposed APIs. See [reasoning compatibility](docs/openai-responses-api-design.md#reasoning-state).
 - **Search for current information.** Exa-backed search supports declared Anthropic/Responses web-search tools and experimental Codex standalone search, with source links and protocol-specific limits.
 - **Configure longer conversations.** Claude Code, Codex, and Grok Build setup uses the selected model's advertised context window. Streaming heartbeats keep supported clients connected while a response is pending.
-- **Automate Roo tasks.** Use HTTP/SSE for task progress and interaction, or the MCP task tool for up to 20 concurrent tasks.
 
 This README and the [documentation index](docs/README.md) describe this checkout. Features in pending `.changeset/` entries may not yet be available in the installed Marketplace release; check the [changelog](CHANGELOG.md) for released versions.
 
@@ -28,7 +25,6 @@ This README and the [documentation index](docs/README.md) describe this checkout
 
 - VS Code **1.142.0 or newer**, with GitHub Copilot signed in and eligible models available. The LLM proxy currently selects models from the `copilot` vendor.
 - Install the client you want to use: Claude Code, Claude Desktop, Codex, Gemini CLI, or Grok Build. Installing a client alone does not provide proxy models.
-- Install Roo Code or a compatible variant such as Kilo Code only if you need task orchestration. Cline is optional and currently supports task creation only.
 
 For source development, use Node.js 22 or newer and the pnpm version specified in [package.json](package.json).
 
@@ -40,7 +36,7 @@ Install [Agent Maestro from VS Code Marketplace](https://marketplace.visualstudi
 
 Open your project in VS Code and keep that window running while using the client. The API server starts when Agent Maestro activates, normally at `http://127.0.0.1:23333`.
 
-Run **Agent Maestro: Get API Server Status** from the Command Palette to confirm the server and active port. If it is stopped, run **Agent Maestro: Start API Server**. You do not need the separate MCP server for LLM proxy requests.
+Run **Agent Maestro: Get API Server Status** from the Command Palette to confirm the server and active port. If it is stopped, run **Agent Maestro: Start API Server**.
 
 ### 2. Configure Your Client
 
@@ -114,24 +110,16 @@ Run **Agent Maestro: Select Fallback Model** to choose a model for requests whos
 
 ## Configuration
 
-Use VS Code settings for the following options. Port and default-Roo settings can be set per workspace; the other settings have application scope.
+Use VS Code settings for the following options. The port can be set per workspace; the other settings have application scope.
 
-| Setting                                     | Default                      | Purpose                                             |
-| ------------------------------------------- | ---------------------------- | --------------------------------------------------- |
-| `agent-maestro.proxyServerPort`             | `23333`                      | Proxy HTTP port                                     |
-| `agent-maestro.mcpServerPort`               | `23334`                      | MCP port                                            |
-| `agent-maestro.defaultRooIdentifier`        | `rooveterinaryinc.roo-cline` | Default Roo-compatible extension                    |
-| `agent-maestro.rooVariantIdentifiers`       | `["kilocode.kilo-code"]`     | Additional Roo variants to discover                 |
-| `agent-maestro.fallbackModelId`             | `""`                         | Fallback model; configure through the command above |
-| `agent-maestro.allowOutsideWorkspaceAccess` | `false`                      | Permit filesystem access outside the workspace      |
+| Setting                                     | Default | Purpose                                                          |
+| ------------------------------------------- | ------- | ---------------------------------------------------------------- |
+| `agent-maestro.proxyServerPort`             | `23333` | Proxy HTTP port                                                  |
+| `agent-maestro.fallbackModelId`             | `""`    | Fallback model; configure through the command above              |
+| `agent-maestro.allowOutsideWorkspaceAccess` | `false` | Permit filesystem access outside the workspace                   |
+| `agent-maestro.proxyServerCorsOrigins`      | `[]`    | Browser origins allowed; see [Browser Origins](#browser-origins) |
 
-`AGENT_MAESTRO_PROXY_PORT` and `AGENT_MAESTRO_MCP_PORT` environment variables override the corresponding settings. Restart the extension host after changing ports or extension identifiers.
-
-### Roo/Kilo and MCP Setup
-
-The MCP server normally uses port `23334` and requires the configured default Roo extension to provide a task manager. If only Kilo Code is installed, set `agent-maestro.defaultRooIdentifier` to `kilocode.kilo-code` and reload VS Code before starting MCP. HTTP task requests can also select an installed variant explicitly with `extensionId`.
-
-**Install MCP Configuration** currently writes `http://localhost:23334/mcp` regardless of the configured port. If you use a custom MCP port, update that URL in the generated client configuration manually after installation.
+The `AGENT_MAESTRO_PROXY_PORT` environment variable overrides the port setting. Restart the extension host after changing the port.
 
 ### Gemini Settings and Existing Overrides
 
@@ -144,16 +132,16 @@ The configurator warns about a workspace-root `.env` that can override user sett
 Authentication is disabled by default. Two optional keys are stored in VS Code SecretStorage:
 
 - **Agent Maestro: Set LLM API Key** grants only the LLM routes. An empty value clears it.
-- **Agent Maestro: Set Admin API Key** grants every route, including `/api/v1` (tasks, files, workspace) and the MCP server. Choose **Generate a random key** (copied to the clipboard and not shown again), enter one manually (at least 16 printable ASCII characters, no spaces), or clear it.
+- **Agent Maestro: Set Admin API Key** grants every route, including `/api/v1` (files, workspace, model discovery). Choose **Generate a random key** (copied to the clipboard and not shown again), enter one manually (at least 16 printable ASCII characters, no spaces), or clear it.
 
 Generated placeholder client keys do not configure the server keys. Use separate values; AM warns if both keys are identical.
 
-| Configured keys | LLM routes           | `/api/v1/*`, `/openapi.json`, MCP |
-| --------------- | -------------------- | --------------------------------- |
-| None            | Allowed              | Allowed                           |
-| LLM only        | LLM key or Admin key | Rejected (403)                    |
-| Admin only      | Admin key            | Admin key                         |
-| Both            | LLM key or Admin key | Admin key                         |
+| Configured keys | LLM routes           | `/api/v1/*`, `/openapi.json` |
+| --------------- | -------------------- | ---------------------------- |
+| None            | Allowed              | Allowed                      |
+| LLM only        | LLM key or Admin key | Rejected (403)               |
+| Admin only      | Admin key            | Admin key                    |
+| Both            | LLM key or Admin key | Admin key                    |
 
 `GET /health` is always public. Send the key with:
 
@@ -163,9 +151,8 @@ Generated placeholder client keys do not configure the server keys. Use separate
 | `/api/openai/*`              | `Authorization: Bearer <key>`                       |
 | `/api/gemini/*`              | `x-goog-api-key: <key>`                             |
 | `/api/v1/*`, `/openapi.json` | `Authorization: Bearer <key>` or `x-api-key: <key>` |
-| MCP server                   | `Authorization: Bearer <key>` or `x-api-key: <key>` |
 
-If a stored key cannot be read at startup, the routes it protects return 503 until you set it again; AM never falls back to open access. Changing either key restarts the MCP server, so connected MCP clients must reconnect.
+If a stored key cannot be read at startup, the routes it protects return 503 until you set it again; AM never falls back to open access.
 
 See [complete request examples](docs/llm-compatibility.md#request-examples).
 
@@ -175,18 +162,13 @@ Set `ANTHROPIC_API_KEY` in the chosen settings file's `env` section and remove `
 
 ### Remote Access
 
-Both servers listen on all interfaces. **Without keys, AM trusts anything that can reach its ports**, including LAN peers. Set an Admin API Key before exposing either port beyond your machine.
+The server listens on all interfaces. **Without keys, AM trusts anything that can reach its port**, including LAN peers. Set an Admin API Key before exposing the port beyond your machine.
 
-To reach AM from another machine with VS Code port forwarding, forward ports `23333` and `23334` and keep the Ports-panel protocol at **HTTP**: AM serves plain HTTP and the tunnel supplies HTTPS. A **public** tunnel lets anyone reach AM, so the keys are the only protection. A **private** tunnel requires a dev tunnels sign-in that CLI clients cannot complete without extra tokens.
+To reach AM from another machine with VS Code port forwarding, forward port `23333` and keep the Ports-panel protocol at **HTTP**: AM serves plain HTTP and the tunnel supplies HTTPS. A **public** tunnel lets anyone reach AM, so the keys are the only protection. A **private** tunnel requires a dev tunnels sign-in that CLI clients cannot complete without extra tokens.
 
 ### Browser Origins
 
-Requests that carry an `Origin` header (browsers) are rejected with 403 unless the origin is allowed. CLIs and SDKs send no `Origin` and are unaffected. To allow a web app, add its exact origin (`scheme://host[:port]`, such as `http://localhost:5173` or `https://xxxx.devtunnels.ms`) to:
-
-- `agent-maestro.proxyServerCorsOrigins` for the API server.
-- `agent-maestro.mcpServerCorsOrigins` for the MCP server.
-
-Changes apply without a restart. `*` allows any origin; combine it with keys, because AM logs a warning when `*` is used without any key. Origin checks stop drive-by web pages but are not authentication, and they do not cover DNS rebinding when no key is set. See the [remote demo requirements](examples/demo-site/README.md#remote-access).
+Requests that carry an `Origin` header (browsers) are rejected with 403 unless the origin is allowed. CLIs and SDKs send no `Origin` and are unaffected. To allow a web app, add its exact origin (`scheme://host[:port]`, such as `http://localhost:5173` or `https://xxxx.devtunnels.ms`) to `agent-maestro.proxyServerCorsOrigins`. Changes apply without a restart. `*` allows any origin; combine it with keys, because AM logs a warning when `*` is used without any key. Origin checks stop drive-by web pages but are not authentication, and they do not cover DNS rebinding when no key is set.
 
 ## API and Commands
 
@@ -198,14 +180,12 @@ The default HTTP origin is `http://127.0.0.1:23333`. Inspect the running instanc
 | OpenAI                  | `/api/openai/v1/models`, `/api/openai/v1/models/{model_id}`, `/api/openai/v1/chat/completions`, `/api/openai/v1/responses` | [LLM compatibility](docs/llm-compatibility.md#endpoints), [Responses compatibility](docs/openai-responses-api-design.md) |
 | Gemini                  | `/api/gemini/v1beta/models/{model}:generateContent`, `:streamGenerateContent`, `:countTokens`                              | [LLM compatibility](docs/llm-compatibility.md#endpoints)                                                                 |
 | Codex standalone search | `/api/openai/v1/alpha/search`                                                                                              | [Search compatibility](docs/llm-compatibility.md#web-search)                                                             |
-| Roo and Cline           | `/api/v1/roo/*`, `/api/v1/cline/task`                                                                                      | [Roo HTTP/SSE](docs/roo-routes-events.md)                                                                                |
+| Files and workspace     | `/api/v1/fs/read`, `/api/v1/fs/write`, `/api/v1/workspace/*`, `/api/v1/info`                                               | Running OpenAPI document                                                                                                 |
 | Model discovery         | `/api/v1/lm/chatModels`, `/api/v1/lm/tools`                                                                                | Running OpenAPI document                                                                                                 |
 
 Use these Command Palette actions to manage the extension:
 
 - **Agent Maestro: Start API Server**, **Stop API Server**, **Restart API Server**, **Get API Server Status**.
-- **Agent Maestro: Start MCP Server**, **Stop MCP Server**, **Get MCP Server Status**, **Install MCP Configuration**.
-- **Agent Maestro: Get Extensions Status**.
 - **Agent Maestro: Set LLM API Key** and **Set Admin API Key** to configure server authentication; see [Access and Authentication](#access-and-authentication).
 - **Agent Maestro: Set Exa API Key** to configure or clear an optional search-provider key.
 - **Agent Maestro: Configure Copilot Prompt Cache** to choose **Implicit** (`false`, recommended for AM) or **Explicit** (`true`, uses prompt cache breakpoints). Startup cache warnings use a modal dialog; settings change only after confirmation. Successfully applying implicit mode resets the reminder, so a later mode change can trigger a new warning.
@@ -217,10 +197,9 @@ Use these Command Palette actions to manage the extension:
 | Connection refused                            | Keep the VS Code window open; check **Get API Server Status** and the client's configured port.                          |
 | No models in the setup picker                 | Check Copilot sign-in, model access, and model-discovery messages in AM Output.                                          |
 | HTTP 401                                      | Match the server key and provider-specific header; see the Claude Code authentication note above.                        |
-| HTTP 403 from a browser app                   | Add the app's exact origin to `agent-maestro.proxyServerCorsOrigins` or `mcpServerCorsOrigins`.                          |
-| HTTP 403 on `/api/v1` or MCP                  | Only the LLM key is set; run **Set Admin API Key** and send that key.                                                    |
+| HTTP 403 from a browser app                   | Add the app's exact origin to `agent-maestro.proxyServerCorsOrigins`.                                                    |
+| HTTP 403 on `/api/v1`                         | Only the LLM key is set; run **Set Admin API Key** and send that key.                                                    |
 | Client answers but AM has no matching request | Start a new client session and inspect its active provider/base URL and project/environment overrides.                   |
-| MCP unavailable with Kilo                     | Select Kilo as the default Roo extension and reload; check the generated MCP URL for custom ports.                       |
 | GPT requests always show `cache_read: 0`      | Run **Configure Copilot Prompt Cache** and choose **Implicit** (`false`, recommended for AM); see the explanation below. |
 
 Start with the **Agent Maestro** Output channel. Supported LLM request failures also append diagnostics to a timestamped `*-debug.log` in the first workspace folder when file logging succeeds; the error response includes the path when available.
@@ -235,10 +214,13 @@ In **the VS Code window running AM**, open the Command Palette (`Ctrl+Shift+P` o
 
 - [Documentation index](docs/README.md): current guides, runbooks, and dated design records.
 - [Testing guide](docs/testing.md) and [contributor instructions](AGENTS.md).
-- [Roo extension API notes](docs/roo-code/README.md) and [remote demo](examples/demo-site/README.md).
 - [Changelog](CHANGELOG.md), including migration details for older versions.
 
-Potential future work includes code-server deployment support, richer orchestration for Claude Code/Codex, and task scheduling. These are roadmap items, not supported interfaces.
+### Migrating from Roo, Cline, or MCP Task Orchestration
+
+Version 3 removed the Roo/Cline task APIs and the MCP task server; Agent Maestro now focuses on the model API proxy. To drive Cline or Kilo Code from scripts, use their own CLIs, which support non-interactive runs and structured output. If you previously ran **Install MCP Configuration**, remove the "Agent Maestro" entry (`http://localhost:23334/mcp`) from the MCP settings of Roo Code or Kilo Code; nothing listens on that port anymore.
+
+Potential future work includes code-server deployment support. Roadmap items are not supported interfaces.
 
 [Report a bug or request a feature](https://github.com/Joouis/agent-maestro/issues).
 

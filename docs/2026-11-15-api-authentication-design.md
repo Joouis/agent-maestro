@@ -1,6 +1,6 @@
 # API Authentication and Origin Policy, 2026-11-15
 
-> **Status:** Implemented; see [README access and authentication](../README.md#access-and-authentication). Baseline: `fe46d2a` (v2.16.0). Dependency behavior verified against the locked versions `hono@4.8.9`, `@hono/zod-openapi@1.0.2`, `fastmcp@3.5.0`, `mcp-proxy@5.1.1`.
+> **Status:** Implemented; see [README access and authentication](../README.md#access-and-authentication). **v3 removed the MCP server**, so every MCP section below (MCP Server, `mcpServerCorsOrigins`, restart-on-key-change, and the fastmcp upgrade TODO) no longer applies. The proxy authentication, Admin API Key, and origin policy remain current. Baseline: `fe46d2a` (v2.16.0). Dependency behavior verified against the locked versions `hono@4.8.9`, `@hono/zod-openapi@1.0.2`, `fastmcp@3.5.0`, `mcp-proxy@5.1.1`.
 
 ## Problem
 
@@ -199,7 +199,7 @@ Because later requests are authorized only by `mcp-session-id`, AM **restarts th
 
 Public MCP endpoints that remain: `/health`, `/ready`, `/ping`. `/ready` reveals only session counts.
 
-> **TODO (follow-up PR):** Upgrade to `fastmcp@4.x` (`mcp-proxy@6.x`). In those versions `start({ httpStream: { cors } })` makes MCP CORS configurable, and `authenticate` runs on every request before session lookup. After upgrading, pass `mcpServerCorsOrigins` as `cors.origin` and replace the restart-on-key-change with per-request authentication. This PR does not upgrade because both are major-version bumps.
+> **No longer applicable (v3 removed the MCP server).** Former TODO: upgrade to `fastmcp@4.x` (`mcp-proxy@6.x`). In those versions `start({ httpStream: { cors } })` makes MCP CORS configurable, and `authenticate` runs on every request before session lookup. After upgrading, pass `mcpServerCorsOrigins` as `cors.origin` and replace the restart-on-key-change with per-request authentication. This PR does not upgrade because both are major-version bumps.
 
 ### Implementation sketch
 

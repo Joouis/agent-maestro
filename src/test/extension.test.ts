@@ -47,24 +47,6 @@ suite("Extension Test Suite", () => {
       }
     });
 
-    test("MCP server commands should be registered", async () => {
-      const commands = await vscode.commands.getCommands(true);
-
-      const mcpCommands = [
-        "agent-maestro.startMcpServer",
-        "agent-maestro.stopMcpServer",
-        "agent-maestro.getMcpServerStatus",
-        "agent-maestro.installMcpConfig",
-      ];
-
-      for (const cmd of mcpCommands) {
-        assert.ok(
-          commands.includes(cmd),
-          `Command ${cmd} should be registered`,
-        );
-      }
-    });
-
     test("configurator commands should be registered", async () => {
       const commands = await vscode.commands.getCommands(true);
 
@@ -86,13 +68,18 @@ suite("Extension Test Suite", () => {
       }
     });
 
-    test("status command should be registered", async () => {
+    test("removed orchestration commands are not registered", async () => {
       const commands = await vscode.commands.getCommands(true);
 
-      assert.ok(
-        commands.includes("agent-maestro.getStatus"),
-        "getStatus command should be registered",
-      );
+      for (const cmd of [
+        "agent-maestro.getStatus",
+        "agent-maestro.startMcpServer",
+        "agent-maestro.stopMcpServer",
+        "agent-maestro.getMcpServerStatus",
+        "agent-maestro.installMcpConfig",
+      ]) {
+        assert.ok(!commands.includes(cmd), `Command ${cmd} should be removed`);
+      }
     });
   });
 
@@ -113,35 +100,21 @@ suite("Extension Test Suite", () => {
       );
     });
 
-    test("default MCP server port should be 23334", () => {
+    test("removed orchestration settings are not contributed", () => {
       const config = vscode.workspace.getConfiguration("agent-maestro");
-      const port = config.get<number>("mcpServerPort");
 
-      // Should return default or configured value
-      assert.ok(
-        typeof port === "number" && port > 0,
-        "mcpServerPort should be a positive number",
-      );
-    });
-
-    test("rooVariantIdentifiers should be an array", () => {
-      const config = vscode.workspace.getConfiguration("agent-maestro");
-      const variants = config.get<string[]>("rooVariantIdentifiers");
-
-      assert.ok(
-        Array.isArray(variants),
-        "rooVariantIdentifiers should be an array",
-      );
-    });
-
-    test("defaultRooIdentifier should be a string", () => {
-      const config = vscode.workspace.getConfiguration("agent-maestro");
-      const identifier = config.get<string>("defaultRooIdentifier");
-
-      assert.ok(
-        typeof identifier === "string" && identifier.length > 0,
-        "defaultRooIdentifier should be a non-empty string",
-      );
+      for (const key of [
+        "mcpServerPort",
+        "mcpServerCorsOrigins",
+        "rooVariantIdentifiers",
+        "defaultRooIdentifier",
+      ]) {
+        assert.strictEqual(
+          config.inspect(key)?.defaultValue,
+          undefined,
+          `Setting ${key} should be removed`,
+        );
+      }
     });
 
     test("fallbackModelId should be a string", () => {

@@ -107,11 +107,10 @@ const Hero = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.5 }}
-            className="mt-16 grid grid-cols-3 gap-8 max-w-lg mx-auto"
+            className="mt-16 grid grid-cols-2 gap-8 max-w-sm mx-auto"
           >
             {[
               { label: "API Endpoints", value: "3+" },
-              { label: "Concurrent Tasks", value: "20" },
               { label: "One-Click Setups", value: "4" },
             ].map((stat, index) => (
               <div key={index} className="text-center">

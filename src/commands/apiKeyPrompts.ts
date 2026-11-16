@@ -15,7 +15,7 @@ export async function confirmDistinctFromOtherKey(
   }
   const proceed = "Yes";
   const choice = await vscode.window.showWarningMessage(
-    "The LLM API Key and the Admin API Key would be identical. Anyone with the LLM key would get full control of the workspace, including files and agent tasks. Continue?",
+    "The LLM API Key and the Admin API Key would be identical. Anyone with the LLM key would get full control of the workspace, including reading and writing files. Continue?",
     { modal: true },
     proceed,
   );

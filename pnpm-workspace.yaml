@@ -5,8 +5,3 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - openai@6.46.0
-
-packageExtensions:
-  "@roo-code/types":
-    dependencies:
-      "zod": "^3.25.61"

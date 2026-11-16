@@ -32,7 +32,7 @@ export function registerAdminApiKeyCommands(
       const picked = await vscode.window.showQuickPick(items, {
         title: "Set Admin API Key",
         placeHolder:
-          "The Admin API Key grants every route, including /api/v1 and the MCP server",
+          "The Admin API Key grants every route, including file, workspace, and model-discovery routes under /api/v1",
         ignoreFocusOut: true,
       });
       if (!picked) {
@@ -115,7 +115,7 @@ export function registerAdminApiKeyCommands(
         }
       } else {
         vscode.window.showInformationMessage(
-          "Admin API key has been set. All routes now accept it, and /api/v1 and MCP require it.",
+          "Admin API key has been set. All routes now accept it, and /api/v1 requires it.",
         );
       }
     }, "Failed to set Admin API key"),

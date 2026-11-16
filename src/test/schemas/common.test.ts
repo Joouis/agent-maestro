@@ -2,7 +2,6 @@ import * as assert from "assert";
 
 import {
   ErrorResponseSchema,
-  ExtensionInfoSchema,
   FileReadRequestSchema,
   FileReadResponseSchema,
   FileWriteRequestSchema,
@@ -114,32 +113,6 @@ suite("Common Schemas Test Suite", () => {
       assert.strictEqual(
         FileWriteResponseSchema.safeParse({ path: "out.txt", size: "256" })
           .success,
-        false,
-      );
-    });
-  });
-
-  suite("ExtensionInfoSchema", () => {
-    test("should validate extension info", () => {
-      assert.strictEqual(
-        ExtensionInfoSchema.safeParse({
-          isInstalled: true,
-          isActive: true,
-          version: "1.0.0",
-        }).success,
-        true,
-      );
-      assert.strictEqual(
-        ExtensionInfoSchema.safeParse({ isInstalled: false, isActive: false })
-          .success,
-        true,
-      );
-      assert.strictEqual(
-        ExtensionInfoSchema.safeParse({ isActive: true }).success,
-        false,
-      );
-      assert.strictEqual(
-        ExtensionInfoSchema.safeParse({ isInstalled: true }).success,
         false,
       );
     });
