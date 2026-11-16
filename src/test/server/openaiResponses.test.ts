@@ -81,6 +81,59 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(call.type, "tool_search_call");
     });
 
+    test("replays discovered tool names without duplicating their schemas", () => {
+      const message = convertResponsesItemToVSCode({
+        type: "tool_search_output",
+        call_id: "search-call",
+        execution: "client",
+        tools: [
+          {
+            type: "namespace",
+            name: "mcp__workiq",
+            description: "large namespace description",
+            tools: [
+              {
+                type: "function",
+                name: "fetch",
+                description: "large tool description",
+                parameters: {
+                  type: "object",
+                  properties: { entityUrls: { type: "array" } },
+                },
+                strict: false,
+              },
+              {
+                type: "function",
+                name: "retrieve",
+                description: "another large tool description",
+                parameters: { type: "object" },
+                strict: false,
+              },
+            ],
+          },
+          {
+            type: "function",
+            name: "standalone",
+            description: "standalone description",
+            parameters: { type: "object" },
+            strict: false,
+          },
+        ],
+      } as any);
+      const result = message!.content[0] as vscode.LanguageModelToolResultPart;
+      const text = result.content[0] as vscode.LanguageModelTextPart;
+
+      assert.deepStrictEqual(JSON.parse(text.value), {
+        discovered_tools: [
+          "mcp__workiq.fetch",
+          "mcp__workiq.retrieve",
+          "standalone",
+        ],
+      });
+      assert.ok(!text.value.includes("description"));
+      assert.ok(!text.value.includes("parameters"));
+    });
+
     test("does not select native search through a named function choice", () => {
       const { tools, toolMap } = convertResponsesToolsToVSCode([
         { type: "tool_search", parameters: { type: "object" } },

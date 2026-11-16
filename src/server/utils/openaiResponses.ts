@@ -994,9 +994,30 @@ export const convertResponsesItemToVSCode = (
         "input",
       );
     }
+    const discoveredTools = item.tools.flatMap((tool) => {
+      if (!tool || typeof tool !== "object") {
+        return [];
+      }
+      const candidate = tool as unknown as {
+        type?: string;
+        name?: string;
+        tools?: Array<{ name?: string }>;
+      };
+      if (candidate.type === "namespace") {
+        return (Array.isArray(candidate.tools) ? candidate.tools : []).flatMap(
+          (nested) =>
+            nested?.name
+              ? [`${candidate.name ?? "namespace"}.${nested.name}`]
+              : [],
+        );
+      }
+      return candidate.name ? [candidate.name] : [];
+    });
     return vscode.LanguageModelChatMessage.User([
       new vscode.LanguageModelToolResultPart(item.call_id, [
-        new vscode.LanguageModelTextPart(JSON.stringify(item.tools)),
+        new vscode.LanguageModelTextPart(
+          JSON.stringify({ discovered_tools: discoveredTools }),
+        ),
       ]),
     ]);
   }
