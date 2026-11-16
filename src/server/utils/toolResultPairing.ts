@@ -92,6 +92,10 @@ const isReasoningOnlyAssistantMessage = (
   message.parts.length > 0 &&
   message.parts.every((part) => part.kind === "reasoning");
 
+// Copilot rejects large binary parts nested inside tool results even though the
+// same data is accepted as ordinary user image content.
+const MAX_INLINE_TOOL_RESULT_DATA_BYTES = 1_000_000;
+
 /** Analyze a complete request snapshot; no decisions depend on another request. */
 export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
   decisions: Map<number, Decision>;
@@ -508,10 +512,52 @@ export function toolHistoryToVSCode(
       message.content.splice(0, message.content.length, ...tools, ...context);
     }
   }
+  const safeOutput: vscode.LanguageModelChatMessage[] = [];
+  for (const message of output) {
+    const promotedData: vscode.LanguageModelDataPart[] = [];
+    const content = message.content.map((part) => {
+      if (!(part instanceof vscode.LanguageModelToolResultPart)) {
+        return part;
+      }
+      const data = part.content.filter(
+        (item): item is vscode.LanguageModelDataPart =>
+          item instanceof vscode.LanguageModelDataPart,
+      );
+      const totalBytes = data.reduce(
+        (sum, item) => sum + item.data.byteLength,
+        0,
+      );
+      if (totalBytes <= MAX_INLINE_TOOL_RESULT_DATA_BYTES) {
+        return part;
+      }
+      promotedData.push(...data);
+      const text = part.content.filter(
+        (item): item is vscode.LanguageModelTextPart =>
+          item instanceof vscode.LanguageModelTextPart,
+      );
+      return new vscode.LanguageModelToolResultPart(part.callId, [
+        ...text,
+        new vscode.LanguageModelTextPart(
+          "[Large binary tool result is attached in the following user message.]",
+        ),
+      ]);
+    });
+    safeOutput.push(createModelMessage(message.role, content));
+    if (promotedData.length) {
+      safeOutput.push(
+        vscode.LanguageModelChatMessage.User([
+          new vscode.LanguageModelTextPart(
+            "[Binary content promoted from the preceding tool result.]",
+          ),
+          ...promotedData,
+        ]),
+      );
+    }
+  }
   if (Object.values(recoveries).some((count) => count > 0)) {
     logger.warn(
       adapter + " tool history normalization: " + JSON.stringify(diagnostics),
     );
   }
-  return output;
+  return safeOutput;
 }

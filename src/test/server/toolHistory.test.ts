@@ -646,6 +646,49 @@ suite("Tool history normalizer", () => {
       assert.ok(actual.flatMap((m) => m.content).includes(image));
     }
   });
+  test("promotes large tool-result media to ordinary user content", () => {
+    const image = new vscode.LanguageModelDataPart(
+      new Uint8Array(1_000_001),
+      "image/png",
+    );
+    const r = {
+      ...result("x"),
+      parts: [new vscode.LanguageModelTextPart("Viewed an image"), image],
+    } as ToolHistoryPart;
+
+    const actual = toolHistoryToVSCode([model(call("x")), user(r)], "Test");
+
+    paired(actual, 1);
+    assert.strictEqual(actual.length, 3);
+    const toolResult = results(actual)[0];
+    assert.ok(
+      toolResult.content.every(
+        (part) => part instanceof vscode.LanguageModelTextPart,
+      ),
+    );
+    assert.match(
+      (toolResult.content.at(-1) as vscode.LanguageModelTextPart).value,
+      /following user message/,
+    );
+    assert.ok(actual[2].content.includes(image));
+    assert.match(
+      (actual[2].content[0] as vscode.LanguageModelTextPart).value,
+      /promoted from the preceding tool result/,
+    );
+  });
+  test("keeps small tool-result media inline", () => {
+    const image = new vscode.LanguageModelDataPart(
+      new Uint8Array(1_000_000),
+      "image/png",
+    );
+    const r = { ...result("x"), parts: [image] } as ToolHistoryPart;
+
+    const actual = toolHistoryToVSCode([model(call("x")), user(r)], "Test");
+
+    paired(actual, 1);
+    assert.strictEqual(actual.length, 2);
+    assert.ok(results(actual)[0].content.includes(image));
+  });
   test("logs only counts, with no result bodies or IDs", () => {
     const warnings: string[] = [];
     const warn = logger.warn;
