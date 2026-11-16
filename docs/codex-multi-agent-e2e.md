@@ -14,9 +14,8 @@ Copilot session inside VS Code Insiders and consumes model quota.
   provider exists. Use a trusted local test instance; the examples below assume
   its optional LLM authentication is disabled. If enabled, supply its key to
   both curl and Codex before testing.
-- Free local ports for an isolated Agent Maestro instance. The examples use
-  `24333` and `24334` to avoid replacing a normal installation on the default
-  ports.
+- A free local port for an isolated Agent Maestro instance. The examples use
+  `24333` to avoid replacing a normal installation on the default port.
 
 ## 1. Build and launch the extension
 
@@ -31,7 +30,6 @@ From the repository root:
 pnpm build
 
 AGENT_MAESTRO_PROXY_PORT=24333 \
-AGENT_MAESTRO_MCP_PORT=24334 \
 code-insiders \
   --new-window \
   --wait \
