@@ -171,7 +171,8 @@ export class ProxyServer {
       openapi: "3.0.0",
       info: {
         title: "Agent Maestro API",
-        description: "API for managing extension tasks",
+        description:
+          "Anthropic-, OpenAI-, and Gemini-compatible model APIs backed by VS Code language models, plus control routes for files, workspace, and model discovery",
         version: "1.0.0",
       },
       servers: [

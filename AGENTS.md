@@ -7,7 +7,7 @@ Guidance for AI coding agents working in this repository. Human contributors sho
 Agent Maestro is a VS Code extension that:
 
 - Exposes a local proxy server (default port `23333`) presenting OpenAI-, Anthropic-, and Gemini-compatible APIs backed by the VS Code Language Model API (GitHub Copilot models), used by clients such as Claude Code, Codex, and Gemini.
-- Configures those clients, and serves a small authenticated control API for files, workspace, and model discovery.
+- Configures those clients, and serves a small control API for files, workspace, and model discovery. API keys are optional: with no key set, every route is open; once any key is set, control routes require the Admin API Key.
 
 Task orchestration of third-party extensions (Roo Code, Cline, Kilo Code) and the MCP task server were removed in v3; do not reintroduce them.
 

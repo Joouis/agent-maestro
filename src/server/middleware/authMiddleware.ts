@@ -69,7 +69,7 @@ export function checkLlmAccess(
 }
 
 /**
- * Control routes (`/api/v1/*`, `/openapi.json`, MCP) accept only the Admin key.
+ * Control routes (`/api/v1/*`, `/openapi.json`) accept only the Admin key.
  * A configured LLM key without an Admin key signals remote exposure, so
  * control routes are refused rather than left open.
  */
@@ -100,7 +100,7 @@ export function readBearerToken(
     : undefined;
 }
 
-/** Credentials accepted on control routes and the MCP Server. */
+/** Credentials accepted on control routes. */
 export function readAdminCredentials(
   header: HeaderReader,
 ): (string | undefined)[] {
