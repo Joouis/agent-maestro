@@ -12,6 +12,7 @@ import {
   toolHistoryToVSCode,
 } from "../../server/utils/toolResultPairing";
 import { logger } from "../../utils/logger";
+import { WEBP_1024x935_BASE64 } from "../utils/imageMime.fixtures";
 
 type Call = { kind: "call"; id?: string; name?: string; args?: object };
 type Result = { kind: "result"; id?: string; name?: string; value?: unknown };
@@ -670,10 +671,12 @@ suite("Tool history normalizer", () => {
       (toolResult.content.at(-1) as vscode.LanguageModelTextPart).value,
       /following user message/,
     );
-    assert.ok(actual[2].content.includes(image));
+    const promoted = actual[2].content[2] as vscode.LanguageModelDataPart;
+    assert.ok(promoted instanceof vscode.LanguageModelDataPart);
+    assert.strictEqual(promoted.data, image.data);
     assert.match(
       (actual[2].content[0] as vscode.LanguageModelTextPart).value,
-      /promoted from the preceding tool result/,
+      /tool result x/,
     );
   });
   test("keeps small tool-result media inline", () => {
@@ -688,6 +691,65 @@ suite("Tool history normalizer", () => {
     paired(actual, 1);
     assert.strictEqual(actual.length, 2);
     assert.ok(results(actual)[0].content.includes(image));
+  });
+  test("preserves parallel result media groups and content order", () => {
+    const x1 = new vscode.LanguageModelDataPart(
+      new Uint8Array(600_000),
+      "image/png",
+    );
+    const x2 = new vscode.LanguageModelDataPart(
+      new Uint8Array(600_001),
+      "image/png",
+    );
+    const y = new vscode.LanguageModelDataPart(
+      new Uint8Array(1_000_001),
+      "image/png",
+    );
+    const xParts = [
+      new vscode.LanguageModelTextPart("x caption"),
+      x1,
+      x2,
+      new vscode.LanguageModelTextPart("x footer"),
+    ];
+    const yParts = [y, new vscode.LanguageModelTextPart("y caption")];
+    const x = {
+      ...result("x"),
+      parts: xParts,
+    } as ToolHistoryPart;
+    const yResult = {
+      ...result("y"),
+      parts: yParts,
+    } as ToolHistoryPart;
+
+    const actual = toolHistoryToVSCode(
+      [model(call("x"), call("y")), user(x, yResult)],
+      "Test",
+    );
+
+    paired(actual, 2);
+    assert.strictEqual(actual.length, 4);
+    assert.match(
+      (actual[2].content[0] as vscode.LanguageModelTextPart).value,
+      /tool result x/,
+    );
+    assert.deepStrictEqual(actual[2].content.slice(1), xParts);
+    assert.match(
+      (actual[3].content[0] as vscode.LanguageModelTextPart).value,
+      /tool result y/,
+    );
+    assert.deepStrictEqual(actual[3].content.slice(1), yParts);
+  });
+  test("normalizes the MIME type of promoted tool-result images", () => {
+    const webp = Buffer.from(WEBP_1024x935_BASE64, "base64");
+    const padded = Buffer.concat([webp, Buffer.alloc(1_000_001 - webp.length)]);
+    const image = new vscode.LanguageModelDataPart(padded, "image/webp");
+    const r = { ...result("x"), parts: [image] } as ToolHistoryPart;
+
+    const actual = toolHistoryToVSCode([model(call("x")), user(r)], "Test");
+
+    const promoted = actual[2].content[1] as vscode.LanguageModelDataPart;
+    assert.ok(promoted instanceof vscode.LanguageModelDataPart);
+    assert.strictEqual(promoted.mimeType, "image/png");
   });
   test("logs only counts, with no result bodies or IDs", () => {
     const warnings: string[] = [];

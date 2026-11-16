@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import { mimeForVscodeLm } from "./imageMime";
 import {
   ModelInputPart,
   ThinkingPart,
@@ -514,7 +515,10 @@ export function toolHistoryToVSCode(
   }
   const safeOutput: vscode.LanguageModelChatMessage[] = [];
   for (const message of output) {
-    const promotedData: vscode.LanguageModelDataPart[] = [];
+    const promotedGroups: Array<{
+      callId: string;
+      parts: ToolHistoryContent[];
+    }> = [];
     const content = message.content.map((part) => {
       if (!(part instanceof vscode.LanguageModelToolResultPart)) {
         return part;
@@ -530,7 +534,22 @@ export function toolHistoryToVSCode(
       if (totalBytes <= MAX_INLINE_TOOL_RESULT_DATA_BYTES) {
         return part;
       }
-      promotedData.push(...data);
+      promotedGroups.push({
+        callId: part.callId,
+        parts: part.content.reduce<ToolHistoryContent[]>((items, item) => {
+          if (item instanceof vscode.LanguageModelDataPart) {
+            items.push(
+              new vscode.LanguageModelDataPart(
+                item.data,
+                mimeForVscodeLm(Buffer.from(item.data), item.mimeType),
+              ),
+            );
+          } else if (item instanceof vscode.LanguageModelTextPart) {
+            items.push(item);
+          }
+          return items;
+        }, []),
+      });
       const text = part.content.filter(
         (item): item is vscode.LanguageModelTextPart =>
           item instanceof vscode.LanguageModelTextPart,
@@ -543,13 +562,13 @@ export function toolHistoryToVSCode(
       ]);
     });
     safeOutput.push(createModelMessage(message.role, content));
-    if (promotedData.length) {
+    for (const group of promotedGroups) {
       safeOutput.push(
         vscode.LanguageModelChatMessage.User([
           new vscode.LanguageModelTextPart(
-            "[Binary content promoted from the preceding tool result.]",
+            "[Content promoted from tool result " + group.callId + ".]",
           ),
-          ...promotedData,
+          ...group.parts,
         ]),
       );
     }
