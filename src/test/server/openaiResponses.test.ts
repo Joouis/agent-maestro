@@ -1196,6 +1196,50 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
     });
   });
 
+  suite("convertResponsesInputToVSCode", () => {
+    test("keeps only the 10 most recent images when replaying history", () => {
+      const base64Data =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const input = Array.from({ length: 12 }, (_, index) => ({
+        role: "user" as const,
+        content: [
+          { type: "input_text" as const, text: `image ${index}` },
+          {
+            type: "input_image" as const,
+            image_url: `data:image/png;base64,${base64Data}`,
+            detail: "auto" as const,
+          },
+        ],
+      }));
+
+      const messages = convertResponsesInputToVSCode(input);
+      const contents = messages.map((message) => message.content);
+      assert.strictEqual(
+        contents
+          .flat()
+          .filter((part) => part instanceof vscode.LanguageModelDataPart)
+          .length,
+        10,
+      );
+      for (const index of [0, 1]) {
+        assert.ok(
+          contents[index].some(
+            (part) =>
+              part instanceof vscode.LanguageModelTextPart &&
+              part.value.includes("Earlier image omitted"),
+          ),
+        );
+      }
+      for (const index of [2, 11]) {
+        assert.ok(
+          contents[index].some(
+            (part) => part instanceof vscode.LanguageModelDataPart,
+          ),
+        );
+      }
+    });
+  });
+
   suite("convertResponsesItemToVSCode", () => {
     test("should convert EasyInputMessage with string content (user)", () => {
       const item = { role: "user" as const, content: "Hello" };

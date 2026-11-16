@@ -805,6 +805,54 @@ const convertToolOutputToVSCodeParts = (
   });
 };
 
+const MAX_REQUEST_IMAGES = 10;
+const OMITTED_IMAGE_NOTICE =
+  "[Earlier image omitted to keep the replayed request within the model's image limit.]";
+
+const capReplayedImages = (history: ToolHistoryMessage[]): void => {
+  const imageCount = history.reduce(
+    (total, message) =>
+      total +
+      message.parts.reduce(
+        (messageTotal, part) =>
+          messageTotal +
+          ("parts" in part
+            ? part.parts.filter(
+                (content) => content instanceof vscode.LanguageModelDataPart,
+              ).length
+            : 0),
+        0,
+      ),
+    0,
+  );
+  let imagesToOmit = imageCount - MAX_REQUEST_IMAGES;
+  if (imagesToOmit <= 0) {
+    return;
+  }
+
+  const omittedCount = imagesToOmit;
+  for (const message of history) {
+    for (const part of message.parts) {
+      if (!("parts" in part)) {
+        continue;
+      }
+      part.parts = part.parts.map((content) => {
+        if (
+          imagesToOmit > 0 &&
+          content instanceof vscode.LanguageModelDataPart
+        ) {
+          imagesToOmit--;
+          return new vscode.LanguageModelTextPart(OMITTED_IMAGE_NOTICE);
+        }
+        return content;
+      });
+    }
+  }
+  logger.warn(
+    `Omitted ${omittedCount} earlier image(s) from replayed Responses history`,
+  );
+};
+
 const isConvertibleToolOutputPart = (
   part: unknown,
 ): part is ResponseInputContent | ResponseOutputText => {
@@ -1275,6 +1323,7 @@ export const convertResponsesInputToVSCode = (
     history.push({ role: "user", parts: [], boundary: true });
   }
   appendInput(input);
+  capReplayedImages(history);
   return toolHistoryToVSCode(history, "Responses");
 };
 
