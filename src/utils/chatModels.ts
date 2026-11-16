@@ -344,13 +344,353 @@ export function withCopilotConversationId(
  * `modelOptions`. Copilot reads this bag for settings like context size and
  * reasoning effort.
  */
+function resolveSchemaPointer(
+  root: Record<string, unknown>,
+  pointer: string,
+): Record<string, unknown> | null {
+  const parts = pointer
+    .slice(2)
+    .split("/")
+    .map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~"));
+  let target: unknown = root;
+  for (const part of parts) {
+    if (!target || typeof target !== "object" || Array.isArray(target)) {
+      return null;
+    }
+    target = (target as Record<string, unknown>)[part];
+  }
+  return target && typeof target === "object" && !Array.isArray(target)
+    ? (target as Record<string, unknown>)
+    : null;
+}
+
+function flattenUnionObjectSchema(
+  schema: Record<string, unknown>,
+  root: Record<string, unknown> = schema,
+): Record<string, unknown> | null {
+  const defs =
+    schema.$defs &&
+    typeof schema.$defs === "object" &&
+    !Array.isArray(schema.$defs)
+      ? (schema.$defs as Record<string, unknown>)
+      : {};
+
+  function deref(node: unknown, seen = new Set<string>()): unknown {
+    if (Array.isArray(node)) {
+      return node.map((item) => deref(item, seen));
+    }
+    if (!node || typeof node !== "object") {
+      return node;
+    }
+    const obj = node as Record<string, unknown>;
+    if (typeof obj.$ref === "string" && obj.$ref.startsWith("#/$defs/")) {
+      const key = obj.$ref.slice("#/$defs/".length);
+      if (!seen.has(key) && Object.hasOwn(defs, key)) {
+        return deref(defs[key], new Set([...seen, key]));
+      }
+    }
+    return Object.fromEntries(
+      Object.entries(obj)
+        .filter(([key]) => key !== "$defs")
+        .map(([key, item]) => [key, deref(item, seen)]),
+    );
+  }
+
+  const resolved = deref(schema);
+  const properties: Record<string, unknown> = {};
+  const requiredSets: Set<string>[] = [];
+
+  function collect(node: unknown): void {
+    if (!node || typeof node !== "object" || Array.isArray(node)) {
+      return;
+    }
+    const obj = node as Record<string, unknown>;
+    if (
+      obj.properties &&
+      typeof obj.properties === "object" &&
+      !Array.isArray(obj.properties) &&
+      Object.keys(obj.properties).length > 0
+    ) {
+      if (Array.isArray(obj.required)) {
+        requiredSets.push(
+          new Set(
+            obj.required.filter(
+              (key): key is string => typeof key === "string",
+            ),
+          ),
+        );
+      }
+      for (const [key, prop] of Object.entries(
+        obj.properties as Record<string, unknown>,
+      )) {
+        if (!Object.hasOwn(properties, key)) {
+          properties[key] = prop;
+        } else {
+          const existing = properties[key] as
+            | Record<string, unknown>
+            | undefined;
+          const incoming = prop as Record<string, unknown> | undefined;
+          if (Array.isArray(existing?.enum) && Array.isArray(incoming?.enum)) {
+            properties[key] = {
+              ...existing,
+              enum: [...new Set([...existing.enum, ...incoming.enum])],
+            };
+          }
+        }
+      }
+    }
+    const oneOf = Array.isArray(obj.oneOf) ? obj.oneOf : [];
+    const anyOf = Array.isArray(obj.anyOf) ? obj.anyOf : [];
+    for (const branch of [...oneOf, ...anyOf]) {
+      collect(branch);
+    }
+  }
+
+  collect(resolved);
+  if (Object.keys(properties).length === 0) {
+    return null;
+  }
+
+  const commonRequired =
+    requiredSets.length > 0
+      ? [...requiredSets[0]].filter(
+          (key) =>
+            Object.hasOwn(properties, key) &&
+            requiredSets.every((set) => set.has(key)),
+        )
+      : [];
+
+  return {
+    type: "object",
+    properties: normalizeCopilotToolSchema(properties, root),
+    ...(commonRequired.length > 0 ? { required: commonRequired } : {}),
+  };
+}
+
+/**
+ * Normalize complex JSON Schema constructs ($ref/$defs, nullable type arrays,
+ * array-level enums, and large discriminated anyOf/oneOf unions) that Copilot
+ * Chat Completions / Gemini backends reject with HTTP 400 invalid_request_body.
+ */
+export function normalizeCopilotToolSchema(
+  value: unknown,
+  root?: Record<string, unknown>,
+  seenRefs = new Set<string>(),
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      normalizeCopilotToolSchema(item, root, seenRefs),
+    );
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const obj = value as Record<string, unknown>;
+  const rootSchema = root ?? obj;
+
+  if (typeof obj.$ref === "string" && obj.$ref.startsWith("#/")) {
+    const description =
+      typeof obj.description === "string" && obj.description
+        ? { description: obj.description }
+        : {};
+    if (seenRefs.has(obj.$ref)) {
+      return { type: "string", ...description };
+    }
+    const target = resolveSchemaPointer(rootSchema, obj.$ref);
+    if (!target) {
+      return { type: "string", ...description };
+    }
+    const resolved = normalizeCopilotToolSchema(
+      target,
+      rootSchema,
+      new Set([...seenRefs, obj.$ref]),
+    );
+    return resolved && typeof resolved === "object" && !Array.isArray(resolved)
+      ? { ...(resolved as Record<string, unknown>), ...description }
+      : { type: "string", ...description };
+  }
+
+  const hasEmptyProperties =
+    !obj.properties ||
+    typeof obj.properties !== "object" ||
+    Array.isArray(obj.properties) ||
+    Object.keys(obj.properties).length === 0;
+
+  if (
+    (Array.isArray(obj.oneOf) || Array.isArray(obj.anyOf)) &&
+    hasEmptyProperties
+  ) {
+    const flattened = flattenUnionObjectSchema(obj, rootSchema);
+    if (flattened) {
+      return flattened;
+    }
+    const union = (
+      Array.isArray(obj.anyOf) ? obj.anyOf : obj.oneOf
+    ) as unknown[];
+    const nonNull = union.filter(
+      (branch): branch is Record<string, unknown> =>
+        Boolean(branch) &&
+        typeof branch === "object" &&
+        !Array.isArray(branch) &&
+        (branch as Record<string, unknown>).type !== "null",
+    );
+    const description =
+      typeof obj.description === "string" && obj.description
+        ? { description: obj.description }
+        : {};
+    if (nonNull.length === 1) {
+      const resolved = normalizeCopilotToolSchema(
+        nonNull[0],
+        rootSchema,
+        seenRefs,
+      );
+      return resolved &&
+        typeof resolved === "object" &&
+        !Array.isArray(resolved)
+        ? { ...(resolved as Record<string, unknown>), ...description }
+        : { type: "string", ...description };
+    }
+    if (nonNull.length > 1) {
+      const primaryType =
+        nonNull.find(
+          (branch) =>
+            typeof branch.type === "string" &&
+            !["object", "array"].includes(branch.type),
+        )?.type ?? "string";
+      return { type: primaryType, ...description };
+    }
+  }
+
+  let current: Record<string, unknown> = obj;
+  if (Array.isArray(current.type)) {
+    const nonNull = current.type.filter(
+      (t): t is string => typeof t === "string" && t !== "null",
+    );
+    current = { ...current, type: nonNull[0] ?? "string" };
+  }
+  if (Array.isArray(current.enum) && current.enum.includes(null)) {
+    current = {
+      ...current,
+      enum: current.enum.filter((entry) => entry !== null),
+    };
+  }
+  if (
+    Array.isArray(current.enum) &&
+    typeof current.type === "string" &&
+    !["string", "integer", "number"].includes(current.type)
+  ) {
+    const { enum: enumValues, ...rest } = current;
+    const items = current.items;
+    current =
+      current.type === "array" &&
+      items &&
+      typeof items === "object" &&
+      !Array.isArray(items) &&
+      !Array.isArray((items as Record<string, unknown>).enum)
+        ? {
+            ...rest,
+            items: {
+              ...(items as Record<string, unknown>),
+              enum: enumValues,
+            },
+          }
+        : rest;
+  }
+
+  const currentItems =
+    current.items &&
+    typeof current.items === "object" &&
+    !Array.isArray(current.items)
+      ? (current.items as Record<string, unknown>)
+      : undefined;
+
+  if (Array.isArray(currentItems?.anyOf) && currentItems.anyOf.length > 4) {
+    const names = [
+      ...new Set(
+        currentItems.anyOf.flatMap((option) => {
+          if (!option || typeof option !== "object" || Array.isArray(option)) {
+            return [];
+          }
+          const props = (option as Record<string, unknown>).properties;
+          if (!props || typeof props !== "object" || Array.isArray(props)) {
+            return [];
+          }
+          const nameProp = (props as Record<string, unknown>).name;
+          if (
+            !nameProp ||
+            typeof nameProp !== "object" ||
+            Array.isArray(nameProp)
+          ) {
+            return [];
+          }
+          const enumList = (nameProp as Record<string, unknown>).enum;
+          return Array.isArray(enumList) ? enumList : [];
+        }),
+      ),
+    ].filter((name): name is string => typeof name === "string");
+
+    const itemType = Array.isArray(currentItems.type)
+      ? (currentItems.type.find(
+          (t): t is string => typeof t === "string" && t !== "null",
+        ) ?? "object")
+      : typeof currentItems.type === "string"
+        ? currentItems.type
+        : "object";
+
+    const requiredList = Array.isArray(currentItems.required)
+      ? currentItems.required
+      : [];
+
+    return {
+      ...Object.fromEntries(
+        Object.entries(current).filter(
+          ([key]) => !["$defs", "additionalProperties"].includes(key),
+        ),
+      ),
+      items: {
+        type: itemType,
+        properties:
+          names.length > 0 ? { name: { type: "string", enum: names } } : {},
+        ...(requiredList.includes("name") ? { required: ["name"] } : {}),
+      },
+    };
+  }
+
+  return Object.fromEntries(
+    Object.entries(current)
+      .filter(([key]) => !["$defs", "additionalProperties"].includes(key))
+      .map(([key, item]) => [
+        key,
+        normalizeCopilotToolSchema(item, rootSchema, seenRefs),
+      ]),
+  );
+}
+
 export function withCopilotConfiguration(
   client: vscode.LanguageModelChat,
   options: vscode.LanguageModelChatRequestOptions,
   configuration: CopilotModelConfiguration = {},
 ): vscode.LanguageModelChatRequestOptions {
+  const normalizedTools = Array.isArray(options.tools)
+    ? options.tools.map((tool) =>
+        tool.inputSchema && typeof tool.inputSchema === "object"
+          ? {
+              ...tool,
+              inputSchema: normalizeCopilotToolSchema(
+                tool.inputSchema,
+              ) as object,
+            }
+          : tool,
+      )
+    : options.tools;
+  const normalizedOptions =
+    normalizedTools !== options.tools
+      ? { ...options, tools: normalizedTools }
+      : options;
+
   if (client.vendor !== SUPPORTED_VENDOR || client.maxInputTokens <= 0) {
-    return options;
+    return normalizedOptions;
   }
 
   // Copilot treats contextSize as the prompt/input budget; response tokens stay
@@ -366,7 +706,7 @@ export function withCopilotConfiguration(
   );
 
   return {
-    ...options,
+    ...normalizedOptions,
     configuration: copilotConfiguration,
   } as ChatRequestOptionsWithConfig;
 }
