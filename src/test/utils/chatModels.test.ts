@@ -156,92 +156,117 @@ suite("Chat Models QuickPick Test Suite", () => {
     );
   });
 
-  test("normalizes complex MCP tool schemas in withCopilotConfiguration for Gemini/Copilot compatibility", () => {
-    const model = createMockModel(
+  test("normalizes complex MCP tool schemas in withCopilotConfiguration for Gemini models only", () => {
+    const geminiModel = createMockModel(
       "gemini-4-argon",
       "Gemini 4 Argon",
       "gemini-4-argon",
     );
-    const options = withCopilotConfiguration(model, {
-      tools: [
-        {
-          name: "mcp__workiq__retrieve",
-          description: "Retrieve M365 grounding",
-          inputSchema: {
-            type: "object",
-            properties: {
-              query: { type: "string" },
-              capabilities: {
-                type: ["array", "null"],
-                items: {
-                  type: ["object", "null"],
-                  properties: {},
-                  required: ["name"],
-                  anyOf: [
-                    {
-                      type: "object",
-                      properties: {
-                        name: { type: "string", enum: ["People"] },
-                      },
-                    },
-                    {
-                      type: "object",
-                      properties: {
-                        name: { type: "string", enum: ["Meetings"] },
-                      },
-                    },
-                    {
-                      type: "object",
-                      properties: {
-                        name: {
-                          type: "string",
-                          enum: ["OneDriveAndSharePoint"],
-                        },
-                      },
-                    },
-                    {
-                      type: "object",
-                      properties: {
-                        name: { type: "string", enum: ["Email"] },
-                      },
-                    },
-                    {
-                      type: "object",
-                      properties: {
-                        name: { type: "string", enum: ["TeamsMessages"] },
-                      },
-                    },
-                  ],
-                },
+    const gptModel = createMockModel(
+      "gpt-6.1-sol",
+      "GPT-6.1 Sol",
+      "gpt-6.1-sol",
+    );
+    const rawTools: vscode.LanguageModelChatTool[] = [
+      {
+        name: "mcp__workiq__retrieve",
+        description: "Retrieve M365 grounding",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string" },
+            additionalProperties: {
+              type: ["string", "null"],
+              default: {
+                type: "UPPERCASE_LITERAL",
+                additionalProperties: true,
               },
             },
-            required: ["query"],
-          },
-        },
-        {
-          name: "mcp__icm__search_incidents",
-          description: "Search IcM incidents",
-          inputSchema: {
-            type: "object",
-            properties: {
-              severity: {
-                type: ["array", "null"],
-                enum: [0, 1, 2, 3, 4, 25],
-                items: { type: "integer" },
+            capabilities: {
+              type: ["array", "null"],
+              items: {
+                type: ["object", "null"],
+                properties: {},
+                required: ["name"],
+                anyOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      name: { type: "string", enum: ["People"] },
+                    },
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      name: { type: "string", enum: ["Meetings"] },
+                    },
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      name: {
+                        type: "string",
+                        enum: ["OneDriveAndSharePoint"],
+                      },
+                    },
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      name: { type: "string", enum: ["Email"] },
+                    },
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      name: { type: "string", enum: ["TeamsMessages"] },
+                    },
+                  },
+                ],
               },
             },
           },
+          required: ["query", "additionalProperties"],
         },
-      ],
-    });
+      },
+      {
+        name: "mcp__icm__search_incidents",
+        description: "Search IcM incidents",
+        inputSchema: {
+          type: "object",
+          properties: {
+            severity: {
+              type: ["array", "null"],
+              enum: [0, 1, 2, 3, 4, 25],
+              items: { type: "integer" },
+            },
+            matrix: {
+              type: "array",
+              enum: [[1], [2]],
+              items: { type: "integer" },
+            },
+          },
+        },
+      },
+    ];
 
+    const gptOptions = withCopilotConfiguration(gptModel, { tools: rawTools });
+    assert.strictEqual(gptOptions.tools, rawTools);
+
+    const options = withCopilotConfiguration(geminiModel, { tools: rawTools });
     const retrieveSchema = options.tools?.[0].inputSchema as Record<
       string,
       unknown
     >;
-    const capabilities = (
-      retrieveSchema.properties as Record<string, Record<string, unknown>>
-    ).capabilities;
+    const retrieveProps = retrieveSchema.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.deepStrictEqual(retrieveProps.additionalProperties, {
+      type: "string",
+      default: { type: "UPPERCASE_LITERAL", additionalProperties: true },
+    });
+    const capabilities = retrieveProps.capabilities;
     assert.strictEqual(capabilities.type, "array");
     assert.deepStrictEqual(capabilities.items, {
       type: "object",
@@ -261,15 +286,141 @@ suite("Chat Models QuickPick Test Suite", () => {
     });
 
     const icmSchema = options.tools?.[1].inputSchema as Record<string, unknown>;
-    const severity = (
-      icmSchema.properties as Record<string, Record<string, unknown>>
-    ).severity;
-    assert.strictEqual(severity.type, "array");
-    assert.strictEqual(severity.enum, undefined);
-    assert.deepStrictEqual(severity.items, {
+    const icmProps = icmSchema.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.strictEqual(icmProps.severity.type, "array");
+    assert.strictEqual(icmProps.severity.enum, undefined);
+    assert.deepStrictEqual(icmProps.severity.items, {
       type: "integer",
       enum: [0, 1, 2, 3, 4, 25],
     });
-    assert.ok(normalizeCopilotToolSchema);
+    assert.strictEqual(icmProps.matrix.enum, undefined);
+    assert.deepStrictEqual(icmProps.matrix.items, { type: "integer" });
+  });
+
+  test("handles recursive $ref unions, root $defs, const discriminators, optional branches, and non-name item unions", () => {
+    const normalized = normalizeCopilotToolSchema({
+      type: "object",
+      $defs: {
+        Node: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                value: { type: "string" },
+                next: { $ref: "#/$defs/Node" },
+              },
+              required: ["value"],
+            },
+            { type: "null" },
+          ],
+        },
+        CreatePayload: {
+          type: "object",
+          properties: {
+            action: { type: "string", const: "create" },
+            title: { type: "string" },
+          },
+          required: ["action", "title"],
+        },
+        UpdatePayload: {
+          type: "object",
+          properties: {
+            action: { type: "string", const: "update" },
+            id: { type: "integer" },
+          },
+        },
+      },
+      properties: {
+        tree: { $ref: "#/$defs/Node" },
+        payload: {
+          anyOf: [
+            { $ref: "#/$defs/CreatePayload" },
+            { $ref: "#/$defs/UpdatePayload" },
+          ],
+        },
+        events: {
+          type: "array",
+          items: {
+            anyOf: [
+              {
+                type: "object",
+                properties: {
+                  kind: { type: "string", const: "a" },
+                  payload: { type: "string" },
+                },
+                required: ["kind", "payload"],
+              },
+              {
+                type: "object",
+                properties: {
+                  kind: { type: "string", const: "b" },
+                  payload: { type: "string" },
+                },
+                required: ["kind", "payload"],
+              },
+              {
+                type: "object",
+                properties: {
+                  kind: { type: "string", const: "c" },
+                  payload: { type: "string" },
+                },
+                required: ["kind", "payload"],
+              },
+              {
+                type: "object",
+                properties: {
+                  kind: { type: "string", const: "d" },
+                  payload: { type: "string" },
+                },
+                required: ["kind", "payload"],
+              },
+              {
+                type: "object",
+                properties: {
+                  kind: { type: "string", const: "e" },
+                  payload: { type: "string" },
+                },
+                required: ["kind", "payload"],
+              },
+            ],
+          },
+        },
+      },
+    }) as Record<string, unknown>;
+
+    const props = normalized.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.deepStrictEqual(props.tree, {
+      type: "object",
+      properties: {
+        value: { type: "string" },
+        next: { type: "string" },
+      },
+      required: ["value"],
+    });
+    assert.deepStrictEqual(props.payload, {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["create", "update"] },
+        title: { type: "string" },
+        id: { type: "integer" },
+      },
+    });
+    assert.deepStrictEqual(props.events, {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["a", "b", "c", "d", "e"] },
+          payload: { type: "string" },
+        },
+        required: ["kind", "payload"],
+      },
+    });
   });
 });
