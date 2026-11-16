@@ -4,6 +4,8 @@ import * as vscode from "vscode";
 import {
   chatModelsCache,
   getChatModelsQuickPickItems,
+  normalizeCopilotToolSchema,
+  withCopilotConfiguration,
 } from "../../utils/chatModels";
 
 function createMockModel(
@@ -152,5 +154,122 @@ suite("Chat Models QuickPick Test Suite", () => {
       items.slice(otherIndex + 1).map((item) => item.modelId),
       ["auto"],
     );
+  });
+
+  test("normalizes complex MCP tool schemas in withCopilotConfiguration for Gemini/Copilot compatibility", () => {
+    const model = createMockModel(
+      "gemini-4-argon",
+      "Gemini 4 Argon",
+      "gemini-4-argon",
+    );
+    const options = withCopilotConfiguration(model, {
+      tools: [
+        {
+          name: "mcp__workiq__retrieve",
+          description: "Retrieve M365 grounding",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string" },
+              capabilities: {
+                type: ["array", "null"],
+                items: {
+                  type: ["object", "null"],
+                  properties: {},
+                  required: ["name"],
+                  anyOf: [
+                    {
+                      type: "object",
+                      properties: {
+                        name: { type: "string", enum: ["People"] },
+                      },
+                    },
+                    {
+                      type: "object",
+                      properties: {
+                        name: { type: "string", enum: ["Meetings"] },
+                      },
+                    },
+                    {
+                      type: "object",
+                      properties: {
+                        name: {
+                          type: "string",
+                          enum: ["OneDriveAndSharePoint"],
+                        },
+                      },
+                    },
+                    {
+                      type: "object",
+                      properties: {
+                        name: { type: "string", enum: ["Email"] },
+                      },
+                    },
+                    {
+                      type: "object",
+                      properties: {
+                        name: { type: "string", enum: ["TeamsMessages"] },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+            required: ["query"],
+          },
+        },
+        {
+          name: "mcp__icm__search_incidents",
+          description: "Search IcM incidents",
+          inputSchema: {
+            type: "object",
+            properties: {
+              severity: {
+                type: ["array", "null"],
+                enum: [0, 1, 2, 3, 4, 25],
+                items: { type: "integer" },
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const retrieveSchema = options.tools?.[0].inputSchema as Record<
+      string,
+      unknown
+    >;
+    const capabilities = (
+      retrieveSchema.properties as Record<string, Record<string, unknown>>
+    ).capabilities;
+    assert.strictEqual(capabilities.type, "array");
+    assert.deepStrictEqual(capabilities.items, {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          enum: [
+            "People",
+            "Meetings",
+            "OneDriveAndSharePoint",
+            "Email",
+            "TeamsMessages",
+          ],
+        },
+      },
+      required: ["name"],
+    });
+
+    const icmSchema = options.tools?.[1].inputSchema as Record<string, unknown>;
+    const severity = (
+      icmSchema.properties as Record<string, Record<string, unknown>>
+    ).severity;
+    assert.strictEqual(severity.type, "array");
+    assert.strictEqual(severity.enum, undefined);
+    assert.deepStrictEqual(severity.items, {
+      type: "integer",
+      enum: [0, 1, 2, 3, 4, 25],
+    });
+    assert.ok(normalizeCopilotToolSchema);
   });
 });
