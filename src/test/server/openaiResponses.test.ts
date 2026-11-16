@@ -109,6 +109,16 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
                 parameters: { type: "object" },
                 strict: false,
               },
+              {
+                type: "custom",
+                name: "query",
+                description: "custom query description",
+                format: {
+                  type: "grammar",
+                  syntax: "lark",
+                  definition: "start: WORD",
+                },
+              },
             ],
           },
           {
@@ -117,6 +127,16 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
             description: "standalone description",
             parameters: { type: "object" },
             strict: false,
+          },
+          {
+            type: "custom",
+            name: "standalone_custom",
+            description: "standalone custom description",
+            format: {
+              type: "grammar",
+              syntax: "regex",
+              definition: "^[a-z]+$",
+            },
           },
         ],
       } as any);
@@ -127,7 +147,23 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         discovered_tools: [
           "mcp__workiq.fetch",
           "mcp__workiq.retrieve",
+          {
+            name: "mcp__workiq.query",
+            format: {
+              type: "grammar",
+              syntax: "lark",
+              definition: "start: WORD",
+            },
+          },
           "standalone",
+          {
+            name: "standalone_custom",
+            format: {
+              type: "grammar",
+              syntax: "regex",
+              definition: "^[a-z]+$",
+            },
+          },
         ],
       });
       assert.ok(!text.value.includes("description"));

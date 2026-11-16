@@ -994,25 +994,37 @@ export const convertResponsesItemToVSCode = (
         "input",
       );
     }
-    const discoveredTools = item.tools.flatMap((tool) => {
-      if (!tool || typeof tool !== "object") {
-        return [];
-      }
-      const candidate = tool as unknown as {
-        type?: string;
-        name?: string;
-        tools?: Array<{ name?: string }>;
-      };
-      if (candidate.type === "namespace") {
-        return (Array.isArray(candidate.tools) ? candidate.tools : []).flatMap(
-          (nested) =>
-            nested?.name
-              ? [`${candidate.name ?? "namespace"}.${nested.name}`]
-              : [],
-        );
-      }
-      return candidate.name ? [candidate.name] : [];
-    });
+    type DiscoveredToolSummary = string | { name: string; format: unknown };
+    const discoveredTools = item.tools.flatMap<DiscoveredToolSummary>(
+      (tool) => {
+        if (!tool || typeof tool !== "object") {
+          return [];
+        }
+        const candidate = tool as unknown as {
+          type?: string;
+          name?: string;
+          format?: unknown;
+          tools?: Array<{ type?: string; name?: string; format?: unknown }>;
+        };
+        if (candidate.type === "namespace") {
+          return (
+            Array.isArray(candidate.tools) ? candidate.tools : []
+          ).flatMap<DiscoveredToolSummary>((nested) => {
+            if (!nested?.name) {
+              return [];
+            }
+            const name = `${candidate.name ?? "namespace"}.${nested.name}`;
+            return nested.type === "custom" && nested.format
+              ? [{ name, format: nested.format }]
+              : [name];
+          });
+        }
+        if (candidate.type === "custom" && candidate.name && candidate.format) {
+          return [{ name: candidate.name, format: candidate.format }];
+        }
+        return candidate.name ? [candidate.name] : [];
+      },
+    );
     return vscode.LanguageModelChatMessage.User([
       new vscode.LanguageModelToolResultPart(item.call_id, [
         new vscode.LanguageModelTextPart(
