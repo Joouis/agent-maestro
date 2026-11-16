@@ -17,7 +17,7 @@ export interface ApiKeys {
   admin: ApiKeyState;
 }
 
-export type AccessResult =
+type AccessResult =
   | { ok: true }
   | {
       ok: false;
@@ -92,7 +92,7 @@ export function checkAdminAccess(
   return ALLOW;
 }
 
-export function readBearerToken(
+function readBearerToken(
   authorization: string | undefined,
 ): string | undefined {
   return authorization?.startsWith("Bearer ")
@@ -101,9 +101,7 @@ export function readBearerToken(
 }
 
 /** Credentials accepted on control routes. */
-export function readAdminCredentials(
-  header: HeaderReader,
-): (string | undefined)[] {
+function readAdminCredentials(header: HeaderReader): (string | undefined)[] {
   return [readBearerToken(header("authorization")), header("x-api-key")];
 }
 
@@ -195,7 +193,7 @@ export function createGeminiAuthMiddleware(getKeys: () => ApiKeys) {
   );
 }
 
-export function adminAccessMessage(
+function adminAccessMessage(
   result: Extract<AccessResult, { ok: false }>,
 ): string {
   switch (result.reason) {
