@@ -248,9 +248,9 @@ export const buildResponseOutputFromParts = (
     if (part instanceof vscode.LanguageModelTextPart) {
       text += part.value;
     } else if (isThinkingPart(part)) {
+      flushText();
       const item = thinkingToResponseReasoning(part);
       if (item && reasoning.accept(item.id, item.encrypted_content)) {
-        flushText();
         output.push(item);
       }
     } else {

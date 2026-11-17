@@ -989,6 +989,37 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(restored.id, "rs_provider");
       assert.strictEqual(restored.metadata?.encrypted_content, "opaque");
     });
+
+    test("splits adjacent text into separate messages across non-Responses thinking parts", () => {
+      const Thinking = getThinkingRuntime()!.Thinking;
+      const output = buildResponseOutputFromParts(
+        [
+          new vscode.LanguageModelTextPart("Commentary before thinking."),
+          new Thinking("private gemini thought", "thought-1"),
+          new Thinking("", "", { vscode_thinking_done: true }),
+          new vscode.LanguageModelTextPart("Final report after thinking."),
+        ],
+        new Map(),
+      );
+      assert.deepStrictEqual(
+        output.map((item) =>
+          item.type === "message"
+            ? [
+                item.type,
+                item.content
+                  .map((part) => (part.type === "output_text" ? part.text : ""))
+                  .join(""),
+              ]
+            : [item.type],
+        ),
+        [
+          ["message", "Commentary before thinking."],
+          ["message", "Final report after thinking."],
+        ],
+      );
+      assert.notStrictEqual(output[0].id, output[1].id);
+      assert.ok(!JSON.stringify(output).includes("private gemini thought"));
+    });
   });
   suite("ID Generation Functions", () => {
     test("generateResponseId should return string starting with resp_AM-", () => {
