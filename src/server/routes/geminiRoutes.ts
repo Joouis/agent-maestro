@@ -4,11 +4,7 @@ import { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import * as vscode from "vscode";
 
-import {
-  getChatModelClient,
-  sendWithStaleModelRetry,
-  withCopilotConfiguration,
-} from "../../utils/chatModels";
+import { getChatModelClient } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import {
   GeminiErrorResponseSchema,
@@ -24,6 +20,7 @@ import {
   convertGeminiToolsToVSCode,
   extractGeminiUsage,
 } from "../utils/gemini";
+import { sendLanguageModelRequest } from "../utils/languageModelRequest";
 import {
   LanguageModelClientDisconnectedError,
   LanguageModelRequestLifecycle,
@@ -162,6 +159,9 @@ const generateContentRoute = createRoute({
       },
       description: "Model not found",
     },
+    499: {
+      description: "Client disconnected before the response completed",
+    },
     500: {
       content: {
         "application/json": {
@@ -169,6 +169,15 @@ const generateContentRoute = createRoute({
         },
       },
       description: "Internal server error",
+    },
+    504: {
+      content: {
+        "application/json": {
+          schema: GeminiErrorResponseSchema,
+        },
+      },
+      description:
+        "Gateway timeout - language model request exceeded 10 minutes",
     },
   },
 });
@@ -326,12 +335,12 @@ export function registerGeminiRoutes(
     options.resolveChatModelClient ?? getChatModelClient;
 
   // POST /v1beta/models/{model}:generateContent
-  app.openapi(generateContentRoute, async (c: Context) => {
+  app.openapi(generateContentRoute, async (c: Context): Promise<Response> => {
     let rawRequestBody: GenerateContentRequest | undefined;
     let lmChatMessages: vscode.LanguageModelChatMessage[] | undefined;
     let modelId = "";
     let inputTokens = 0;
-    let cancellationTokenSource: vscode.CancellationTokenSource | undefined;
+    let requestLifecycle: LanguageModelRequestLifecycle | undefined;
 
     try {
       // Parse request
@@ -359,7 +368,10 @@ export function registerGeminiRoutes(
       let client = initialClient!;
 
       // 2. Prepare request
-      cancellationTokenSource = new vscode.CancellationTokenSource();
+      requestLifecycle = new LanguageModelRequestLifecycle(
+        c.req.raw.signal,
+        options.requestTimeoutMs,
+      );
       const { vsCodeLmMessages, lmRequestOptions } = prepareGeminiRequest({
         requestBody,
       });
@@ -373,18 +385,15 @@ export function registerGeminiRoutes(
 
       // 3. Send request to VSCode LM API
       // No Gemini request field is currently mapped to Copilot reasoning effort.
-      const cancellationToken = cancellationTokenSource.token;
-      const sent = await sendWithStaleModelRetry(
+      const cancellationToken = requestLifecycle.token;
+      const sent = await sendLanguageModelRequest({
         client,
-        (lmClient) =>
-          lmClient.sendRequest(
-            vsCodeLmMessages,
-            withCopilotConfiguration(lmClient, lmRequestOptions),
-            cancellationToken,
-          ),
-        { cancellationToken, resolve: resolveChatModelClient },
-      );
-      const response = sent.result;
+        messages: vsCodeLmMessages,
+        options: lmRequestOptions,
+        lifecycle: requestLifecycle,
+        resolve: resolveChatModelClient,
+      });
+      const response = sent.response;
       client = sent.client;
 
       // 4. Process response (always non-streaming for generateContent)
@@ -392,7 +401,10 @@ export function registerGeminiRoutes(
       let accumulatedText = "";
       let responseUsage: GeminiTokenUsage | undefined;
 
-      for await (const chunk of response.stream) {
+      for await (const chunk of interruptibleLanguageModelStream(
+        response.stream,
+        requestLifecycle,
+      )) {
         if (chunk instanceof vscode.LanguageModelTextPart) {
           const text = chunk.value;
           parts.push({ text });
@@ -413,12 +425,14 @@ export function registerGeminiRoutes(
 
       const usageMetadata =
         responseUsage ??
-        (await getFallbackGeminiUsage({
-          accumulatedText,
-          cancellationToken: cancellationTokenSource.token,
-          client,
-          requestBody,
-        }));
+        (await requestLifecycle.waitFor(
+          getFallbackGeminiUsage({
+            accumulatedText,
+            cancellationToken,
+            client,
+            requestBody,
+          }),
+        ));
       inputTokens = usageMetadata.promptTokenCount;
 
       const geminiResponse: GenerateContentResponse = {
@@ -442,10 +456,32 @@ export function registerGeminiRoutes(
         `← /v1beta/models/${modelWithMethod} | input: ${usageMetadata.promptTokenCount} | cache_read: ${usageMetadata.cachedContentTokenCount} | output: ${usageMetadata.candidatesTokenCount} | thoughts: ${usageMetadata.thoughtsTokenCount}`,
       );
 
-      cancellationTokenSource.dispose();
+      requestLifecycle.dispose();
       return c.json(geminiResponse, 200);
     } catch (error) {
-      cancellationTokenSource?.dispose();
+      requestLifecycle?.dispose();
+
+      if (error instanceof LanguageModelRequestTimeoutError) {
+        logger.error(`✕ /v1beta/models/${modelId}:generateContent |`, error);
+        return c.json(
+          {
+            error: {
+              code: 504,
+              message: error.message,
+              status: "DEADLINE_EXCEEDED",
+            },
+          },
+          504,
+        );
+      }
+
+      if (error instanceof LanguageModelClientDisconnectedError) {
+        logger.info(
+          `/v1beta/models/${modelId}:generateContent | client disconnected`,
+        );
+        return new Response(null, { status: 499 });
+      }
+
       logger.error(`✕ /v1beta/models/${modelId}:generateContent |`, error);
 
       const logFilePath = await handleErrorWithLogging({
@@ -526,19 +562,14 @@ export function registerGeminiRoutes(
         // 3. Send request to VSCode LM API
         // No Gemini request field is currently mapped to Copilot reasoning effort.
         const cancellationToken = requestLifecycle.token;
-        const sent = await requestLifecycle.waitFor(
-          sendWithStaleModelRetry(
-            client,
-            (lmClient) =>
-              lmClient.sendRequest(
-                vsCodeLmMessages,
-                withCopilotConfiguration(lmClient, lmRequestOptions),
-                cancellationToken,
-              ),
-            { cancellationToken, resolve: resolveChatModelClient },
-          ),
-        );
-        const response = sent.result;
+        const sent = await sendLanguageModelRequest({
+          client,
+          messages: vsCodeLmMessages,
+          options: lmRequestOptions,
+          lifecycle: requestLifecycle,
+          resolve: resolveChatModelClient,
+        });
+        const response = sent.response;
         client = sent.client;
 
         // 4. Always stream the response

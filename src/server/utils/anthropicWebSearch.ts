@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import * as vscode from "vscode";
 
-import { sendWithStaleModelRetry } from "../../utils/chatModels";
 import {
   MAX_WEB_SEARCH_RESULTS,
   WEB_SEARCH_PROVIDER_TIMEOUT_MS,
@@ -17,6 +16,7 @@ import {
 } from "../webSearch/webSearchProvider";
 import { AnthropicTokenUsage, extractAnthropicUsage } from "./anthropic";
 import { isResponseTooLongError } from "./languageModelErrors";
+import { sendLanguageModelRequest } from "./languageModelRequest";
 import {
   LanguageModelRequestLifecycle,
   interruptibleLanguageModelStream,
@@ -512,15 +512,15 @@ const collectModelRound = async ({
 }): Promise<CollectedModelRound> => {
   // Request options were configured for this model; a re-resolved handle of
   // the same model shares its context size, so they are reused as is.
-  const sent = await lifecycle.waitFor(
-    sendWithStaleModelRetry(
-      client,
-      (lmClient) =>
-        lmClient.sendRequest(messages, requestOptions, lifecycle.token),
-      { cancellationToken: lifecycle.token },
-    ),
-  );
-  const response = sent.result;
+  const sent = await sendLanguageModelRequest({
+    client,
+    messages: messages,
+    options: requestOptions,
+    // Already configured for this model by the caller.,
+    copilotConfiguration: false,
+    lifecycle,
+  });
+  const response = sent.response;
   client = sent.client;
   const blocks: Anthropic.Messages.ContentBlock[] = [];
   const parts: Array<

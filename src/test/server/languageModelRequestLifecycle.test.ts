@@ -15,6 +15,7 @@ import {
 suite("LanguageModelRequestLifecycle Test Suite", () => {
   const createStalledModel = (
     onCancellation: () => void,
+    onStart: () => void = () => {},
   ): vscode.LanguageModelChat =>
     ({
       id: "claude-opus-test",
@@ -28,6 +29,7 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
         supportsToolCalling: true,
       },
       sendRequest: async (_messages, _options, token) => {
+        onStart();
         if (token?.isCancellationRequested) {
           onCancellation();
         } else {
@@ -256,12 +258,16 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
 
   test("propagates a client disconnect through the Anthropic route", async () => {
     let cancellationObserved = false;
-    const app = createAnthropicTestApp(
-      createStalledModel(() => {
-        cancellationObserved = true;
-      }),
-    );
     const clientAbortController = new AbortController();
+    const app = createAnthropicTestApp(
+      createStalledModel(
+        () => {
+          cancellationObserved = true;
+        },
+        // Disconnect once the model request is running.
+        () => clientAbortController.abort(),
+      ),
+    );
 
     const responsePromise = app.request("/v1/messages", {
       method: "POST",
@@ -273,7 +279,6 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
       }),
       signal: clientAbortController.signal,
     });
-    clientAbortController.abort();
 
     const response = await responsePromise;
     assert.strictEqual(response.status, 499);
@@ -335,12 +340,16 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
 
   test("propagates a client disconnect through Chat Completions", async () => {
     let cancellationObserved = false;
-    const app = createOpenaiChatTestApp(
-      createStalledModel(() => {
-        cancellationObserved = true;
-      }),
-    );
     const clientAbortController = new AbortController();
+    const app = createOpenaiChatTestApp(
+      createStalledModel(
+        () => {
+          cancellationObserved = true;
+        },
+        // Disconnect once the model request is running.
+        () => clientAbortController.abort(),
+      ),
+    );
 
     const responsePromise = app.request("/v1/chat/completions", {
       method: "POST",
@@ -351,7 +360,6 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
       }),
       signal: clientAbortController.signal,
     });
-    clientAbortController.abort();
 
     const response = await responsePromise;
     assert.strictEqual(response.status, 499);
@@ -749,12 +757,16 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
 
   test("propagates a client disconnect through Responses", async () => {
     let cancellationObserved = false;
-    const app = createOpenaiResponsesTestApp(
-      createStalledModel(() => {
-        cancellationObserved = true;
-      }),
-    );
     const clientAbortController = new AbortController();
+    const app = createOpenaiResponsesTestApp(
+      createStalledModel(
+        () => {
+          cancellationObserved = true;
+        },
+        // Disconnect once the model request is running.
+        () => clientAbortController.abort(),
+      ),
+    );
 
     const responsePromise = app.request("/v1/responses", {
       method: "POST",
@@ -765,7 +777,6 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
       }),
       signal: clientAbortController.signal,
     });
-    clientAbortController.abort();
 
     const response = await responsePromise;
     assert.strictEqual(response.status, 499);
