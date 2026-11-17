@@ -322,6 +322,11 @@ suite("Chat Models QuickPick Test Suite", () => {
           properties: {
             action: { type: "string", const: "create" },
             title: { type: "string" },
+            value: { type: "integer" },
+            additionalProperties: {
+              type: "string",
+              default: { $defs: "keep-literal" },
+            },
           },
           required: ["action", "title"],
         },
@@ -330,6 +335,7 @@ suite("Chat Models QuickPick Test Suite", () => {
           properties: {
             action: { type: "string", const: "update" },
             id: { type: "integer" },
+            value: { type: "string" },
           },
         },
       },
@@ -408,6 +414,11 @@ suite("Chat Models QuickPick Test Suite", () => {
       properties: {
         action: { type: "string", enum: ["create", "update"] },
         title: { type: "string" },
+        value: { type: "string" },
+        additionalProperties: {
+          type: "string",
+          default: { $defs: "keep-literal" },
+        },
         id: { type: "integer" },
       },
     });
