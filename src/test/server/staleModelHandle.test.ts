@@ -208,6 +208,29 @@ suite("Stale model handle recovery", () => {
       assert.strictEqual(resolves, 0);
     });
 
+    test("does not retry when the request is cancelled during re-resolution", async () => {
+      const source = new vscode.CancellationTokenSource();
+      let freshCalls = 0;
+      const stale = model(async () => {
+        throw notRegistered();
+      });
+      const fresh = model(async () => {
+        freshCalls++;
+        return textResponse("x");
+      });
+      await assert.rejects(
+        sendWithStaleModelRetry(stale, send, {
+          cancellationToken: source.token,
+          resolve: async () => {
+            source.cancel();
+            return { client: fresh };
+          },
+        }),
+        /is not registered/,
+      );
+      assert.strictEqual(freshCalls, 0);
+    });
+
     test("drops cached handles before re-resolving", async () => {
       const originalInvalidate = chatModelsCache.invalidate;
       let invalidations = 0;

@@ -644,6 +644,8 @@ export function prepareOpenAIResponsesTools({
 }
 
 interface CollectedModelRound {
+  /** The handle that served this round; differs after stale-handle recovery. */
+  client: vscode.LanguageModelChat;
   incomplete: boolean;
   parts: ResponsesModelPart[];
   usage: ResponseUsage;
@@ -790,7 +792,7 @@ const collectModelRound = async ({
     };
   }
 
-  return { incomplete, parts, usage };
+  return { client, incomplete, parts, usage };
 };
 
 const buildOutputFromParts = (
@@ -1004,6 +1006,7 @@ export async function runOpenAIResponsesWebSearchLoop({
       toolMode: preparedTools.toolMode,
     },
   });
+  client = firstRound.client;
   const internalCalls = firstRound.parts.filter(
     (part): part is vscode.LanguageModelToolCallPart =>
       part instanceof vscode.LanguageModelToolCallPart &&
@@ -1200,6 +1203,7 @@ export async function runOpenAIResponsesWebSearchLoop({
       toolMode: undefined,
     },
   });
+  client = synthesisRound.client;
   let usage = addUsage(firstRound.usage, synthesisRound.usage);
   let incomplete =
     synthesisRound.incomplete ||

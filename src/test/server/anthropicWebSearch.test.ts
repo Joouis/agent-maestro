@@ -23,6 +23,7 @@ import {
   normalizeWebSearchResults,
   runWebSearchProviderWithTimeout,
 } from "../../server/webSearch/webSearchProvider";
+import { chatModelsCache } from "../../utils/chatModels";
 
 const serverTool = (overrides: Record<string, unknown> = {}) => ({
   type: "web_search_20250305",
@@ -140,6 +141,28 @@ const internalCall = (
     prepared.internalWebSearchToolName!,
     input,
   );
+
+/** A handle whose internal model ID VS Code has dropped; every call fails. */
+const staleHandleOf = (model: vscode.LanguageModelChat) => {
+  const calls = { send: 0, countTokens: 0 };
+  const fail = () => {
+    throw new Error(
+      `Chat provider for model copilot/Copilot/${model.id} is not registered.`,
+    );
+  };
+  const stale = {
+    ...model,
+    sendRequest: async () => {
+      calls.send++;
+      return fail();
+    },
+    countTokens: async () => {
+      calls.countTokens++;
+      return fail();
+    },
+  } as vscode.LanguageModelChat;
+  return { stale, calls };
+};
 
 suite("Anthropic Server Web Search Test Suite", () => {
   suite("classification and validation", () => {
@@ -1665,6 +1688,66 @@ suite("Anthropic Server Web Search Test Suite", () => {
       assert.strictEqual(body.error.type, "invalid_request_error");
       assert.strictEqual(body.error.code, "tool_unavailable");
       assert.strictEqual(requests.length, 0);
+    });
+
+    suite("stale model handle recovery", () => {
+      test("later rounds and citation budgeting use the recovered handle", async () => {
+        const prepared = prepareServerSearch();
+        const requests: Array<{
+          messages: readonly vscode.LanguageModelChatMessage[];
+          options: vscode.LanguageModelChatRequestOptions;
+        }> = [];
+        const fresh = createRoundModel(
+          [
+            { chunks: [internalCall(prepared), usagePart()] },
+            {
+              chunks: [
+                new vscode.LanguageModelTextPart("TypeScript is current."),
+                usagePart(),
+              ],
+            },
+          ],
+          requests,
+        );
+        const { stale, calls } = staleHandleOf(fresh);
+        const originalGetChatModels = chatModelsCache.getChatModels;
+        chatModelsCache.getChatModels = async () => [fresh];
+        const lifecycle = new LanguageModelRequestLifecycle(
+          new AbortController().signal,
+          1_000,
+        );
+        try {
+          const result = await runAnthropicWebSearchLoop({
+            client: stale,
+            messages: [vscode.LanguageModelChatMessage.User("Search")],
+            baseRequestOptions: {},
+            preparedTools: prepared,
+            provider: {
+              search: async () => [
+                {
+                  title: "TypeScript",
+                  url: "https://typescriptlang.org/docs/",
+                },
+              ],
+            },
+            lifecycle,
+            maxTokens: 100,
+          });
+
+          assert.deepStrictEqual(calls, { send: 1, countTokens: 0 });
+          assert.strictEqual(requests.length, 2);
+          assert.match(
+            result.content
+              .filter((block) => block.type === "text")
+              .map((block) => block.text)
+              .join(""),
+            /Sources:\n- https:\/\/typescriptlang\.org\/docs\//,
+          );
+        } finally {
+          chatModelsCache.getChatModels = originalGetChatModels;
+          lifecycle.dispose();
+        }
+      });
     });
   });
 });

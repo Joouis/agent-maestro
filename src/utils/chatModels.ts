@@ -504,7 +504,13 @@ export async function sendWithStaleModelRetry<T>(
     const { client: fresh } = await (options.resolve ?? getChatModelClient)(
       client.id,
     );
-    if (!fresh || fresh.id !== client.id || fresh === client) {
+    // Re-resolution can take a while; do not start a request nobody will read.
+    if (
+      !fresh ||
+      fresh.id !== client.id ||
+      fresh === client ||
+      options.cancellationToken?.isCancellationRequested
+    ) {
       throw error;
     }
     return { result: await send(fresh), client: fresh };
