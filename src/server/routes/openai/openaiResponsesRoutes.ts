@@ -12,6 +12,7 @@ import * as vscode from "vscode";
 import {
   getChatModelClient,
   getCopilotModelConfiguration,
+  sendWithStaleModelRetry,
   withCopilotConfiguration,
   withCopilotConversationId,
 } from "../../../utils/chatModels";
@@ -321,12 +322,13 @@ export function registerOpenaiResponsesRoutes(
       }
 
       // 4. Get chat model client
-      const { client, error: clientError } =
+      const { client: initialClient, error: clientError } =
         await resolveChatModelClient(model);
 
       if (clientError) {
         return c.json(clientError, 404);
       }
+      let client = initialClient!;
 
       logger.debug("/v1/responses payload:");
       logger.debug(JSON.stringify(requestBody, null, 2));
@@ -389,13 +391,24 @@ export function registerOpenaiResponsesRoutes(
 
       // 9. Handle non-streaming response
       if (!stream) {
-        const response = await requestLifecycle.waitFor(
-          client.sendRequest(
-            vsCodeMessages,
-            configuredRequestOptions,
-            cancellationToken,
+        const sent = await requestLifecycle.waitFor(
+          sendWithStaleModelRetry(
+            client,
+            (lmClient) =>
+              lmClient.sendRequest(
+                vsCodeMessages,
+                withCopilotConfiguration(
+                  lmClient,
+                  lmRequestOptions,
+                  copilotConfiguration,
+                ),
+                cancellationToken,
+              ),
+            { cancellationToken, resolve: resolveChatModelClient },
           ),
         );
+        const response = sent.result;
+        client = sent.client;
         let accumulatedText = "";
         const toolCalls: { callId: string; name: string; input: unknown }[] =
           [];
@@ -533,13 +546,24 @@ export function registerOpenaiResponsesRoutes(
             writeSSE,
             sequenceNumberRef,
             async (writeSSE) => {
-              const response = await requestLifecycle!.waitFor(
-                client.sendRequest(
-                  vsCodeMessages,
-                  configuredRequestOptions,
-                  cancellationToken,
+              const sent = await requestLifecycle!.waitFor(
+                sendWithStaleModelRetry(
+                  client,
+                  (lmClient) =>
+                    lmClient.sendRequest(
+                      vsCodeMessages,
+                      withCopilotConfiguration(
+                        lmClient,
+                        lmRequestOptions,
+                        copilotConfiguration,
+                      ),
+                      cancellationToken,
+                    ),
+                  { cancellationToken, resolve: resolveChatModelClient },
                 ),
               );
+              const response = sent.result;
+              client = sent.client;
               // Process stream
               const output: OutputItem[] = [];
               const reasoning = new ReasoningItems("provider");

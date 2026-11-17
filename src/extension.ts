@@ -38,6 +38,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Initialize chat models cache
   chatModelsCache.initialize();
+  context.subscriptions.push(chatModelsCache.watchModelChanges());
 
   try {
     await controller.initialize();

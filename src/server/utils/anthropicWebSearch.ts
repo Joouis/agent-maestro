@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import * as vscode from "vscode";
 
+import { sendWithStaleModelRetry } from "../../utils/chatModels";
 import {
   MAX_WEB_SEARCH_RESULTS,
   WEB_SEARCH_PROVIDER_TIMEOUT_MS,
@@ -507,9 +508,18 @@ const collectModelRound = async ({
   requestOptions: vscode.LanguageModelChatRequestOptions;
   lifecycle: LanguageModelRequestLifecycle;
 }): Promise<CollectedModelRound> => {
-  const response = await lifecycle.waitFor(
-    client.sendRequest(messages, requestOptions, lifecycle.token),
+  // Request options were configured for this model; a re-resolved handle of
+  // the same model shares its context size, so they are reused as is.
+  const sent = await lifecycle.waitFor(
+    sendWithStaleModelRetry(
+      client,
+      (lmClient) =>
+        lmClient.sendRequest(messages, requestOptions, lifecycle.token),
+      { cancellationToken: lifecycle.token },
+    ),
   );
+  const response = sent.result;
+  client = sent.client;
   const blocks: Anthropic.Messages.ContentBlock[] = [];
   const parts: Array<
     vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart

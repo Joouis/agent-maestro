@@ -7,6 +7,7 @@ import {
 } from "openai/resources/responses/responses";
 import * as vscode from "vscode";
 
+import { sendWithStaleModelRetry } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
 import {
   MAX_WEB_SEARCH_RESULTS,
@@ -710,9 +711,18 @@ const collectModelRound = async ({
   requestOptions: vscode.LanguageModelChatRequestOptions;
   lifecycle: LanguageModelRequestLifecycle;
 }): Promise<CollectedModelRound> => {
-  const response = await lifecycle.waitFor(
-    client.sendRequest(messages, requestOptions, lifecycle.token),
+  // Request options were configured for this model; a re-resolved handle of
+  // the same model shares its context size, so they are reused as is.
+  const sent = await lifecycle.waitFor(
+    sendWithStaleModelRetry(
+      client,
+      (lmClient) =>
+        lmClient.sendRequest(messages, requestOptions, lifecycle.token),
+      { cancellationToken: lifecycle.token },
+    ),
   );
+  const response = sent.result;
+  client = sent.client;
   const parts: ResponsesModelPart[] = [];
   const reasoning = new ReasoningItems("provider");
   let usage: ResponseUsage | undefined;
