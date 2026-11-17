@@ -809,48 +809,62 @@ const MAX_REQUEST_IMAGES = 10;
 const OMITTED_IMAGE_NOTICE =
   "[Earlier image omitted to keep the replayed request within the model's image limit.]";
 
-const capReplayedImages = (history: ToolHistoryMessage[]): void => {
-  const imageCount = history.reduce(
-    (total, message) =>
-      total +
-      message.parts.reduce(
-        (messageTotal, part) =>
-          messageTotal +
-          ("parts" in part
-            ? part.parts.filter(
-                (content) => content instanceof vscode.LanguageModelDataPart,
-              ).length
-            : 0),
-        0,
-      ),
+const countDataParts = (parts: readonly unknown[]): number =>
+  parts.reduce<number>((total, part) => {
+    if (part instanceof vscode.LanguageModelDataPart) {
+      return total + 1;
+    }
+    if (part instanceof vscode.LanguageModelToolResultPart) {
+      return total + countDataParts(part.content);
+    }
+    return total;
+  }, 0);
+
+const trimDataParts = <T>(
+  parts: readonly T[],
+  trimmer: () => vscode.LanguageModelTextPart | null,
+): T[] =>
+  parts.map((part) => {
+    if (part instanceof vscode.LanguageModelDataPart) {
+      return (trimmer() ?? part) as T;
+    }
+    if (part instanceof vscode.LanguageModelToolResultPart) {
+      part.content = trimDataParts(part.content, trimmer);
+    }
+    return part;
+  });
+
+const capReplayedImages = (
+  messages: vscode.LanguageModelChatMessage[],
+): vscode.LanguageModelChatMessage[] => {
+  const imageCount = messages.reduce(
+    (total, message) => total + countDataParts(message.content),
     0,
   );
   let imagesToOmit = imageCount - MAX_REQUEST_IMAGES;
   if (imagesToOmit <= 0) {
-    return;
+    return messages;
   }
 
   const omittedCount = imagesToOmit;
-  for (const message of history) {
-    for (const part of message.parts) {
-      if (!("parts" in part)) {
-        continue;
-      }
-      part.parts = part.parts.map((content) => {
-        if (
-          imagesToOmit > 0 &&
-          content instanceof vscode.LanguageModelDataPart
-        ) {
-          imagesToOmit--;
-          return new vscode.LanguageModelTextPart(OMITTED_IMAGE_NOTICE);
-        }
-        return content;
-      });
+  const trimNext = (): vscode.LanguageModelTextPart | null => {
+    if (imagesToOmit <= 0) {
+      return null;
     }
+    imagesToOmit--;
+    return new vscode.LanguageModelTextPart(OMITTED_IMAGE_NOTICE);
+  };
+  for (const message of messages) {
+    message.content.splice(
+      0,
+      message.content.length,
+      ...trimDataParts(message.content, trimNext),
+    );
   }
   logger.warn(
     `Omitted ${omittedCount} earlier image(s) from replayed Responses history`,
   );
+  return messages;
 };
 
 const isConvertibleToolOutputPart = (
@@ -1323,8 +1337,7 @@ export const convertResponsesInputToVSCode = (
     history.push({ role: "user", parts: [], boundary: true });
   }
   appendInput(input);
-  capReplayedImages(history);
-  return toolHistoryToVSCode(history, "Responses");
+  return capReplayedImages(toolHistoryToVSCode(history, "Responses"));
 };
 
 export const CUSTOM_TOOL_INPUT_SCHEMA = {
