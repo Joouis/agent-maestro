@@ -8,6 +8,7 @@ import {
   chatModelsCache,
   getChatModelClient,
   getCopilotModelConfiguration,
+  sendWithStaleModelRetry,
   withCopilotConfiguration,
 } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
@@ -462,13 +463,24 @@ export function registerAnthropicRoutes(
       }
 
       // 5. Send request to the VS Code LM API
-      const response = await requestLifecycle.waitFor(
-        client.sendRequest(
-          vsCodeLmMessages,
-          configuredRequestOptions,
-          cancellationToken,
+      const sent = await requestLifecycle.waitFor(
+        sendWithStaleModelRetry(
+          client,
+          (lmClient) =>
+            lmClient.sendRequest(
+              vsCodeLmMessages,
+              withCopilotConfiguration(
+                lmClient,
+                lmRequestOptions,
+                copilotConfiguration,
+              ),
+              cancellationToken,
+            ),
+          { cancellationToken, resolve: resolveChatModelClient },
         ),
       );
+      const response = sent.result;
+      client = sent.client;
 
       const getFallbackUsage = async (
         accumulatedText: string,

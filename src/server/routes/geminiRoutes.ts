@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 
 import {
   getChatModelClient,
+  sendWithStaleModelRetry,
   withCopilotConfiguration,
 } from "../../utils/chatModels";
 import { logger } from "../../utils/logger";
@@ -340,7 +341,7 @@ export function registerGeminiRoutes(
       rawRequestBody = requestBody;
 
       // 1. Get chat model client
-      const { client, error: clientError } =
+      const { client: initialClient, error: clientError } =
         await resolveChatModelClient(modelId);
 
       if (clientError) {
@@ -355,6 +356,7 @@ export function registerGeminiRoutes(
           404,
         );
       }
+      let client = initialClient!;
 
       // 2. Prepare request
       cancellationTokenSource = new vscode.CancellationTokenSource();
@@ -371,11 +373,19 @@ export function registerGeminiRoutes(
 
       // 3. Send request to VSCode LM API
       // No Gemini request field is currently mapped to Copilot reasoning effort.
-      const response = await client.sendRequest(
-        vsCodeLmMessages,
-        withCopilotConfiguration(client, lmRequestOptions),
-        cancellationTokenSource.token,
+      const cancellationToken = cancellationTokenSource.token;
+      const sent = await sendWithStaleModelRetry(
+        client,
+        (lmClient) =>
+          lmClient.sendRequest(
+            vsCodeLmMessages,
+            withCopilotConfiguration(lmClient, lmRequestOptions),
+            cancellationToken,
+          ),
+        { cancellationToken, resolve: resolveChatModelClient },
       );
+      const response = sent.result;
+      client = sent.client;
 
       // 4. Process response (always non-streaming for generateContent)
       const parts: Part[] = [];
@@ -480,7 +490,7 @@ export function registerGeminiRoutes(
         rawRequestBody = requestBody;
 
         // 1. Get chat model client
-        const { client, error: clientError } =
+        const { client: initialClient, error: clientError } =
           await resolveChatModelClient(modelId);
 
         if (clientError) {
@@ -495,6 +505,7 @@ export function registerGeminiRoutes(
             404,
           );
         }
+        let client = initialClient!;
 
         // 2. Prepare request
         requestLifecycle = new LanguageModelRequestLifecycle(
@@ -515,13 +526,20 @@ export function registerGeminiRoutes(
         // 3. Send request to VSCode LM API
         // No Gemini request field is currently mapped to Copilot reasoning effort.
         const cancellationToken = requestLifecycle.token;
-        const response = await requestLifecycle.waitFor(
-          client.sendRequest(
-            vsCodeLmMessages,
-            withCopilotConfiguration(client, lmRequestOptions),
-            cancellationToken,
+        const sent = await requestLifecycle.waitFor(
+          sendWithStaleModelRetry(
+            client,
+            (lmClient) =>
+              lmClient.sendRequest(
+                vsCodeLmMessages,
+                withCopilotConfiguration(lmClient, lmRequestOptions),
+                cancellationToken,
+              ),
+            { cancellationToken, resolve: resolveChatModelClient },
           ),
         );
+        const response = sent.result;
+        client = sent.client;
 
         // 4. Always stream the response
         return streamSSE(
