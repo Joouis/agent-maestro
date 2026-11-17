@@ -742,10 +742,55 @@ suite("Tool history normalizer", () => {
   test("normalizes the MIME type of promoted tool-result images", () => {
     const webp = Buffer.from(WEBP_1024x935_BASE64, "base64");
     const padded = Buffer.concat([webp, Buffer.alloc(1_000_001 - webp.length)]);
-    const image = new vscode.LanguageModelDataPart(padded, "image/webp");
-    const r = { ...result("x"), parts: [image] } as ToolHistoryPart;
 
-    const actual = toolHistoryToVSCode([model(call("x")), user(r)], "Test");
+    const actual = convertAnthropicMessagesToVSCode([
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "inline", name: "read", input: {} },
+          { type: "tool_use", id: "promoted", name: "read", input: {} },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "inline",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/webp",
+                  data: WEBP_1024x935_BASE64,
+                },
+              },
+            ],
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "promoted",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/webp",
+                  data: padded.toString("base64"),
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    paired(actual, 2);
+    const inlineResult = results(actual).find((r) => r.callId === "inline")!;
+    const inlineImage = inlineResult.content[0] as vscode.LanguageModelDataPart;
+    assert.ok(inlineImage instanceof vscode.LanguageModelDataPart);
+    assert.strictEqual(inlineImage.mimeType, "image/webp");
 
     const promoted = actual[2].content[1] as vscode.LanguageModelDataPart;
     assert.ok(promoted instanceof vscode.LanguageModelDataPart);
