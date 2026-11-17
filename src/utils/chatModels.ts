@@ -383,6 +383,18 @@ function resolveSchemaPointer(
   return isPlainRecord(target) ? target : null;
 }
 
+function primarySchemaType(node: Record<string, unknown>): string | undefined {
+  if (typeof node.type === "string") {
+    return node.type;
+  }
+  if (Array.isArray(node.type)) {
+    return node.type.find(
+      (t): t is string => typeof t === "string" && t !== "null",
+    );
+  }
+  return undefined;
+}
+
 function extractAllowedLiterals(
   prop: Record<string, unknown>,
 ): unknown[] | null {
@@ -407,15 +419,39 @@ function mergeUnionPropertySchemas(
   const incomingLiterals = extractAllowedLiterals(incoming);
   if (existingLiterals !== null && incomingLiterals !== null) {
     const { const: _c1, enum: _e1, ...rest } = existing;
+    const mergedLiterals = [
+      ...new Set([...existingLiterals, ...incomingLiterals]),
+    ];
+    const allStrings = mergedLiterals.every((v) => typeof v === "string");
+    const allNumbers = mergedLiterals.every((v) => typeof v === "number");
+    const typeA = primarySchemaType(existing);
+    const typeB = primarySchemaType(incoming);
+    const mergedType =
+      typeA && typeB && typeA !== typeB
+        ? allStrings
+          ? "string"
+          : allNumbers
+            ? "number"
+            : "string"
+        : (typeA ?? typeB);
     return {
       ...rest,
-      enum: [...new Set([...existingLiterals, ...incomingLiterals])],
+      ...(mergedType ? { type: mergedType } : {}),
+      enum: mergedLiterals.map((v) =>
+        mergedType === "string" && typeof v !== "string" ? String(v) : v,
+      ),
     };
   }
 
   if (existingLiterals !== null || incomingLiterals !== null) {
     const base = existingLiterals !== null ? existing : incoming;
+    const other = existingLiterals !== null ? incoming : existing;
     const { const: _c, enum: _e, ...rest } = base;
+    const typeA = primarySchemaType(base);
+    const typeB = primarySchemaType(other);
+    if (typeA && typeB && typeA !== typeB) {
+      return { ...rest, type: "string" };
+    }
     return rest;
   }
 
@@ -447,6 +483,21 @@ function mergeUnionPropertySchemas(
       properties: mergedProps,
       ...(commonReq.length > 0 ? { required: commonReq } : {}),
     };
+  }
+
+  const typeA = primarySchemaType(existing);
+  const typeB = primarySchemaType(incoming);
+  if (typeA && typeB && typeA !== typeB) {
+    const isNumPair =
+      (typeA === "integer" && typeB === "number") ||
+      (typeA === "number" && typeB === "integer");
+    const description =
+      typeof existing.description === "string" && existing.description
+        ? { description: existing.description }
+        : typeof incoming.description === "string" && incoming.description
+          ? { description: incoming.description }
+          : {};
+    return { type: isNumPair ? "number" : "string", ...description };
   }
 
   return existing;
@@ -484,7 +535,23 @@ function flattenUnionObjectSchema(
     return Object.fromEntries(
       Object.entries(node)
         .filter(([key]) => !STRIPPED_SCHEMA_KEYWORDS.has(key))
-        .map(([key, item]) => [key, deref(item, seen)]),
+        .map(([key, item]) => {
+          if (LITERAL_SCHEMA_FIELDS.has(key)) {
+            return [key, item];
+          }
+          if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(item)) {
+            return [
+              key,
+              Object.fromEntries(
+                Object.entries(item).map(([propName, propSchema]) => [
+                  propName,
+                  deref(propSchema, seen),
+                ]),
+              ),
+            ];
+          }
+          return [key, deref(item, seen)];
+        }),
     );
   }
 
@@ -586,11 +653,28 @@ function flattenUnionObjectSchema(
   };
 }
 
-function extractBranchDiscriminatorName(option: unknown): string[] {
-  if (!isPlainRecord(option) || !isPlainRecord(option.properties)) {
+function extractNameOnlyBranchDiscriminator(
+  option: unknown,
+  root: Record<string, unknown>,
+  seenRefs: Set<string>,
+): string[] {
+  const resolved =
+    isPlainRecord(option) &&
+    typeof option.$ref === "string" &&
+    option.$ref.startsWith("#/") &&
+    !seenRefs.has(option.$ref)
+      ? resolveSchemaPointer(root, option.$ref)
+      : option;
+  if (!isPlainRecord(resolved) || !isPlainRecord(resolved.properties)) {
     return [];
   }
-  const nameProp = option.properties.name;
+  if (
+    Array.isArray(resolved.required) &&
+    resolved.required.some((req) => typeof req === "string" && req !== "name")
+  ) {
+    return [];
+  }
+  const nameProp = resolved.properties.name;
   if (!isPlainRecord(nameProp)) {
     return [];
   }
@@ -601,6 +685,87 @@ function extractBranchDiscriminatorName(option: unknown): string[] {
     return [nameProp.const];
   }
   return [];
+}
+
+function tryCollapseNameDiscriminatedItemUnion(
+  current: Record<string, unknown>,
+  rootSchema: Record<string, unknown>,
+  seenRefs: Set<string>,
+): Record<string, unknown> | null {
+  const currentItems = isPlainRecord(current.items) ? current.items : undefined;
+  const itemAnyOf = Array.isArray(currentItems?.anyOf)
+    ? currentItems.anyOf
+    : undefined;
+  const nonNullBranches = itemAnyOf?.filter(
+    (option) => isPlainRecord(option) && option.type !== "null",
+  );
+  if (!currentItems || !nonNullBranches || nonNullBranches.length <= 4) {
+    return null;
+  }
+  const parentRequired = Array.isArray(currentItems.required)
+    ? currentItems.required.filter((r): r is string => typeof r === "string")
+    : [];
+  if (parentRequired.some((r) => r !== "name")) {
+    return null;
+  }
+  const branchNames = nonNullBranches.map((option) =>
+    extractNameOnlyBranchDiscriminator(option, rootSchema, seenRefs),
+  );
+  if (branchNames.some((names) => names.length === 0)) {
+    return null;
+  }
+  const mergedNames = [...new Set(branchNames.flat())];
+  const itemType = primarySchemaType(currentItems) ?? "object";
+  const normalizedContainer = Object.fromEntries(
+    Object.entries(current)
+      .filter(([key]) => !STRIPPED_SCHEMA_KEYWORDS.has(key) && key !== "items")
+      .map(([key, item]) => [
+        key,
+        LITERAL_SCHEMA_FIELDS.has(key)
+          ? item
+          : normalizeCopilotToolSchema(item, rootSchema, seenRefs),
+      ]),
+  );
+  const collapsedItemSchema: Record<string, unknown> = {
+    type: itemType,
+    properties: { name: { type: "string", enum: mergedNames } },
+  };
+  if (parentRequired.includes("name")) {
+    collapsedItemSchema.required = ["name"];
+  }
+  return {
+    ...normalizedContainer,
+    items: collapsedItemSchema,
+  };
+}
+
+function isCompatibleScalarForItemType(
+  entry: unknown,
+  itemType: string | undefined,
+): boolean {
+  if (entry === null || typeof entry === "object") {
+    return false;
+  }
+  if (!itemType) {
+    return (
+      typeof entry === "string" ||
+      typeof entry === "number" ||
+      typeof entry === "boolean"
+    );
+  }
+  if (itemType === "string") {
+    return typeof entry === "string";
+  }
+  if (itemType === "integer") {
+    return typeof entry === "number" && Number.isInteger(entry);
+  }
+  if (itemType === "number") {
+    return typeof entry === "number" && Number.isFinite(entry);
+  }
+  if (itemType === "boolean") {
+    return typeof entry === "boolean";
+  }
+  return false;
 }
 
 /**
@@ -706,19 +871,17 @@ export function normalizeCopilotToolSchema(
     !["string", "integer", "number"].includes(current.type)
   ) {
     const { enum: enumValues, ...rest } = current;
-    const items = current.items;
-    const isScalarEnum =
+    const items = isPlainRecord(current.items) ? current.items : undefined;
+    const itemType = items ? primarySchemaType(items) : undefined;
+    const isCompatibleScalarEnum =
       enumValues.length > 0 &&
-      enumValues.every(
-        (entry) =>
-          typeof entry === "string" ||
-          typeof entry === "number" ||
-          typeof entry === "boolean",
+      enumValues.every((entry) =>
+        isCompatibleScalarForItemType(entry, itemType),
       );
     current =
       current.type === "array" &&
-      isScalarEnum &&
-      isPlainRecord(items) &&
+      isCompatibleScalarEnum &&
+      items &&
       !Array.isArray(items.enum)
         ? {
             ...rest,
@@ -730,58 +893,13 @@ export function normalizeCopilotToolSchema(
         : rest;
   }
 
-  const currentItems = isPlainRecord(current.items) ? current.items : undefined;
-  const itemAnyOf = Array.isArray(currentItems?.anyOf)
-    ? currentItems.anyOf
-    : undefined;
-  const nonNullItemBranches = itemAnyOf?.filter(
-    (option) => isPlainRecord(option) && option.type !== "null",
+  const collapsedItemUnion = tryCollapseNameDiscriminatedItemUnion(
+    current,
+    rootSchema,
+    seenRefs,
   );
-
-  if (
-    currentItems &&
-    nonNullItemBranches &&
-    nonNullItemBranches.length > 4 &&
-    nonNullItemBranches.every(
-      (option) => extractBranchDiscriminatorName(option).length > 0,
-    )
-  ) {
-    const names = [
-      ...new Set(nonNullItemBranches.flatMap(extractBranchDiscriminatorName)),
-    ];
-    const itemType = Array.isArray(currentItems.type)
-      ? (currentItems.type.find(
-          (t): t is string => typeof t === "string" && t !== "null",
-        ) ?? "object")
-      : typeof currentItems.type === "string"
-        ? currentItems.type
-        : "object";
-
-    const requiredList = Array.isArray(currentItems.required)
-      ? currentItems.required
-      : [];
-
-    const normalizedRest = Object.fromEntries(
-      Object.entries(current)
-        .filter(
-          ([key]) => !STRIPPED_SCHEMA_KEYWORDS.has(key) && key !== "items",
-        )
-        .map(([key, item]) => [
-          key,
-          LITERAL_SCHEMA_FIELDS.has(key)
-            ? item
-            : normalizeCopilotToolSchema(item, rootSchema, seenRefs),
-        ]),
-    );
-
-    return {
-      ...normalizedRest,
-      items: {
-        type: itemType,
-        properties: { name: { type: "string", enum: names } },
-        ...(requiredList.includes("name") ? { required: ["name"] } : {}),
-      },
-    };
+  if (collapsedItemUnion) {
+    return collapsedItemUnion;
   }
 
   return Object.fromEntries(
