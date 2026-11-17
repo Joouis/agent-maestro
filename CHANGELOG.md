@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.17.0 - 2026.11.17
+
+- Add an optional Admin API Key for `/api/v1`, `/openapi.json`, and the MCP server, plus browser origin allowlists (`proxyServerCorsOrigins`, `mcpServerCorsOrigins`) and a public `GET /health`. **Note:** with only the LLM API Key set, `/api/v1` and MCP return 403 until an Admin API Key is set; cross-origin browser apps must be allowlisted; an unreadable stored key now fails closed (503).
+- Add **Configure Grok Build Settings**, and Grok and MAI groups in the model picker.
+- Add OpenAI-compatible `GET /api/openai/v1/models` and `GET /api/openai/v1/models/{model_id}`.
+- Recover from stale Copilot model handles that failed every request with `Chat provider for model … is not registered`, often after a restart.
+- Gemini `generateContent` now times out with 504 and cancels on client disconnect (499) instead of possibly hanging.
+- Return 400 instead of 500 when `model` is missing on Anthropic Messages and OpenAI Chat Completions.
+- Show the `auto` model in the Other picker group, and remove the outdated "No Claude models" startup warning.
+
 ## v2.16.0 - 2026.11.10
 
 - **Configure Claude Code Settings** now offers an optional auto mode classifier model choice (`CLAUDE_CODE_AUTO_MODE_MODEL`) and sets `CLAUDE_CODE_AUTO_MODE_SERVER=0`, so auto mode classifier requests stay on the client and the "auto mode classifier billing" notice no longer appears.
