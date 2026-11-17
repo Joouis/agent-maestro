@@ -370,6 +370,28 @@ suite("Stale model handle recovery", () => {
       assert.strictEqual(cancelled, true);
     });
 
+    test("does not start the model when the client disconnects during model resolution", async () => {
+      let sends = 0;
+      const controller = new AbortController();
+      const app = new OpenAPIHono();
+      registerGeminiRoutes(app, {
+        resolveChatModelClient: async () => {
+          controller.abort();
+          return {
+            client: model(async () => {
+              sends++;
+              throw new Error("cancelled before start");
+            }),
+          };
+        },
+      });
+
+      const response = await request(app, controller.signal);
+
+      assert.strictEqual(response.status, 499);
+      assert.strictEqual(sends, 0);
+    });
+
     test("stops with 499 and cancels the model when the client disconnects", async () => {
       let cancelled = false;
       const controller = new AbortController();

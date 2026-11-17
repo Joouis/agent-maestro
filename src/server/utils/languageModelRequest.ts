@@ -52,8 +52,17 @@ export interface SentLanguageModelRequest {
 export async function sendLanguageModelRequest(
   params: SendLanguageModelRequestParams,
 ): Promise<SentLanguageModelRequest> {
-  const send = sendWithStaleModelRetry(params);
-  return params.lifecycle ? params.lifecycle.waitFor(send) : send;
+  const { lifecycle } = params;
+  if (!lifecycle) {
+    return sendWithStaleModelRetry(params);
+  }
+  // The client may disconnect, or the timeout fire, while the model is being
+  // resolved. Do not start a request then: waitFor would reject immediately
+  // without observing it, leaving its cancellation rejection unhandled.
+  if (lifecycle.signal.aborted) {
+    throw lifecycle.signal.reason;
+  }
+  return lifecycle.waitFor(sendWithStaleModelRetry(params));
 }
 
 async function sendWithStaleModelRetry({
