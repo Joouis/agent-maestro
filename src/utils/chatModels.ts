@@ -468,55 +468,6 @@ export function isStaleModelHandleError(error: unknown): boolean {
   );
 }
 
-/**
- * Calls `send` with `client`; if the request cannot even start because the
- * handle is stale, re-resolves the same model once and retries.
- *
- * Retrying is safe because these errors are thrown before VS Code starts the
- * request, so no output has been produced. The retry never switches models:
- * if re-resolution yields a different model, the original error is rethrown.
- * Returns the handle that succeeded so callers use it for later calls such as
- * `countTokens`.
- */
-export async function sendWithStaleModelRetry<T>(
-  client: vscode.LanguageModelChat,
-  send: (client: vscode.LanguageModelChat) => Thenable<T>,
-  options: {
-    cancellationToken?: vscode.CancellationToken;
-    resolve?: (
-      modelId: string,
-    ) => Promise<{ client?: vscode.LanguageModelChat }>;
-  } = {},
-): Promise<{ result: T; client: vscode.LanguageModelChat }> {
-  try {
-    return { result: await send(client), client };
-  } catch (error) {
-    if (
-      !isStaleModelHandleError(error) ||
-      options.cancellationToken?.isCancellationRequested
-    ) {
-      throw error;
-    }
-    logger.warn(
-      `Model handle for "${client.id}" is stale; re-resolving once and retrying`,
-    );
-    chatModelsCache.invalidate();
-    const { client: fresh } = await (options.resolve ?? getChatModelClient)(
-      client.id,
-    );
-    // Re-resolution can take a while; do not start a request nobody will read.
-    if (
-      !fresh ||
-      fresh.id !== client.id ||
-      fresh === client ||
-      options.cancellationToken?.isCancellationRequested
-    ) {
-      throw error;
-    }
-    return { result: await send(fresh), client: fresh };
-  }
-}
-
 export const getChatModelClient = async (modelId: string) => {
   const models = await chatModelsCache.getChatModels();
 

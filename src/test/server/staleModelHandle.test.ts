@@ -6,10 +6,10 @@ import { registerAnthropicRoutes } from "../../server/routes/anthropicRoutes";
 import { registerGeminiRoutes } from "../../server/routes/geminiRoutes";
 import { registerOpenaiChatRoutes } from "../../server/routes/openai/openaiChatRoutes";
 import { registerOpenaiResponsesRoutes } from "../../server/routes/openai/openaiResponsesRoutes";
+import { sendLanguageModelRequest } from "../../server/utils/languageModelRequest";
 import {
   chatModelsCache,
   isStaleModelHandleError,
-  sendWithStaleModelRetry,
 } from "../../utils/chatModels";
 
 const MODEL_ID = "gpt-6.1-sol";
@@ -91,9 +91,17 @@ suite("Stale model handle recovery", () => {
     });
   });
 
-  suite("sendWithStaleModelRetry", () => {
-    const send = (client: vscode.LanguageModelChat) =>
-      client.sendRequest([], {}, new vscode.CancellationTokenSource().token);
+  suite("sendLanguageModelRequest", () => {
+    const send = (
+      client: vscode.LanguageModelChat,
+      overrides: Partial<Parameters<typeof sendLanguageModelRequest>[0]> = {},
+    ) =>
+      sendLanguageModelRequest({
+        client,
+        messages: [],
+        options: {},
+        ...overrides,
+      });
 
     for (const [label, makeError] of [
       ["main-thread not-registered error", notRegistered],
@@ -107,7 +115,7 @@ suite("Stale model handle recovery", () => {
         const { client } = await resolve();
         assert.strictEqual(client, stale);
 
-        const sent = await sendWithStaleModelRetry(client, send, { resolve });
+        const sent = await send(client, { resolve });
 
         assert.strictEqual(sent.client, fresh);
         assert.deepStrictEqual(calls, { stale: 1, fresh: 1, resolves: 2 });
@@ -123,7 +131,7 @@ suite("Stale model handle recovery", () => {
         });
       const first = alwaysStale();
       await assert.rejects(
-        sendWithStaleModelRetry(first, send, {
+        send(first, {
           resolve: async () => ({ client: alwaysStale() }),
         }),
         /is not registered/,
@@ -142,7 +150,7 @@ suite("Stale model handle recovery", () => {
       }, "some-other-model");
 
       await assert.rejects(
-        sendWithStaleModelRetry(stale, send, {
+        send(stale, {
           resolve: async () => ({ client: other }),
         }),
         /is not registered/,
@@ -157,7 +165,7 @@ suite("Stale model handle recovery", () => {
         throw notRegistered();
       });
       await assert.rejects(
-        sendWithStaleModelRetry(stale, send, {
+        send(stale, {
           resolve: async () => ({ client: stale }),
         }),
         /is not registered/,
@@ -176,7 +184,7 @@ suite("Stale model handle recovery", () => {
           throw error;
         });
         await assert.rejects(
-          sendWithStaleModelRetry(failing, send, {
+          send(failing, {
             resolve: async () => {
               resolves++;
               return { client: failing };
@@ -196,7 +204,7 @@ suite("Stale model handle recovery", () => {
         throw notRegistered();
       });
       await assert.rejects(
-        sendWithStaleModelRetry(stale, send, {
+        send(stale, {
           cancellationToken: source.token,
           resolve: async () => {
             resolves++;
@@ -219,7 +227,7 @@ suite("Stale model handle recovery", () => {
         return textResponse("x");
       });
       await assert.rejects(
-        sendWithStaleModelRetry(stale, send, {
+        send(stale, {
           cancellationToken: source.token,
           resolve: async () => {
             source.cancel();
@@ -240,7 +248,7 @@ suite("Stale model handle recovery", () => {
       try {
         const { stale, resolve } = staleAndFresh();
         await resolve();
-        await sendWithStaleModelRetry(stale, send, { resolve });
+        await send(stale, { resolve });
         assert.strictEqual(invalidations, 1);
       } finally {
         chatModelsCache.invalidate = originalInvalidate;
@@ -312,6 +320,70 @@ suite("Stale model handle recovery", () => {
         assert.deepStrictEqual(calls, { stale: 1, fresh: 1, resolves: 2 });
       });
     }
+  });
+
+  suite("Gemini generateContent request lifecycle", () => {
+    const geminiApp = (
+      sendRequest: vscode.LanguageModelChat["sendRequest"],
+      requestTimeoutMs: number,
+    ) => {
+      const app = new OpenAPIHono();
+      registerGeminiRoutes(app, {
+        requestTimeoutMs,
+        resolveChatModelClient: async () => ({ client: model(sendRequest) }),
+      });
+      return app;
+    };
+    const request = (app: OpenAPIHono, signal?: AbortSignal) =>
+      app.request(`/v1beta/models/${MODEL_ID}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        }),
+        signal,
+      });
+    // A model stream that never yields, like a request VS Code never finishes.
+    const hangingStream = (token?: vscode.CancellationToken) => {
+      const hang = new Promise<never>(() => {});
+      return {
+        stream: (async function* () {
+          await hang;
+        })(),
+        text: (async function* () {})(),
+        token,
+      } as unknown as vscode.LanguageModelChatResponse;
+    };
+
+    test("times out a hung model with 504 and cancels it", async () => {
+      let cancelled = false;
+      const app = geminiApp(async (_messages, _options, token) => {
+        token?.onCancellationRequested(() => (cancelled = true));
+        return hangingStream(token);
+      }, 50);
+
+      const response = await request(app);
+
+      assert.strictEqual(response.status, 504);
+      const body = (await response.json()) as { error: { status: string } };
+      assert.strictEqual(body.error.status, "DEADLINE_EXCEEDED");
+      assert.strictEqual(cancelled, true);
+    });
+
+    test("stops with 499 and cancels the model when the client disconnects", async () => {
+      let cancelled = false;
+      const controller = new AbortController();
+      const app = geminiApp(async (_messages, _options, token) => {
+        token?.onCancellationRequested(() => (cancelled = true));
+        setTimeout(() => controller.abort(), 10);
+        return hangingStream(token);
+      }, 60_000);
+
+      const response = await request(app, controller.signal);
+
+      assert.strictEqual(response.status, 499);
+      assert.strictEqual(cancelled, true);
+    });
   });
 
   suite("ChatModelsCache", () => {

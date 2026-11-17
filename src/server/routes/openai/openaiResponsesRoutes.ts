@@ -12,13 +12,13 @@ import * as vscode from "vscode";
 import {
   getChatModelClient,
   getCopilotModelConfiguration,
-  sendWithStaleModelRetry,
   withCopilotConfiguration,
   withCopilotConversationId,
 } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
+import { sendLanguageModelRequest } from "../../utils/languageModelRequest";
 import {
   LanguageModelClientDisconnectedError,
   LanguageModelRequestLifecycle,
@@ -391,23 +391,15 @@ export function registerOpenaiResponsesRoutes(
 
       // 9. Handle non-streaming response
       if (!stream) {
-        const sent = await requestLifecycle.waitFor(
-          sendWithStaleModelRetry(
-            client,
-            (lmClient) =>
-              lmClient.sendRequest(
-                vsCodeMessages,
-                withCopilotConfiguration(
-                  lmClient,
-                  lmRequestOptions,
-                  copilotConfiguration,
-                ),
-                cancellationToken,
-              ),
-            { cancellationToken, resolve: resolveChatModelClient },
-          ),
-        );
-        const response = sent.result;
+        const sent = await sendLanguageModelRequest({
+          client,
+          messages: vsCodeMessages,
+          options: lmRequestOptions,
+          copilotConfiguration,
+          lifecycle: requestLifecycle,
+          resolve: resolveChatModelClient,
+        });
+        const response = sent.response;
         client = sent.client;
         let accumulatedText = "";
         const toolCalls: { callId: string; name: string; input: unknown }[] =
@@ -546,23 +538,15 @@ export function registerOpenaiResponsesRoutes(
             writeSSE,
             sequenceNumberRef,
             async (writeSSE) => {
-              const sent = await requestLifecycle!.waitFor(
-                sendWithStaleModelRetry(
-                  client,
-                  (lmClient) =>
-                    lmClient.sendRequest(
-                      vsCodeMessages,
-                      withCopilotConfiguration(
-                        lmClient,
-                        lmRequestOptions,
-                        copilotConfiguration,
-                      ),
-                      cancellationToken,
-                    ),
-                  { cancellationToken, resolve: resolveChatModelClient },
-                ),
-              );
-              const response = sent.result;
+              const sent = await sendLanguageModelRequest({
+                client,
+                messages: vsCodeMessages,
+                options: lmRequestOptions,
+                copilotConfiguration,
+                lifecycle: requestLifecycle!,
+                resolve: resolveChatModelClient,
+              });
+              const response = sent.response;
               client = sent.client;
               // Process stream
               const output: OutputItem[] = [];
