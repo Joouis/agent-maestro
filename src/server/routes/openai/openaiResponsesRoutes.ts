@@ -27,7 +27,6 @@ import {
 } from "../../utils/languageModelRequestLifecycle";
 import {
   encryptedThinkingOptions,
-  hasEncryptedThinking,
   isThinkingPart,
 } from "../../utils/languageModelThinking";
 import { extractOpenAIResponsesUsage } from "../../utils/openai";
@@ -422,9 +421,7 @@ export function registerOpenaiResponsesRoutes(
               input: chunk.input,
             });
           } else if (isThinkingPart(chunk)) {
-            if (hasEncryptedThinking(chunk)) {
-              parts.push(chunk);
-            }
+            parts.push(chunk);
           } else if (chunk instanceof vscode.LanguageModelDataPart) {
             responseUsage = extractOpenAIResponsesUsage(chunk) ?? responseUsage;
           }
@@ -665,13 +662,6 @@ export function registerOpenaiResponsesRoutes(
                   );
                   outputIndex++;
                 } else if (isThinkingPart(chunk)) {
-                  const item = thinkingToResponseReasoning(chunk);
-                  if (
-                    !item ||
-                    !reasoning.accept(item.id, item.encrypted_content)
-                  ) {
-                    continue;
-                  }
                   if (currentMessageId) {
                     output.push(
                       await closeMessageOutputItem(
@@ -685,6 +675,13 @@ export function registerOpenaiResponsesRoutes(
                     );
                     currentMessageId = null;
                     accumulatedText = "";
+                  }
+                  const item = thinkingToResponseReasoning(chunk);
+                  if (
+                    !item ||
+                    !reasoning.accept(item.id, item.encrypted_content)
+                  ) {
+                    continue;
                   }
                   output.push(item);
                   await writeReasoningOutputItem(

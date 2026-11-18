@@ -538,6 +538,70 @@ suite("Normalized history through official SDKs", () => {
     }
   });
 
+  test("Responses splits text messages separated by non-Responses thinking in JSON and SSE", async () => {
+    const runtime = getThinkingRuntime()!;
+    for (const stream of [false, true]) {
+      const model = {
+        ...modelMetadata,
+        sendRequest: async () => ({
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart(
+              "一切干净、完备，直接输出简洁的中文汇报。",
+            );
+            yield new runtime.Thinking("private thought", "gemini-thought-1");
+            yield new runtime.Thinking("", "", { vscode_thinking_done: true });
+            yield new vscode.LanguageModelTextPart(
+              "已将这两处存量测试偏差修复并完成验证与提交。",
+            );
+          })(),
+          text: (async function* () {})(),
+        }),
+      } as vscode.LanguageModelChat;
+      const app = responsesApp(model);
+      const client = responsesClient(app);
+      const response = await client.responses.create({
+        model: model.id,
+        input: "Report",
+        stream,
+      });
+      let output: OpenAI.Responses.ResponseOutputItem[] = [];
+      if ("output" in response) {
+        output = response.output;
+      } else {
+        const addedMessages: string[] = [];
+        for await (const event of response) {
+          if (
+            event.type === "response.output_item.added" &&
+            event.item.type === "message"
+          ) {
+            addedMessages.push(event.item.id);
+          } else if (event.type === "response.completed") {
+            output = event.response.output;
+          }
+        }
+        assert.strictEqual(addedMessages.length, 2);
+        assert.notStrictEqual(addedMessages[0], addedMessages[1]);
+      }
+      assert.ok(!JSON.stringify(output).includes("private thought"));
+      assert.deepStrictEqual(
+        output.map((item) =>
+          item.type === "message"
+            ? [
+                item.type,
+                item.content
+                  .map((part) => (part.type === "output_text" ? part.text : ""))
+                  .join(""),
+              ]
+            : [item.type],
+        ),
+        [
+          ["message", "一切干净、完备，直接输出简洁的中文汇报。"],
+          ["message", "已将这两处存量测试偏差修复并完成验证与提交。"],
+        ],
+      );
+    }
+  });
+
   test("Responses rejects malformed encrypted reasoning before dispatch", async () => {
     let requests = 0;
     const model = {

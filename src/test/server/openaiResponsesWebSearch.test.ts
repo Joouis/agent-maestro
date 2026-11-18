@@ -461,6 +461,69 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
     }
   });
 
+  test("splits synthesis messages separated by non-Responses thinking without leaking thoughts", async () => {
+    const Thinking = getThinkingRuntime()!.Thinking;
+    for (const stream of [false, true]) {
+      const app = createTestApp({
+        rounds: [
+          {
+            chunks: [
+              new vscode.LanguageModelToolCallPart(
+                "search",
+                "agent_maestro_web_search",
+                { query: "latest result" },
+              ),
+              usagePart(),
+            ],
+          },
+          {
+            chunks: [
+              new vscode.LanguageModelTextPart("Checking search results."),
+              new Thinking("private synthesis thought", "thought-1"),
+              new Thinking("", "", { vscode_thinking_done: true }),
+              new vscode.LanguageModelTextPart("Final synthesized answer."),
+              usagePart(),
+            ],
+          },
+        ],
+        provider: createProvider(async () => []),
+      });
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-5.6-test",
+          input: "Search",
+          tools: [webSearchTool()],
+          stream,
+        }),
+      });
+      assert.strictEqual(response.status, 200);
+      const body = await response.text();
+      assert.ok(!body.includes("private synthesis thought"));
+      const output: OpenAI.Responses.ResponseOutputItem[] = stream
+        ? parseSseData(body).at(-1)!.response.output
+        : JSON.parse(body).output;
+      assert.deepStrictEqual(
+        output.map((item) =>
+          item.type === "message"
+            ? [
+                item.type,
+                item.content
+                  .map((part) => (part.type === "output_text" ? part.text : ""))
+                  .join(""),
+              ]
+            : [item.type],
+        ),
+        [
+          ["web_search_call"],
+          ["message", "Checking search results."],
+          ["message", "Final synthesized answer."],
+        ],
+      );
+    }
+  });
+
   test("preserves synthesis reasoning order with message-local citations and a shared budget", async () => {
     for (const stream of [false, true]) {
       for (const maxOutputTokens of [undefined, 5]) {

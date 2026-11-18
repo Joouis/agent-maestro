@@ -745,10 +745,11 @@ const collectModelRound = async ({
       } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
         parts.push(chunk);
       } else if (isThinkingPart(chunk)) {
-        if (
-          hasEncryptedThinking(chunk) &&
-          reasoning.accept(chunk.id, chunk.metadata.encrypted_content)
-        ) {
+        if (hasEncryptedThinking(chunk)) {
+          if (reasoning.accept(chunk.id, chunk.metadata.encrypted_content)) {
+            parts.push(chunk);
+          }
+        } else if (!isThinkingPart(parts.at(-1))) {
           parts.push(chunk);
         }
       } else if (chunk instanceof vscode.LanguageModelDataPart) {
@@ -1192,7 +1193,9 @@ export async function runOpenAIResponsesWebSearchLoop({
       ...messages,
       createModelMessage(
         vscode.LanguageModelChatMessageRole.Assistant,
-        firstRound.parts,
+        firstRound.parts.filter(
+          (part) => !isThinkingPart(part) || hasEncryptedThinking(part),
+        ),
       ),
       vscode.LanguageModelChatMessage.User(toolResults),
     ],
