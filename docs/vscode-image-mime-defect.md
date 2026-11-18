@@ -80,8 +80,11 @@ lossless PNG re-encoding of large JPEG photos inside tool results). Keep that
 exception when maintaining the workaround; do not assume all
 `LanguageModelDataPart` instances undergo the same upstream transformation.
 
-The current history normalizer also preserves these converted result parts when
-they become ordinary context. Revalidate affected image paths separately if
+When history normalization promotes an orphaned or conflicting tool result into
+ordinary user context (`src/server/utils/toolResultPairing.ts`), its image
+parts leave `LanguageModelToolResultPart` and re-enter the top-level
+`image_url` resize path, so `toolResultPairing.ts` normalizes their MIME types
+with `mimeForVscodeLm`. Revalidate affected image paths separately if
 conversion placement or upstream serialization changes.
 
 ## ⚠️ When VS Code fixes this, revisit the workaround

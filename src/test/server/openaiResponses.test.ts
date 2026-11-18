@@ -1764,6 +1764,60 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       }
     });
 
+    test("should normalize large image mimeType when orphaned tool output is promoted to user context", () => {
+      const result = convertResponsesInputToVSCode([
+        {
+          type: "function_call",
+          id: "fc_paired",
+          call_id: "call_paired",
+          name: "view_image",
+          arguments: "{}",
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_paired",
+          output: [
+            {
+              type: "input_image",
+              image_url: `data:image/webp;base64,${WEBP_1024x935_BASE64}`,
+              detail: "original",
+            },
+          ],
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_orphaned",
+          output: [
+            {
+              type: "input_image",
+              image_url: `data:image/webp;base64,${WEBP_1024x935_BASE64}`,
+              detail: "original",
+            },
+          ],
+        },
+      ] as any);
+
+      const pairedResult = result
+        .flatMap((message) => message.content)
+        .find(
+          (part): part is vscode.LanguageModelToolResultPart =>
+            part instanceof vscode.LanguageModelToolResultPart,
+        );
+      assert.ok(pairedResult);
+      const pairedImage = pairedResult.content[0];
+      assert.ok(pairedImage instanceof vscode.LanguageModelDataPart);
+      assert.strictEqual(pairedImage.mimeType, "image/webp");
+
+      const promotedImage = result
+        .flatMap((message) => message.content)
+        .find(
+          (part): part is vscode.LanguageModelDataPart =>
+            part instanceof vscode.LanguageModelDataPart,
+        );
+      assert.ok(promotedImage);
+      assert.strictEqual(promotedImage.mimeType, "image/png");
+    });
+
     test("should preserve calls and outputs with invalid IDs as text", () => {
       const warnings: string[] = [];
       const originalWarn = logger.warn;
