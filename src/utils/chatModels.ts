@@ -386,12 +386,124 @@ function resolveSchemaPointer(
     .map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~"));
   let target: unknown = root;
   for (const part of parts) {
+    if (Array.isArray(target)) {
+      if (!/^(?:0|[1-9]\d*)$/.test(part)) {
+        return null;
+      }
+      target = target[Number(part)];
+      continue;
+    }
     if (!isPlainRecord(target)) {
       return null;
     }
     target = target[part];
   }
   return isPlainRecord(target) ? target : null;
+}
+
+function intersectSchemaDefinitions(
+  target: unknown,
+  sibling: unknown,
+): unknown {
+  if (!isPlainRecord(target) || !isPlainRecord(sibling)) {
+    return sibling !== undefined ? sibling : target;
+  }
+
+  const targetLiterals = extractAllowedLiterals(target);
+  const siblingLiterals = extractAllowedLiterals(sibling);
+  const merged: Record<string, unknown> = {
+    ...target,
+    ...sibling,
+  };
+
+  const typeA = primarySchemaType(target);
+  const typeB = primarySchemaType(sibling);
+  if (typeA && typeB) {
+    if (
+      (typeA === "integer" && typeB === "number") ||
+      (typeA === "number" && typeB === "integer")
+    ) {
+      merged.type = "integer";
+    } else {
+      merged.type = typeB;
+    }
+  } else if (typeA || typeB) {
+    merged.type = typeB ?? typeA;
+  }
+
+  if (targetLiterals !== null || siblingLiterals !== null) {
+    delete merged.const;
+    delete merged.enum;
+    const effectiveLiterals =
+      targetLiterals !== null && siblingLiterals !== null
+        ? targetLiterals.filter((v) => siblingLiterals.includes(v))
+        : (siblingLiterals ?? targetLiterals ?? []);
+    if (effectiveLiterals.length === 1 && Object.hasOwn(sibling, "const")) {
+      merged.const = effectiveLiterals[0];
+    } else if (effectiveLiterals.length > 0) {
+      merged.enum = [...new Set(effectiveLiterals)];
+    }
+  }
+
+  if (isPlainRecord(target.properties) || isPlainRecord(sibling.properties)) {
+    const mergedProps: Record<string, unknown> = {
+      ...(isPlainRecord(target.properties) ? target.properties : {}),
+    };
+    if (isPlainRecord(sibling.properties)) {
+      for (const [key, prop] of Object.entries(sibling.properties)) {
+        mergedProps[key] = Object.hasOwn(mergedProps, key)
+          ? intersectSchemaDefinitions(mergedProps[key], prop)
+          : prop;
+      }
+    }
+    merged.properties = mergedProps;
+  }
+
+  if (Array.isArray(target.required) || Array.isArray(sibling.required)) {
+    const reqTarget = Array.isArray(target.required)
+      ? target.required.filter((k): k is string => typeof k === "string")
+      : [];
+    const reqSibling = Array.isArray(sibling.required)
+      ? sibling.required.filter((k): k is string => typeof k === "string")
+      : [];
+    const unionReq = [...new Set([...reqTarget, ...reqSibling])];
+    if (unionReq.length > 0) {
+      merged.required = unionReq;
+    } else {
+      delete merged.required;
+    }
+  }
+
+  if (isPlainRecord(target.items) && isPlainRecord(sibling.items)) {
+    merged.items = intersectSchemaDefinitions(target.items, sibling.items);
+  }
+
+  for (const maxBoundKey of [
+    "minimum",
+    "exclusiveMinimum",
+    "minLength",
+    "minItems",
+  ] as const) {
+    const valA = target[maxBoundKey];
+    const valB = sibling[maxBoundKey];
+    if (typeof valA === "number" && typeof valB === "number") {
+      merged[maxBoundKey] = Math.max(valA, valB);
+    }
+  }
+  for (const minBoundKey of [
+    "maximum",
+    "exclusiveMaximum",
+    "maxLength",
+    "maxItems",
+  ] as const) {
+    const valA = target[minBoundKey];
+    const valB = sibling[minBoundKey];
+    if (typeof valA === "number" && typeof valB === "number") {
+      merged[minBoundKey] = Math.min(valA, valB);
+    }
+  }
+
+  return merged;
 }
 
 function mergeResolvedRefWithSiblings(
@@ -402,48 +514,8 @@ function mergeResolvedRefWithSiblings(
   if (Object.keys(siblings).length === 0) {
     return resolvedTarget;
   }
-  const merged: Record<string, unknown> = {
-    ...resolvedTarget,
-    ...siblings,
-  };
-  if (
-    isPlainRecord(resolvedTarget.properties) ||
-    isPlainRecord(siblings.properties)
-  ) {
-    const mergedProps: Record<string, unknown> = {
-      ...(isPlainRecord(resolvedTarget.properties)
-        ? resolvedTarget.properties
-        : {}),
-    };
-    if (isPlainRecord(siblings.properties)) {
-      for (const [key, prop] of Object.entries(siblings.properties)) {
-        mergedProps[key] = Object.hasOwn(mergedProps, key)
-          ? mergeUnionPropertySchemas(mergedProps[key], prop)
-          : prop;
-      }
-    }
-    merged.properties = mergedProps;
-  }
-  if (
-    Array.isArray(resolvedTarget.required) ||
-    Array.isArray(siblings.required)
-  ) {
-    const reqTarget = Array.isArray(resolvedTarget.required)
-      ? resolvedTarget.required.filter(
-          (k): k is string => typeof k === "string",
-        )
-      : [];
-    const reqSibling = Array.isArray(siblings.required)
-      ? siblings.required.filter((k): k is string => typeof k === "string")
-      : [];
-    const unionReq = [...new Set([...reqTarget, ...reqSibling])];
-    if (unionReq.length > 0) {
-      merged.required = unionReq;
-    } else {
-      delete merged.required;
-    }
-  }
-  return merged;
+  const intersected = intersectSchemaDefinitions(resolvedTarget, siblings);
+  return isPlainRecord(intersected) ? intersected : resolvedTarget;
 }
 
 function primarySchemaType(node: Record<string, unknown>): string | undefined {
@@ -470,6 +542,72 @@ function extractAllowedLiterals(
   return null;
 }
 
+const SCALAR_BOUND_MIN_KEYS = [
+  "minimum",
+  "exclusiveMinimum",
+  "minLength",
+] as const;
+
+const SCALAR_BOUND_MAX_KEYS = [
+  "maximum",
+  "exclusiveMaximum",
+  "maxLength",
+] as const;
+
+const SCALAR_EXACT_MATCH_KEYS = ["pattern", "format", "multipleOf"] as const;
+
+function widenScalarBranchSchemas(
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+  mergedType: string | undefined,
+): Record<string, unknown> {
+  const {
+    const: _c1,
+    enum: _e1,
+    minimum: _min1,
+    maximum: _max1,
+    exclusiveMinimum: _exMin1,
+    exclusiveMaximum: _exMax1,
+    minLength: _minLen1,
+    maxLength: _maxLen1,
+    pattern: _pat1,
+    format: _fmt1,
+    multipleOf: _mul1,
+    ...rest
+  } = existing;
+  const description =
+    typeof existing.description === "string" && existing.description
+      ? { description: existing.description }
+      : typeof incoming.description === "string" && incoming.description
+        ? { description: incoming.description }
+        : {};
+  const widened: Record<string, unknown> = {
+    ...rest,
+    ...description,
+    ...(mergedType ? { type: mergedType } : {}),
+  };
+  for (const key of SCALAR_BOUND_MIN_KEYS) {
+    const valA = existing[key];
+    const valB = incoming[key];
+    if (typeof valA === "number" && typeof valB === "number") {
+      widened[key] = Math.min(valA, valB);
+    }
+  }
+  for (const key of SCALAR_BOUND_MAX_KEYS) {
+    const valA = existing[key];
+    const valB = incoming[key];
+    if (typeof valA === "number" && typeof valB === "number") {
+      widened[key] = Math.max(valA, valB);
+    }
+  }
+  for (const key of SCALAR_EXACT_MATCH_KEYS) {
+    if (existing[key] !== undefined && existing[key] === incoming[key]) {
+      widened[key] = existing[key];
+    }
+  }
+  return widened;
+}
+
 function mergeUnionPropertySchemas(
   existing: unknown,
   incoming: unknown,
@@ -481,11 +619,13 @@ function mergeUnionPropertySchemas(
   const existingLiterals = extractAllowedLiterals(existing);
   const incomingLiterals = extractAllowedLiterals(incoming);
   if (existingLiterals !== null && incomingLiterals !== null) {
-    const { const: _c1, enum: _e1, ...rest } = existing;
     const mergedLiterals = [
       ...new Set([...existingLiterals, ...incomingLiterals]),
     ];
     const allStrings = mergedLiterals.every((v) => typeof v === "string");
+    const allIntegers = mergedLiterals.every(
+      (v) => typeof v === "number" && Number.isInteger(v),
+    );
     const allNumbers = mergedLiterals.every((v) => typeof v === "number");
     const typeA = primarySchemaType(existing);
     const typeB = primarySchemaType(incoming);
@@ -496,10 +636,22 @@ function mergeUnionPropertySchemas(
           : allNumbers
             ? "number"
             : "string"
-        : (typeA ?? typeB);
+        : (typeA ??
+          typeB ??
+          (allStrings
+            ? "string"
+            : allIntegers
+              ? "integer"
+              : allNumbers
+                ? "number"
+                : undefined));
+    const widenedBase = widenScalarBranchSchemas(
+      existing,
+      incoming,
+      mergedType,
+    );
     return {
-      ...rest,
-      ...(mergedType ? { type: mergedType } : {}),
+      ...widenedBase,
       enum: mergedLiterals.map((v) =>
         mergedType === "string" && typeof v !== "string" ? String(v) : v,
       ),
@@ -509,13 +661,18 @@ function mergeUnionPropertySchemas(
   if (existingLiterals !== null || incomingLiterals !== null) {
     const base = existingLiterals !== null ? existing : incoming;
     const other = existingLiterals !== null ? incoming : existing;
-    const { const: _c, enum: _e, ...rest } = base;
     const typeA = primarySchemaType(base);
     const typeB = primarySchemaType(other);
-    if (typeA && typeB && typeA !== typeB) {
-      return { ...rest, type: "string" };
-    }
-    return rest;
+    const isNumPair =
+      (typeA === "integer" && typeB === "number") ||
+      (typeA === "number" && typeB === "integer");
+    const mergedType =
+      typeA && typeB && typeA !== typeB
+        ? isNumPair
+          ? "number"
+          : "string"
+        : (typeA ?? typeB);
+    return widenScalarBranchSchemas(base, other, mergedType);
   }
 
   if (
@@ -590,16 +747,19 @@ function mergeUnionPropertySchemas(
     const isNumPair =
       (typeA === "integer" && typeB === "number") ||
       (typeA === "number" && typeB === "integer");
+    if (isNumPair) {
+      return widenScalarBranchSchemas(existing, incoming, "number");
+    }
     const description =
       typeof existing.description === "string" && existing.description
         ? { description: existing.description }
         : typeof incoming.description === "string" && incoming.description
           ? { description: incoming.description }
           : {};
-    return { type: isNumPair ? "number" : "string", ...description };
+    return { type: "string", ...description };
   }
 
-  return existing;
+  return widenScalarBranchSchemas(existing, incoming, typeA ?? typeB);
 }
 
 function flattenUnionObjectSchema(
@@ -686,13 +846,20 @@ function flattenUnionObjectSchema(
     }
   }
 
-  function collectBranch(node: unknown): void {
+  function collectBranch(
+    node: unknown,
+    inheritedRequired = new Set<string>(),
+  ): void {
     if (!isPlainRecord(node)) {
       return;
     }
     const oneOf = Array.isArray(node.oneOf) ? node.oneOf : [];
     const anyOf = Array.isArray(node.anyOf) ? node.anyOf : [];
     const subBranches = [...oneOf, ...anyOf];
+    const ownRequired = Array.isArray(node.required)
+      ? node.required.filter((key): key is string => typeof key === "string")
+      : [];
+    const combinedRequired = new Set([...inheritedRequired, ...ownRequired]);
 
     if (
       isPlainRecord(node.properties) &&
@@ -703,20 +870,17 @@ function flattenUnionObjectSchema(
 
     if (subBranches.length > 0) {
       for (const branch of subBranches) {
-        collectBranch(branch);
+        collectBranch(branch, combinedRequired);
       }
       return;
     }
 
-    if (node.type === "object" || isPlainRecord(node.properties)) {
-      const req = Array.isArray(node.required)
-        ? new Set(
-            node.required.filter(
-              (key): key is string => typeof key === "string",
-            ),
-          )
-        : new Set<string>();
-      branchRequiredSets.push(req);
+    if (
+      node.type === "object" ||
+      isPlainRecord(node.properties) ||
+      combinedRequired.size > 0
+    ) {
+      branchRequiredSets.push(combinedRequired);
     }
   }
 
@@ -768,13 +932,26 @@ function extractNameOnlyBranchDiscriminator(
   root: Record<string, unknown>,
   seenRefs: Set<string>,
 ): { names: string[]; requiresName: boolean } | null {
-  const resolved =
-    isPlainRecord(option) &&
-    isLocalSchemaRef(option.$ref) &&
-    !seenRefs.has(normalizeSchemaRefPointer(option.$ref))
-      ? resolveSchemaPointer(root, normalizeSchemaRefPointer(option.$ref))
-      : option;
-  if (!isPlainRecord(resolved) || !isPlainRecord(resolved.properties)) {
+  if (!isPlainRecord(option)) {
+    return null;
+  }
+  let resolved: Record<string, unknown> = option;
+  if (isLocalSchemaRef(option.$ref)) {
+    const normalizedRef = normalizeSchemaRefPointer(option.$ref);
+    if (seenRefs.has(normalizedRef)) {
+      return null;
+    }
+    const target = resolveSchemaPointer(root, normalizedRef);
+    if (!target) {
+      return null;
+    }
+    resolved = mergeResolvedRefWithSiblings(target, option);
+  }
+  if (!isPlainRecord(resolved.properties)) {
+    return null;
+  }
+  const propKeys = Object.keys(resolved.properties);
+  if (propKeys.length !== 1 || propKeys[0] !== "name") {
     return null;
   }
   const branchRequired = Array.isArray(resolved.required)
@@ -973,10 +1150,33 @@ export function normalizeCopilotToolSchema(
       (branch): branch is Record<string, unknown> =>
         isPlainRecord(branch) && branch.type !== "null",
     );
+    const {
+      anyOf: _anyOf,
+      oneOf: _oneOf,
+      $defs: _defs,
+      definitions: _definitions,
+      additionalProperties: _addProps,
+      ...parentConstraints
+    } = obj;
+    const parentType = primarySchemaType(parentConstraints);
+    if (parentType) {
+      parentConstraints.type = parentType;
+    } else {
+      delete parentConstraints.type;
+    }
     const description =
       typeof obj.description === "string" && obj.description
         ? { description: obj.description }
         : {};
+    const applyParentToBranch = (
+      branch: Record<string, unknown>,
+    ): Record<string, unknown> => {
+      if (Object.keys(parentConstraints).length === 0) {
+        return branch;
+      }
+      const combined = intersectSchemaDefinitions(parentConstraints, branch);
+      return isPlainRecord(combined) ? combined : branch;
+    };
     if (nonNull.length === 1) {
       const resolved = normalizeCopilotToolSchema(
         nonNull[0],
@@ -984,15 +1184,16 @@ export function normalizeCopilotToolSchema(
         effectiveSeenRefs,
       );
       return isPlainRecord(resolved)
-        ? { ...resolved, ...description }
-        : { type: "string", ...description };
+        ? { ...applyParentToBranch(resolved), ...description }
+        : { type: parentType ?? "string", ...description };
     }
     if (nonNull.length > 1) {
       const normalizedBranches = nonNull
         .map((branch) =>
           normalizeCopilotToolSchema(branch, rootSchema, effectiveSeenRefs),
         )
-        .filter(isPlainRecord);
+        .filter(isPlainRecord)
+        .map(applyParentToBranch);
       if (
         normalizedBranches.length > 0 &&
         normalizedBranches.every(
@@ -1033,11 +1234,16 @@ export function normalizeCopilotToolSchema(
         return { ...mergedBranch, ...description };
       }
       const primaryType =
+        (typeof parentType === "string" &&
+        !["object", "array"].includes(parentType)
+          ? parentType
+          : undefined) ??
         normalizedBranches.find(
           (branch) =>
             typeof branch.type === "string" &&
             !["object", "array"].includes(branch.type),
-        )?.type ?? "string";
+        )?.type ??
+        "string";
       return { type: primaryType, ...description };
     }
   }
