@@ -145,10 +145,10 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
 
       assert.deepStrictEqual(JSON.parse(text.value), {
         discovered_tools: [
-          "mcp__workiq.fetch",
-          "mcp__workiq.retrieve",
+          "mcp__workiq__fetch",
+          "mcp__workiq__retrieve",
           {
-            name: "mcp__workiq.query",
+            name: "mcp__workiq__query",
             format: {
               type: "grammar",
               syntax: "lark",

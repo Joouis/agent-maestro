@@ -994,37 +994,43 @@ export const convertResponsesItemToVSCode = (
         "input",
       );
     }
+    // Only names (and custom formats) are replayed: the full schemas are
+    // already sent as tool declarations, so repeating them here doubles input.
+    // Names use the declared LM tool name so the model sees one spelling.
     type DiscoveredToolSummary = string | { name: string; format: unknown };
-    const discoveredTools = item.tools.flatMap<DiscoveredToolSummary>(
-      (tool) => {
-        if (!tool || typeof tool !== "object") {
+    type DiscoveredTool = {
+      type?: string;
+      name?: string;
+      format?: unknown;
+      tools?: DiscoveredTool[];
+    };
+    const summarize = (
+      tool: DiscoveredTool,
+      name: string,
+    ): DiscoveredToolSummary =>
+      tool.type === "custom" && tool.format
+        ? { name, format: tool.format }
+        : name;
+    const discoveredTools = (
+      item.tools as unknown[]
+    ).flatMap<DiscoveredToolSummary>((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return [];
+      }
+      const tool = entry as DiscoveredTool;
+      if (tool.type === "namespace") {
+        const namespace = tool.name;
+        if (!namespace || !Array.isArray(tool.tools)) {
           return [];
         }
-        const candidate = tool as unknown as {
-          type?: string;
-          name?: string;
-          format?: unknown;
-          tools?: Array<{ type?: string; name?: string; format?: unknown }>;
-        };
-        if (candidate.type === "namespace") {
-          return (
-            Array.isArray(candidate.tools) ? candidate.tools : []
-          ).flatMap<DiscoveredToolSummary>((nested) => {
-            if (!nested?.name) {
-              return [];
-            }
-            const name = `${candidate.name ?? "namespace"}.${nested.name}`;
-            return nested.type === "custom" && nested.format
-              ? [{ name, format: nested.format }]
-              : [name];
-          });
-        }
-        if (candidate.type === "custom" && candidate.name && candidate.format) {
-          return [{ name: candidate.name, format: candidate.format }];
-        }
-        return candidate.name ? [candidate.name] : [];
-      },
-    );
+        return tool.tools.flatMap((member) =>
+          member?.name
+            ? [summarize(member, encodeNamespacedName(namespace, member.name))]
+            : [],
+        );
+      }
+      return tool.name ? [summarize(tool, tool.name)] : [];
+    });
     return vscode.LanguageModelChatMessage.User([
       new vscode.LanguageModelToolResultPart(item.call_id, [
         new vscode.LanguageModelTextPart(
