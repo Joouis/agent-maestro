@@ -1290,6 +1290,80 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         ),
       );
     });
+
+    test("preserves original image order across orphan and matched tool outputs", () => {
+      const base64Data =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const makeImage = () => ({
+        type: "input_image" as const,
+        image_url: `data:image/png;base64,${base64Data}`,
+        detail: "auto" as const,
+      });
+      const fiveImages = Array.from({ length: 5 }, () => makeImage());
+
+      const messages = convertResponsesInputToVSCode([
+        {
+          type: "function_call" as const,
+          id: "fc_1",
+          call_id: "call_matched_1",
+          name: "view_images",
+          arguments: "{}",
+        },
+        {
+          type: "function_call" as const,
+          id: "fc_2",
+          call_id: "call_matched_2",
+          name: "view_images",
+          arguments: "{}",
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_orphan_first",
+          output: [makeImage()],
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_matched_1",
+          output: fiveImages,
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_matched_2",
+          output: fiveImages,
+        },
+      ] as any);
+
+      const userMessage = messages.find(
+        (message) => message.role === vscode.LanguageModelChatMessageRole.User,
+      );
+      assert.ok(userMessage);
+      const toolResults = userMessage.content.filter(
+        (part): part is vscode.LanguageModelToolResultPart =>
+          part instanceof vscode.LanguageModelToolResultPart,
+      );
+      assert.strictEqual(toolResults.length, 2);
+      for (const toolResult of toolResults) {
+        assert.strictEqual(
+          toolResult.content.filter(
+            (part) => part instanceof vscode.LanguageModelDataPart,
+          ).length,
+          5,
+        );
+      }
+      assert.strictEqual(
+        userMessage.content.filter(
+          (part) => part instanceof vscode.LanguageModelDataPart,
+        ).length,
+        0,
+      );
+      assert.ok(
+        userMessage.content.some(
+          (part) =>
+            part instanceof vscode.LanguageModelTextPart &&
+            part.value.includes("Earlier image omitted"),
+        ),
+      );
+    });
   });
 
   suite("convertResponsesItemToVSCode", () => {

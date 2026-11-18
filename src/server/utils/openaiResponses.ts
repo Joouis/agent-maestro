@@ -42,6 +42,7 @@ import { SSE_HEARTBEAT_INTERVAL_MS } from "./sseHeartbeat";
 import {
   type ToolHistoryMessage,
   type ToolHistoryPart,
+  normalizeToolHistory,
   toolHistoryToVSCode,
 } from "./toolResultPairing";
 
@@ -809,56 +810,74 @@ const MAX_REQUEST_IMAGES = 10;
 const OMITTED_IMAGE_NOTICE =
   "[Earlier image omitted to keep the replayed request within the model's image limit.]";
 
-const countDataParts = (parts: readonly unknown[]): number =>
-  parts.reduce<number>((total, part) => {
+const collectDataParts = (
+  parts: readonly unknown[],
+  out: vscode.LanguageModelDataPart[],
+): void => {
+  for (const part of parts) {
     if (part instanceof vscode.LanguageModelDataPart) {
-      return total + 1;
+      out.push(part);
+    } else if (part instanceof vscode.LanguageModelToolResultPart) {
+      collectDataParts(part.content, out);
     }
-    if (part instanceof vscode.LanguageModelToolResultPart) {
-      return total + countDataParts(part.content);
-    }
-    return total;
-  }, 0);
+  }
+};
 
-const trimDataParts = <T>(
+const collectOrderedHistoryDataParts = (
+  history: readonly ToolHistoryMessage[],
+): vscode.LanguageModelDataPart[] => {
+  const { decisions } = normalizeToolHistory(history);
+  const ordered: vscode.LanguageModelDataPart[] = [];
+  let index = 0;
+  for (const message of history) {
+    for (const part of message.parts) {
+      const decision = decisions.get(index++);
+      if (part.kind === "content") {
+        collectDataParts(part.parts, ordered);
+      } else if (decision?.kind === "context") {
+        collectDataParts(decision.parts, ordered);
+      } else if (decision?.kind === "result") {
+        collectDataParts(decision.result.parts, ordered);
+      }
+    }
+  }
+  return ordered;
+};
+
+const replaceOmittedDataParts = <T>(
   parts: readonly T[],
-  trimmer: () => vscode.LanguageModelTextPart | null,
+  omittedParts: ReadonlySet<vscode.LanguageModelDataPart>,
 ): T[] =>
   parts.map((part) => {
     if (part instanceof vscode.LanguageModelDataPart) {
-      return (trimmer() ?? part) as T;
+      return (
+        omittedParts.has(part)
+          ? new vscode.LanguageModelTextPart(OMITTED_IMAGE_NOTICE)
+          : part
+      ) as T;
     }
     if (part instanceof vscode.LanguageModelToolResultPart) {
-      part.content = trimDataParts(part.content, trimmer);
+      part.content = replaceOmittedDataParts(part.content, omittedParts);
     }
     return part;
   });
 
 const capReplayedImages = (
+  history: readonly ToolHistoryMessage[],
   messages: vscode.LanguageModelChatMessage[],
 ): vscode.LanguageModelChatMessage[] => {
-  const imageCount = messages.reduce(
-    (total, message) => total + countDataParts(message.content),
-    0,
-  );
-  let imagesToOmit = imageCount - MAX_REQUEST_IMAGES;
-  if (imagesToOmit <= 0) {
+  const orderedDataParts = collectOrderedHistoryDataParts(history);
+  const omittedCount = orderedDataParts.length - MAX_REQUEST_IMAGES;
+  if (omittedCount <= 0) {
     return messages;
   }
 
-  const omittedCount = imagesToOmit;
-  const trimNext = (): vscode.LanguageModelTextPart | null => {
-    if (imagesToOmit <= 0) {
-      return null;
-    }
-    imagesToOmit--;
-    return new vscode.LanguageModelTextPart(OMITTED_IMAGE_NOTICE);
-  };
+  const omittedParts = new Set(orderedDataParts.slice(0, omittedCount));
   for (const message of messages) {
     message.content.splice(
       0,
       message.content.length,
-      ...trimDataParts(message.content, trimNext),
+      ...replaceOmittedDataParts(message.content, omittedParts),
     );
   }
   logger.warn(
@@ -1337,7 +1356,10 @@ export const convertResponsesInputToVSCode = (
     history.push({ role: "user", parts: [], boundary: true });
   }
   appendInput(input);
-  return capReplayedImages(toolHistoryToVSCode(history, "Responses"));
+  return capReplayedImages(
+    history,
+    toolHistoryToVSCode(history, "Responses"),
+  );
 };
 
 export const CUSTOM_TOOL_INPUT_SCHEMA = {
