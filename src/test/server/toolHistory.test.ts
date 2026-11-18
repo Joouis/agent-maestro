@@ -12,6 +12,7 @@ import {
   toolHistoryToVSCode,
 } from "../../server/utils/toolResultPairing";
 import { logger } from "../../utils/logger";
+import { WEBP_1024x935_BASE64 } from "../utils/imageMime.fixtures";
 
 type Call = { kind: "call"; id?: string; name?: string; args?: object };
 type Result = { kind: "result"; id?: string; name?: string; value?: unknown };
@@ -463,7 +464,7 @@ suite("Unified tool history", () => {
     assert.strictEqual(calls(actual)[0].name, "read");
   });
   test("Anthropic wrong-role results preserve text, errors, media and source order", () => {
-    const bytes = Buffer.from([1, 2, 3]);
+    const bytes = Buffer.from(WEBP_1024x935_BASE64, "base64");
     const input = [
       {
         role: "assistant" as const,
@@ -479,8 +480,8 @@ suite("Unified tool history", () => {
                 type: "image" as const,
                 source: {
                   type: "base64" as const,
-                  media_type: "image/png" as const,
-                  data: bytes.toString("base64"),
+                  media_type: "image/webp" as const,
+                  data: WEBP_1024x935_BASE64,
                 },
               },
             ],
@@ -515,7 +516,7 @@ suite("Unified tool history", () => {
       "saved body",
     );
     assert.ok(parts[4] instanceof vscode.LanguageModelDataPart);
-    assert.strictEqual(parts[4].mimeType, "image/png");
+    assert.strictEqual(parts[4].mimeType, "image/webp");
     assert.deepStrictEqual(Buffer.from(parts[4].data), bytes);
     assert.strictEqual(
       (parts[5] as vscode.LanguageModelTextPart).value,
