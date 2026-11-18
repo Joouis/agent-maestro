@@ -32,6 +32,7 @@ import {
 } from "../../server/utils/openaiResponses";
 import { toolHistoryToVSCode } from "../../server/utils/toolResultPairing";
 import { logger } from "../../utils/logger";
+import { WEBP_1024x935_BASE64 } from "../utils/imageMime.fixtures";
 
 const encode = (value: unknown): Uint8Array =>
   new TextEncoder().encode(JSON.stringify(value));
@@ -1343,6 +1344,24 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
     });
 
+    test("should preserve original mimeType for large images in function_call_output", () => {
+      const item = {
+        type: "function_call_output" as const,
+        call_id: "call_view_image_large",
+        output: [
+          {
+            type: "input_image" as const,
+            image_url: `data:image/webp;base64,${WEBP_1024x935_BASE64}`,
+            detail: "original" as const,
+          },
+        ],
+      };
+      const result = convertResponsesItemToVSCode(item as any);
+      const toolResult = (result!.content as any[])[0];
+      assert.ok(toolResult.content[0] instanceof vscode.LanguageModelDataPart);
+      assert.strictEqual(toolResult.content[0].mimeType, "image/webp");
+    });
+
     test("should convert custom_tool_call item", () => {
       const item = {
         type: "custom_tool_call" as const,
@@ -1473,6 +1492,24 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       const toolResult = (result!.content as any[])[0];
       assert.ok(toolResult.content[0] instanceof vscode.LanguageModelTextPart);
       assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
+    });
+
+    test("should preserve original mimeType for large images in custom_tool_call_output", () => {
+      const item = {
+        type: "custom_tool_call_output" as const,
+        call_id: "call_view_image_large_custom",
+        output: [
+          {
+            type: "input_image" as const,
+            image_url: `data:image/webp;base64,${WEBP_1024x935_BASE64}`,
+            detail: "original" as const,
+          },
+        ],
+      };
+      const result = convertResponsesItemToVSCode(item as any);
+      const toolResult = (result!.content as any[])[0];
+      assert.ok(toolResult.content[0] instanceof vscode.LanguageModelDataPart);
+      assert.strictEqual(toolResult.content[0].mimeType, "image/webp");
     });
 
     test("should return null for additional_tools item", () => {

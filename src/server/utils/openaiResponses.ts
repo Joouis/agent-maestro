@@ -725,6 +725,7 @@ export const writeFunctionToolCallOutputItem = async (
  */
 const convertInputImageToVSCodePart = (
   content: ResponseInputImage,
+  options: { preserveMimeType?: boolean } = {},
 ): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
   if (content.image_url) {
     // Parse data URI: data:image/png;base64,<data>
@@ -737,7 +738,7 @@ const convertInputImageToVSCodePart = (
       const bytes = Buffer.from(base64Data, "base64");
       return new vscode.LanguageModelDataPart(
         bytes,
-        mimeForVscodeLm(bytes, mimeType),
+        options.preserveMimeType ? mimeType : mimeForVscodeLm(bytes, mimeType),
       );
     }
   }
@@ -751,6 +752,7 @@ const convertInputImageToVSCodePart = (
  */
 export const convertInputContentToVSCodePart = (
   content: ResponseInputContent | ResponseOutputText,
+  options: { preserveMimeType?: boolean } = {},
 ): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
   // Encrypted reasoning belongs to top-level reasoning items, not message
   // text content. Never put ciphertext into the model's ordinary prompt.
@@ -767,7 +769,7 @@ export const convertInputContentToVSCodePart = (
       // Accept output_text for compatibility with persisted response content.
       return new vscode.LanguageModelTextPart(content.text ?? "");
     case "input_image":
-      return convertInputImageToVSCodePart(content);
+      return convertInputImageToVSCodePart(content, options);
     case "input_file":
       logger.warn("input_file not supported, serializing as JSON");
       return new vscode.LanguageModelTextPart(JSON.stringify(content));
@@ -797,9 +799,16 @@ const convertToolOutputToVSCodeParts = (
     return [new vscode.LanguageModelTextPart(JSON.stringify(output) ?? "")];
   }
 
+  // Images inside LanguageModelToolResultPart are NOT re-encoded by VS Code's
+  // sendChatRequest (only top-level User message images are converted to PNG
+  // without a mimeType argument). Instead, Copilot's tool-result renderer calls
+  // `_chat.resizeImage(data, mimeType)`, which preserves JPEG when mimeType is
+  // `image/jpeg` but re-encodes to a multi-MB PNG if relabeled to `image/png`.
   return output.map((part) => {
     if (isConvertibleToolOutputPart(part)) {
-      return convertInputContentToVSCodePart(part);
+      return convertInputContentToVSCodePart(part, {
+        preserveMimeType: true,
+      });
     }
     return new vscode.LanguageModelTextPart(JSON.stringify(part) ?? "");
   });
@@ -875,7 +884,9 @@ const convertEasyInputMessage = (
     }
   }
 
-  const parts = msg.content.map(convertInputContentToVSCodePart);
+  const parts = msg.content.map((part) =>
+    convertInputContentToVSCodePart(part),
+  );
   switch (msg.role) {
     case "user":
       return vscode.LanguageModelChatMessage.User(parts);
@@ -895,7 +906,9 @@ const convertEasyInputMessage = (
 const convertInputMessage = (
   msg: ResponseInputItem.Message,
 ): vscode.LanguageModelChatMessage => {
-  const parts = msg.content.map(convertInputContentToVSCodePart);
+  const parts = msg.content.map((part) =>
+    convertInputContentToVSCodePart(part),
+  );
   switch (msg.role) {
     case "user":
       return vscode.LanguageModelChatMessage.User(parts);
@@ -1120,7 +1133,9 @@ export const convertResponsesItemToVSCode = (
       recipient?: string;
       content?: ResponseInputContent[];
     };
-    const parts = (am.content ?? []).map(convertInputContentToVSCodePart);
+    const parts = (am.content ?? []).map((part) =>
+      convertInputContentToVSCodePart(part),
+    );
     const header = `[agent_message${am.author ? ` from ${am.author}` : ""}${
       am.recipient ? ` to ${am.recipient}` : ""
     }]`;

@@ -65,13 +65,19 @@ one rule.
 
 This makes the declared type match the bytes the provider actually receives.
 
-### Anthropic Tool-Result Exception
+### Tool-Result Exception
 
-Images nested in Anthropic `tool_result` blocks take a different path: the
-[Anthropic converter](../src/server/utils/anthropic.ts) passes
-`preserveMimeType: true` and retains the declared MIME type. Applying the
-top-level large-image relabeling there caused a mismatch and was corrected in
-v2.9.7. Keep that exception when maintaining the workaround; do not assume all
+Images nested in `LanguageModelToolResultPart` blocks (Anthropic `tool_result`
+and OpenAI Responses `function_call_output` / `custom_tool_call_output`) take a
+different path: `mainThreadLanguageModels.ts` skips `tool_result` parts, and
+Copilot Chat's tool-result serializer calls `_chat.resizeImage(data, mimeType)`
+with the part's declared `mimeType`. Both the
+[Anthropic converter](../src/server/utils/anthropic.ts) and the
+[OpenAI Responses converter](../src/server/utils/openaiResponses.ts) therefore
+pass `preserveMimeType: true` and retain the declared MIME type. Applying the
+top-level large-image relabeling there caused a format mismatch (or forced
+lossless PNG re-encoding of large JPEG photos inside tool results). Keep that
+exception when maintaining the workaround; do not assume all
 `LanguageModelDataPart` instances undergo the same upstream transformation.
 
 The current history normalizer also preserves these converted result parts when
