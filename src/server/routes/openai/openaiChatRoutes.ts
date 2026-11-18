@@ -7,12 +7,12 @@ import * as vscode from "vscode";
 import {
   getChatModelClient,
   getCopilotModelConfiguration,
-  withCopilotConfiguration,
   withCopilotConversationId,
 } from "../../../utils/chatModels";
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
+import { sendLanguageModelRequest } from "../../utils/languageModelRequest";
 import {
   LanguageModelClientDisconnectedError,
   LanguageModelRequestLifecycle,
@@ -167,12 +167,13 @@ export function registerOpenaiChatRoutes(
       requestedModelId = modelId;
 
       // 1. Get chat model client
-      const { client, error: clientError } =
+      const { client: initialClient, error: clientError } =
         await resolveChatModelClient(modelId);
 
       if (clientError) {
         return c.json(clientError, 404);
       }
+      let client = initialClient!;
 
       logger.debug("/v1/chat/completions payload:");
       logger.debug(JSON.stringify(requestBody, null, 2));
@@ -207,17 +208,16 @@ export function registerOpenaiChatRoutes(
       };
 
       // 4. Send request to VSCode LM API
-      const response = await requestLifecycle.waitFor(
-        client.sendRequest(
-          vsCodeLmMessages,
-          withCopilotConfiguration(
-            client,
-            lmRequestOptions,
-            copilotConfiguration,
-          ),
-          cancellationToken,
-        ),
-      );
+      const sent = await sendLanguageModelRequest({
+        client,
+        messages: vsCodeLmMessages,
+        options: lmRequestOptions,
+        copilotConfiguration,
+        lifecycle: requestLifecycle,
+        resolve: resolveChatModelClient,
+      });
+      const response = sent.response;
+      client = sent.client;
 
       // 5. Handle non-streaming response
       if (!stream) {

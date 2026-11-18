@@ -18,6 +18,7 @@ import {
 import { logger } from "../../../utils/logger";
 import { CommonResponseError } from "../../schemas/openai";
 import { handleErrorWithLogging } from "../../utils/errorDiagnostics";
+import { sendLanguageModelRequest } from "../../utils/languageModelRequest";
 import {
   LanguageModelClientDisconnectedError,
   LanguageModelRequestLifecycle,
@@ -26,7 +27,6 @@ import {
 } from "../../utils/languageModelRequestLifecycle";
 import {
   encryptedThinkingOptions,
-  hasEncryptedThinking,
   isThinkingPart,
 } from "../../utils/languageModelThinking";
 import { extractOpenAIResponsesUsage } from "../../utils/openai";
@@ -321,12 +321,13 @@ export function registerOpenaiResponsesRoutes(
       }
 
       // 4. Get chat model client
-      const { client, error: clientError } =
+      const { client: initialClient, error: clientError } =
         await resolveChatModelClient(model);
 
       if (clientError) {
         return c.json(clientError, 404);
       }
+      let client = initialClient!;
 
       logger.debug("/v1/responses payload:");
       logger.debug(JSON.stringify(requestBody, null, 2));
@@ -389,13 +390,16 @@ export function registerOpenaiResponsesRoutes(
 
       // 9. Handle non-streaming response
       if (!stream) {
-        const response = await requestLifecycle.waitFor(
-          client.sendRequest(
-            vsCodeMessages,
-            configuredRequestOptions,
-            cancellationToken,
-          ),
-        );
+        const sent = await sendLanguageModelRequest({
+          client,
+          messages: vsCodeMessages,
+          options: lmRequestOptions,
+          copilotConfiguration,
+          lifecycle: requestLifecycle,
+          resolve: resolveChatModelClient,
+        });
+        const response = sent.response;
+        client = sent.client;
         let accumulatedText = "";
         const toolCalls: { callId: string; name: string; input: unknown }[] =
           [];
@@ -417,9 +421,7 @@ export function registerOpenaiResponsesRoutes(
               input: chunk.input,
             });
           } else if (isThinkingPart(chunk)) {
-            if (hasEncryptedThinking(chunk)) {
-              parts.push(chunk);
-            }
+            parts.push(chunk);
           } else if (chunk instanceof vscode.LanguageModelDataPart) {
             responseUsage = extractOpenAIResponsesUsage(chunk) ?? responseUsage;
           }
@@ -533,13 +535,16 @@ export function registerOpenaiResponsesRoutes(
             writeSSE,
             sequenceNumberRef,
             async (writeSSE) => {
-              const response = await requestLifecycle!.waitFor(
-                client.sendRequest(
-                  vsCodeMessages,
-                  configuredRequestOptions,
-                  cancellationToken,
-                ),
-              );
+              const sent = await sendLanguageModelRequest({
+                client,
+                messages: vsCodeMessages,
+                options: lmRequestOptions,
+                copilotConfiguration,
+                lifecycle: requestLifecycle!,
+                resolve: resolveChatModelClient,
+              });
+              const response = sent.response;
+              client = sent.client;
               // Process stream
               const output: OutputItem[] = [];
               const reasoning = new ReasoningItems("provider");
@@ -657,13 +662,6 @@ export function registerOpenaiResponsesRoutes(
                   );
                   outputIndex++;
                 } else if (isThinkingPart(chunk)) {
-                  const item = thinkingToResponseReasoning(chunk);
-                  if (
-                    !item ||
-                    !reasoning.accept(item.id, item.encrypted_content)
-                  ) {
-                    continue;
-                  }
                   if (currentMessageId) {
                     output.push(
                       await closeMessageOutputItem(
@@ -677,6 +675,13 @@ export function registerOpenaiResponsesRoutes(
                     );
                     currentMessageId = null;
                     accumulatedText = "";
+                  }
+                  const item = thinkingToResponseReasoning(chunk);
+                  if (
+                    !item ||
+                    !reasoning.accept(item.id, item.encrypted_content)
+                  ) {
+                    continue;
                   }
                   output.push(item);
                   await writeReasoningOutputItem(

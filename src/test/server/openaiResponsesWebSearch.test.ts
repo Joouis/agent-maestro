@@ -21,6 +21,7 @@ import {
   runOpenAIResponsesWebSearchLoop,
 } from "../../server/utils/openaiResponsesWebSearch";
 import { WebSearchProvider } from "../../server/webSearch/webSearchProvider";
+import { chatModelsCache } from "../../utils/chatModels";
 
 type ModelChunk =
   | vscode.LanguageModelTextPart
@@ -236,6 +237,28 @@ const parseSseData = (body: string): Record<string, any>[] =>
     .filter((line) => line.startsWith("data: "))
     .map((line) => JSON.parse(line.slice("data: ".length)));
 
+/** A handle whose internal model ID VS Code has dropped; every call fails. */
+const staleHandleOf = (model: vscode.LanguageModelChat) => {
+  const calls = { send: 0, countTokens: 0 };
+  const fail = () => {
+    throw new Error(
+      `Chat provider for model copilot/Copilot/${model.id} is not registered.`,
+    );
+  };
+  const stale = {
+    ...model,
+    sendRequest: async () => {
+      calls.send++;
+      return fail();
+    },
+    countTokens: async () => {
+      calls.countTokens++;
+      return fail();
+    },
+  } as vscode.LanguageModelChat;
+  return { stale, calls };
+};
+
 suite("OpenAI Responses Server Web Search Test Suite", () => {
   test("reports provider reasoning conflicts when the hosted-search route returns client output", async () => {
     for (const stream of [false, true]) {
@@ -434,6 +457,69 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
       assert.strictEqual(
         restored.metadata?.encrypted_content,
         "public-synthesis-state",
+      );
+    }
+  });
+
+  test("splits synthesis messages separated by non-Responses thinking without leaking thoughts", async () => {
+    const Thinking = getThinkingRuntime()!.Thinking;
+    for (const stream of [false, true]) {
+      const app = createTestApp({
+        rounds: [
+          {
+            chunks: [
+              new vscode.LanguageModelToolCallPart(
+                "search",
+                "agent_maestro_web_search",
+                { query: "latest result" },
+              ),
+              usagePart(),
+            ],
+          },
+          {
+            chunks: [
+              new vscode.LanguageModelTextPart("Checking search results."),
+              new Thinking("private synthesis thought", "thought-1"),
+              new Thinking("", "", { vscode_thinking_done: true }),
+              new vscode.LanguageModelTextPart("Final synthesized answer."),
+              usagePart(),
+            ],
+          },
+        ],
+        provider: createProvider(async () => []),
+      });
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-5.6-test",
+          input: "Search",
+          tools: [webSearchTool()],
+          stream,
+        }),
+      });
+      assert.strictEqual(response.status, 200);
+      const body = await response.text();
+      assert.ok(!body.includes("private synthesis thought"));
+      const output: OpenAI.Responses.ResponseOutputItem[] = stream
+        ? parseSseData(body).at(-1)!.response.output
+        : JSON.parse(body).output;
+      assert.deepStrictEqual(
+        output.map((item) =>
+          item.type === "message"
+            ? [
+                item.type,
+                item.content
+                  .map((part) => (part.type === "output_text" ? part.text : ""))
+                  .join(""),
+              ]
+            : [item.type],
+        ),
+        [
+          ["web_search_call"],
+          ["message", "Checking search results."],
+          ["message", "Final synthesized answer."],
+        ],
       );
     }
   });
@@ -2259,6 +2345,67 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
       assert.ok(failed);
       assert.strictEqual(failed.sequence_number, events.length - 1);
       assert.ok(!events.some(({ type }) => type === "response.completed"));
+    });
+
+    suite("stale model handle recovery", () => {
+      test("later rounds and citation budgeting use the recovered handle", async () => {
+        const prepared = prepareSearch();
+        const requests: Array<{
+          messages: readonly vscode.LanguageModelChatMessage[];
+          options: vscode.LanguageModelChatRequestOptions;
+        }> = [];
+        const fresh = createRoundModel(
+          [
+            { chunks: [internalCall(prepared), usagePart()] },
+            {
+              chunks: [
+                new vscode.LanguageModelTextPart("Miami International won."),
+                usagePart(),
+              ],
+            },
+          ],
+          requests,
+        );
+        const { stale, calls } = staleHandleOf(fresh);
+        const originalGetChatModels = chatModelsCache.getChatModels;
+        chatModelsCache.getChatModels = async () => [fresh];
+        const lifecycle = new LanguageModelRequestLifecycle(
+          new AbortController().signal,
+          1_000,
+        );
+        try {
+          const result = await runOpenAIResponsesWebSearchLoop({
+            client: stale,
+            messages: [vscode.LanguageModelChatMessage.User("Search")],
+            baseRequestOptions: {
+              justification: "test",
+              tools: prepared.tools,
+              toolMode: prepared.toolMode,
+            },
+            preparedTools: prepared,
+            provider: createProvider(async () => [
+              { title: "Result", url: "https://example.com/latest" },
+            ]),
+            lifecycle,
+            providerTimeoutMs: 100,
+          });
+
+          assert.deepStrictEqual(calls, { send: 1, countTokens: 0 });
+          assert.strictEqual(requests.length, 2);
+          assert.strictEqual(result.incomplete, false);
+          const message = result.output[1];
+          assert.ok(
+            message.type === "message" &&
+              message.content[0].type === "output_text" &&
+              /Sources:\n- https:\/\/example\.com\/latest/.test(
+                message.content[0].text,
+              ),
+          );
+        } finally {
+          chatModelsCache.getChatModels = originalGetChatModels;
+          lifecycle.dispose();
+        }
+      });
     });
   });
 });

@@ -28,6 +28,7 @@ import {
 } from "../utils/anthropicWebSearch";
 import { handleErrorWithLogging } from "../utils/errorDiagnostics";
 import { isResponseTooLongError } from "../utils/languageModelErrors";
+import { sendLanguageModelRequest } from "../utils/languageModelRequest";
 import {
   LANGUAGE_MODEL_REQUEST_TIMEOUT_MS,
   LanguageModelClientDisconnectedError,
@@ -462,13 +463,16 @@ export function registerAnthropicRoutes(
       }
 
       // 5. Send request to the VS Code LM API
-      const response = await requestLifecycle.waitFor(
-        client.sendRequest(
-          vsCodeLmMessages,
-          configuredRequestOptions,
-          cancellationToken,
-        ),
-      );
+      const sent = await sendLanguageModelRequest({
+        client,
+        messages: vsCodeLmMessages,
+        options: lmRequestOptions,
+        copilotConfiguration,
+        lifecycle: requestLifecycle,
+        resolve: resolveChatModelClient,
+      });
+      const response = sent.response;
+      client = sent.client;
 
       const getFallbackUsage = async (
         accumulatedText: string,

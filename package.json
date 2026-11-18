@@ -2,7 +2,7 @@
   "name": "agent-maestro",
   "displayName": "Agent Maestro",
   "description": "Turn VS Code into your compliant AI playground! Plug Claude Code, Codex, Gemini CLI, or Grok Build straight into GitHub Copilot models through OpenAI-, Anthropic-, and Gemini-compatible APIs.",
-  "version": "2.16.0",
+  "version": "2.17.0",
   "icon": "assets/icons/icon.png",
   "publisher": "Joouis",
   "repository": "https://github.com/Joouis/agent-maestro",

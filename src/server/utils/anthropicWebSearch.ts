@@ -16,6 +16,7 @@ import {
 } from "../webSearch/webSearchProvider";
 import { AnthropicTokenUsage, extractAnthropicUsage } from "./anthropic";
 import { isResponseTooLongError } from "./languageModelErrors";
+import { sendLanguageModelRequest } from "./languageModelRequest";
 import {
   LanguageModelRequestLifecycle,
   interruptibleLanguageModelStream,
@@ -464,6 +465,8 @@ export function prepareAnthropicTools({
 }
 
 interface CollectedModelRound {
+  /** The handle that served this round; differs after stale-handle recovery. */
+  client: vscode.LanguageModelChat;
   blocks: Anthropic.Messages.ContentBlock[];
   parts: Array<vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart>;
   stopReason: Anthropic.Messages.StopReason;
@@ -507,9 +510,18 @@ const collectModelRound = async ({
   requestOptions: vscode.LanguageModelChatRequestOptions;
   lifecycle: LanguageModelRequestLifecycle;
 }): Promise<CollectedModelRound> => {
-  const response = await lifecycle.waitFor(
-    client.sendRequest(messages, requestOptions, lifecycle.token),
-  );
+  // Request options were configured for this model; a re-resolved handle of
+  // the same model shares its context size, so they are reused as is.
+  const sent = await sendLanguageModelRequest({
+    client,
+    messages: messages,
+    options: requestOptions,
+    // Already configured for this model by the caller.,
+    copilotConfiguration: false,
+    lifecycle,
+  });
+  const response = sent.response;
+  client = sent.client;
   const blocks: Anthropic.Messages.ContentBlock[] = [];
   const parts: Array<
     vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart
@@ -578,7 +590,7 @@ const collectModelRound = async ({
   ) {
     stopReason = "tool_use";
   }
-  return { blocks, parts, stopReason, usage };
+  return { client, blocks, parts, stopReason, usage };
 };
 
 const appendSourcesWithinBudget = async ({
@@ -697,6 +709,7 @@ export async function runAnthropicWebSearchLoop({
       toolMode: preparedTools.toolMode,
     },
   });
+  client = firstRound.client;
   const internalCalls = firstRound.parts.filter(
     (part): part is vscode.LanguageModelToolCallPart =>
       part instanceof vscode.LanguageModelToolCallPart &&
@@ -833,6 +846,7 @@ export async function runAnthropicWebSearchLoop({
       toolMode: undefined,
     },
   });
+  client = synthesisRound.client;
   const synthesisText = synthesisRound.blocks.filter(
     (block) => block.type === "text",
   );

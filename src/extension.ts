@@ -28,6 +28,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Initialize chat models cache
   chatModelsCache.initialize();
+  context.subscriptions.push(chatModelsCache.watchModelChanges());
 
   const config = readConfiguration();
   const proxyPort = envProxyPort ? envProxyPort : config.proxyServerPort;

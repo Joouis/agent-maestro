@@ -102,10 +102,32 @@ class ChatModelsCache {
   }
 
   async refresh(): Promise<void> {
+    this.invalidate();
+    await this.initialize();
+  }
+
+  /**
+   * Drops cached model handles so the next lookup re-queries VS Code. Each
+   * handle captures the internal model ID that existed at discovery time; if
+   * VS Code later re-registers the model under another ID, the old handle
+   * fails with "Chat provider ... is not registered".
+   */
+  invalidate(): void {
     this.initializationRunId++;
     this.cachedModels = [];
     this.initializationPromise = null;
-    await this.initialize();
+  }
+
+  /**
+   * Per the `selectChatModels` contract, handles must be re-queried after
+   * `onDidChangeChatModels`. Only invalidate here: enumerating inside the
+   * listener could feed back into further change events.
+   */
+  watchModelChanges(): vscode.Disposable {
+    return vscode.lm.onDidChangeChatModels(() => {
+      logger.info("VS Code chat models changed; dropping cached model handles");
+      this.invalidate();
+    });
   }
 
   getCachedModels(): vscode.LanguageModelChat[] {
@@ -426,6 +448,26 @@ function findBestMatch(
  * doesn't update dynamically when network state changes - the VS Code API returns the same
  * cached results regardless of VPN/network changes during the session.
  */
+/**
+ * Whether `sendRequest` failed because the handle points at a model ID VS Code
+ * no longer knows, rather than because of auth, quota, or the network.
+ *
+ * Both checks mirror upstream VS Code: the extension host throws
+ * `LanguageModelError.NotFound` when its own entry is gone, while the main
+ * thread throws a plain `Error` when only its model cache dropped the ID
+ * (`languageModels.ts` `sendChatRequest`). The second case is what stale
+ * handles hit after Copilot re-registers models during startup.
+ */
+export function isStaleModelHandleError(error: unknown): boolean {
+  if (error instanceof vscode.LanguageModelError) {
+    return error.code === vscode.LanguageModelError.NotFound.name;
+  }
+  return (
+    error instanceof Error &&
+    /^Chat provider for model .+ is not registered\.?$/.test(error.message)
+  );
+}
+
 export const getChatModelClient = async (modelId: string) => {
   const models = await chatModelsCache.getChatModels();
 
