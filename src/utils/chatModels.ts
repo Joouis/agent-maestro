@@ -675,12 +675,31 @@ function mergeUnionPropertySchemas(
     return widenScalarBranchSchemas(base, other, mergedType);
   }
 
+  const typeA = primarySchemaType(existing);
+  const typeB = primarySchemaType(incoming);
   if (
-    isPlainRecord(existing.properties) &&
+    typeA === "object" ||
+    typeB === "object" ||
+    isPlainRecord(existing.properties) ||
     isPlainRecord(incoming.properties)
   ) {
-    const mergedProps: Record<string, unknown> = { ...existing.properties };
-    for (const [k, v] of Object.entries(incoming.properties)) {
+    if ((typeA && typeA !== "object") || (typeB && typeB !== "object")) {
+      const description =
+        typeof existing.description === "string" && existing.description
+          ? { description: existing.description }
+          : typeof incoming.description === "string" && incoming.description
+            ? { description: incoming.description }
+            : {};
+      return { type: "string", ...description };
+    }
+    const existingProps = isPlainRecord(existing.properties)
+      ? existing.properties
+      : {};
+    const incomingProps = isPlainRecord(incoming.properties)
+      ? incoming.properties
+      : {};
+    const mergedProps: Record<string, unknown> = { ...existingProps };
+    for (const [k, v] of Object.entries(incomingProps)) {
       mergedProps[k] = Object.hasOwn(mergedProps, k)
         ? mergeUnionPropertySchemas(mergedProps[k], v)
         : v;
@@ -696,17 +715,23 @@ function mergeUnionPropertySchemas(
         )
       : new Set<string>();
     const commonReq = [...reqA].filter((k) => reqB.has(k));
-    const { required: _r, ...rest } = existing;
+    const {
+      required: _r,
+      properties: _p,
+      minProperties: _minP,
+      maxProperties: _maxP,
+      ...rest
+    } = existing;
     return {
       ...rest,
       type: "object",
-      properties: mergedProps,
+      ...(Object.keys(mergedProps).length > 0
+        ? { properties: mergedProps }
+        : {}),
       ...(commonReq.length > 0 ? { required: commonReq } : {}),
     };
   }
 
-  const typeA = primarySchemaType(existing);
-  const typeB = primarySchemaType(incoming);
   if (
     (typeA === "array" || isPlainRecord(existing.items)) &&
     (typeB === "array" || isPlainRecord(incoming.items))
@@ -725,11 +750,7 @@ function mergeUnionPropertySchemas(
     const mergedItems =
       isPlainRecord(itemsA) && isPlainRecord(itemsB)
         ? mergeUnionPropertySchemas(itemsA, itemsB)
-        : isPlainRecord(itemsA)
-          ? itemsA
-          : isPlainRecord(itemsB)
-            ? itemsB
-            : undefined;
+        : undefined;
     return {
       ...rest,
       type: "array",
@@ -796,7 +817,7 @@ function flattenUnionObjectSchema(
         Object.fromEntries(
           Object.entries(node).filter(([key]) => key !== "$ref"),
         ),
-        nextSeen,
+        seen,
       );
       return isPlainRecord(resolvedSiblings)
         ? mergeResolvedRefWithSiblings(resolvedTarget, resolvedSiblings)
@@ -838,10 +859,14 @@ function flattenUnionObjectSchema(
 
   function collectProperties(propsRecord: Record<string, unknown>): void {
     for (const [key, prop] of Object.entries(propsRecord)) {
+      const normalizedProp = normalizeCopilotToolSchema(prop, root, seenRefs);
       if (!Object.hasOwn(properties, key)) {
-        properties[key] = prop;
+        properties[key] = normalizedProp;
       } else {
-        properties[key] = mergeUnionPropertySchemas(properties[key], prop);
+        properties[key] = mergeUnionPropertySchemas(
+          properties[key],
+          normalizedProp,
+        );
       }
     }
   }
@@ -920,7 +945,31 @@ function flattenUnionObjectSchema(
     ]),
   );
 
+  const parentAnnotations = Object.fromEntries(
+    Object.entries(resolved)
+      .filter(
+        ([key]) =>
+          !STRIPPED_SCHEMA_KEYWORDS.has(key) &&
+          ![
+            "anyOf",
+            "oneOf",
+            "type",
+            "properties",
+            "required",
+            "enum",
+            "const",
+          ].includes(key),
+      )
+      .map(([key, item]) => [
+        key,
+        LITERAL_SCHEMA_FIELDS.has(key)
+          ? item
+          : normalizeCopilotToolSchema(item, root, seenRefs),
+      ]),
+  );
+
   return {
+    ...parentAnnotations,
     type: "object",
     properties: normalizedProperties,
     ...(commonRequired.length > 0 ? { required: commonRequired } : {}),
@@ -1035,9 +1084,19 @@ function tryCollapseNameDiscriminatedItemUnion(
   ) {
     collapsedItemSchema.required = ["name"];
   }
+  const { anyOf: _itemAnyOf, ...parentItemWithoutAnyOf } = currentItems;
+  const normalizedParentItems =
+    Object.keys(parentItemWithoutAnyOf).length > 0
+      ? normalizeCopilotToolSchema(parentItemWithoutAnyOf, rootSchema, seenRefs)
+      : undefined;
+  const mergedItemSchema = isPlainRecord(normalizedParentItems)
+    ? intersectSchemaDefinitions(normalizedParentItems, collapsedItemSchema)
+    : collapsedItemSchema;
   return {
     ...normalizedContainer,
-    items: collapsedItemSchema,
+    items: isPlainRecord(mergedItemSchema)
+      ? mergedItemSchema
+      : collapsedItemSchema,
   };
 }
 
@@ -1121,11 +1180,21 @@ export function normalizeCopilotToolSchema(
     const normalizedSiblings = normalizeCopilotToolSchema(
       Object.fromEntries(siblingEntries),
       rootSchema,
-      nextSeen,
+      effectiveSeenRefs,
     );
-    return isPlainRecord(normalizedSiblings)
-      ? mergeResolvedRefWithSiblings(resolved, normalizedSiblings)
-      : { ...resolved, ...description };
+    if (!isPlainRecord(normalizedSiblings)) {
+      return { ...resolved, ...description };
+    }
+    const mergedRef = mergeResolvedRefWithSiblings(
+      resolved,
+      normalizedSiblings,
+    );
+    const normalizedMergedRef = normalizeCopilotToolSchema(
+      mergedRef,
+      rootSchema,
+      effectiveSeenRefs,
+    );
+    return isPlainRecord(normalizedMergedRef) ? normalizedMergedRef : mergedRef;
   }
 
   const hasEmptyProperties =
