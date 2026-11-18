@@ -434,4 +434,154 @@ suite("Chat Models QuickPick Test Suite", () => {
       },
     });
   });
+
+  test("preserves array item merges, branch-required discriminators, root self-references, $ref siblings, and non-object unions", () => {
+    const rootSelfRef = normalizeCopilotToolSchema({
+      type: "object",
+      properties: {
+        label: { type: "string" },
+        child: { $ref: "#", description: "Recursive child" },
+      },
+      required: ["label"],
+    });
+    assert.deepStrictEqual(rootSelfRef, {
+      type: "object",
+      properties: {
+        label: { type: "string" },
+        child: { type: "string", description: "Recursive child" },
+      },
+      required: ["label"],
+    });
+
+    const normalized = normalizeCopilotToolSchema({
+      type: "object",
+      $defs: {
+        BaseFilter: {
+          type: "object",
+          properties: {
+            limit: { type: "integer" },
+          },
+          required: ["limit"],
+        },
+        IntA: { type: "integer", const: 1 },
+        IntB: { type: "integer", const: 2 },
+      },
+      properties: {
+        mergedUnion: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                action: { type: "string", const: "first" },
+                values: {
+                  type: "array",
+                  items: { type: "string", enum: ["a"] },
+                },
+              },
+              required: ["action", "values"],
+            },
+            {
+              type: "object",
+              properties: {
+                action: { type: "string", const: "second" },
+                values: {
+                  type: "array",
+                  items: { type: "string", enum: ["b"] },
+                },
+              },
+              required: ["action", "values"],
+            },
+          ],
+        },
+        discriminatedItems: {
+          type: "array",
+          items: {
+            anyOf: ["one", "two", "three", "four", "five"].map((name) => ({
+              type: "object",
+              properties: {
+                name: { type: "string", const: name },
+              },
+              required: ["name"],
+            })),
+          },
+        },
+        refWithSiblings: {
+          $ref: "#/$defs/BaseFilter",
+          description: "Combined filter",
+          properties: {
+            query: { type: "string" },
+          },
+          required: ["query"],
+        },
+        refScalarUnion: {
+          description: "Choice of integer constants",
+          anyOf: [{ $ref: "#/$defs/IntA" }, { $ref: "#/$defs/IntB" }],
+        },
+        arrayUnion: {
+          description: "Union of string arrays",
+          anyOf: [
+            {
+              type: "array",
+              items: { type: "string", enum: ["a"] },
+            },
+            {
+              type: "array",
+              items: { type: "string", enum: ["b"] },
+            },
+          ],
+        },
+      },
+    }) as Record<string, unknown>;
+
+    const props = normalized.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.deepStrictEqual(props.mergedUnion, {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["first", "second"] },
+        values: {
+          type: "array",
+          items: { type: "string", enum: ["a", "b"] },
+        },
+      },
+      required: ["action", "values"],
+    });
+    assert.deepStrictEqual(props.discriminatedItems, {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            enum: ["one", "two", "three", "four", "five"],
+          },
+        },
+        required: ["name"],
+      },
+    });
+    assert.deepStrictEqual(props.refWithSiblings, {
+      type: "object",
+      description: "Combined filter",
+      properties: {
+        limit: { type: "integer" },
+        query: { type: "string" },
+      },
+      required: ["limit", "query"],
+    });
+    assert.deepStrictEqual(props.refScalarUnion, {
+      type: "integer",
+      description: "Choice of integer constants",
+      enum: [1, 2],
+    });
+    assert.deepStrictEqual(props.arrayUnion, {
+      type: "array",
+      description: "Union of string arrays",
+      items: {
+        type: "string",
+        enum: ["a", "b"],
+      },
+    });
+  });
 });

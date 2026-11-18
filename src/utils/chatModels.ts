@@ -365,10 +365,21 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function isLocalSchemaRef(ref: unknown): ref is string {
+  return typeof ref === "string" && (ref === "#" || ref.startsWith("#/"));
+}
+
+function normalizeSchemaRefPointer(ref: string): string {
+  return ref === "#/" ? "#" : ref;
+}
+
 function resolveSchemaPointer(
   root: Record<string, unknown>,
   pointer: string,
 ): Record<string, unknown> | null {
+  if (pointer === "#" || pointer === "#/") {
+    return root;
+  }
   const parts = pointer
     .slice(2)
     .split("/")
@@ -381,6 +392,58 @@ function resolveSchemaPointer(
     target = target[part];
   }
   return isPlainRecord(target) ? target : null;
+}
+
+function mergeResolvedRefWithSiblings(
+  resolvedTarget: Record<string, unknown>,
+  siblingNode: Record<string, unknown>,
+): Record<string, unknown> {
+  const { $ref: _ref, ...siblings } = siblingNode;
+  if (Object.keys(siblings).length === 0) {
+    return resolvedTarget;
+  }
+  const merged: Record<string, unknown> = {
+    ...resolvedTarget,
+    ...siblings,
+  };
+  if (
+    isPlainRecord(resolvedTarget.properties) ||
+    isPlainRecord(siblings.properties)
+  ) {
+    const mergedProps: Record<string, unknown> = {
+      ...(isPlainRecord(resolvedTarget.properties)
+        ? resolvedTarget.properties
+        : {}),
+    };
+    if (isPlainRecord(siblings.properties)) {
+      for (const [key, prop] of Object.entries(siblings.properties)) {
+        mergedProps[key] = Object.hasOwn(mergedProps, key)
+          ? mergeUnionPropertySchemas(mergedProps[key], prop)
+          : prop;
+      }
+    }
+    merged.properties = mergedProps;
+  }
+  if (
+    Array.isArray(resolvedTarget.required) ||
+    Array.isArray(siblings.required)
+  ) {
+    const reqTarget = Array.isArray(resolvedTarget.required)
+      ? resolvedTarget.required.filter(
+          (k): k is string => typeof k === "string",
+        )
+      : [];
+    const reqSibling = Array.isArray(siblings.required)
+      ? siblings.required.filter((k): k is string => typeof k === "string")
+      : [];
+    const unionReq = [...new Set([...reqTarget, ...reqSibling])];
+    if (unionReq.length > 0) {
+      merged.required = unionReq;
+    } else {
+      delete merged.required;
+    }
+  }
+  return merged;
 }
 
 function primarySchemaType(node: Record<string, unknown>): string | undefined {
@@ -487,6 +550,42 @@ function mergeUnionPropertySchemas(
 
   const typeA = primarySchemaType(existing);
   const typeB = primarySchemaType(incoming);
+  if (
+    (typeA === "array" || isPlainRecord(existing.items)) &&
+    (typeB === "array" || isPlainRecord(incoming.items))
+  ) {
+    const {
+      minItems: minA,
+      maxItems: maxA,
+      uniqueItems: uniqA,
+      items: itemsA,
+      ...rest
+    } = existing;
+    const minB = incoming.minItems;
+    const maxB = incoming.maxItems;
+    const uniqB = incoming.uniqueItems;
+    const itemsB = incoming.items;
+    const mergedItems =
+      isPlainRecord(itemsA) && isPlainRecord(itemsB)
+        ? mergeUnionPropertySchemas(itemsA, itemsB)
+        : isPlainRecord(itemsA)
+          ? itemsA
+          : isPlainRecord(itemsB)
+            ? itemsB
+            : undefined;
+    return {
+      ...rest,
+      type: "array",
+      ...(mergedItems ? { items: mergedItems } : {}),
+      ...(typeof minA === "number" && typeof minB === "number"
+        ? { minItems: Math.min(minA, minB) }
+        : {}),
+      ...(typeof maxA === "number" && typeof maxB === "number"
+        ? { maxItems: Math.max(maxA, maxB) }
+        : {}),
+      ...(uniqA === true && uniqB === true ? { uniqueItems: true } : {}),
+    };
+  }
   if (typeA && typeB && typeA !== typeB) {
     const isNumPair =
       (typeA === "integer" && typeB === "number") ||
@@ -506,7 +605,7 @@ function mergeUnionPropertySchemas(
 function flattenUnionObjectSchema(
   schema: Record<string, unknown>,
   root: Record<string, unknown> = schema,
-  seenRefs = new Set<string>(),
+  seenRefs = new Set<string>(["#"]),
 ): Record<string, unknown> | null {
   function deref(node: unknown, seen = new Set<string>(seenRefs)): unknown {
     if (Array.isArray(node)) {
@@ -515,22 +614,33 @@ function flattenUnionObjectSchema(
     if (!isPlainRecord(node)) {
       return node;
     }
-    if (typeof node.$ref === "string" && node.$ref.startsWith("#/")) {
+    if (isLocalSchemaRef(node.$ref)) {
+      const normalizedRef = normalizeSchemaRefPointer(node.$ref);
       const description =
         typeof node.description === "string" && node.description
           ? { description: node.description }
           : {};
-      if (seen.has(node.$ref)) {
+      if (seen.has(normalizedRef)) {
         return { type: "string", ...description };
       }
-      const target = resolveSchemaPointer(root, node.$ref);
+      const target = resolveSchemaPointer(root, normalizedRef);
       if (!target) {
         return { type: "string", ...description };
       }
-      const resolvedTarget = deref(target, new Set([...seen, node.$ref]));
-      return isPlainRecord(resolvedTarget)
-        ? { ...resolvedTarget, ...description }
-        : { type: "string", ...description };
+      const nextSeen = new Set([...seen, normalizedRef]);
+      const resolvedTarget = deref(target, nextSeen);
+      if (!isPlainRecord(resolvedTarget)) {
+        return { type: "string", ...description };
+      }
+      const resolvedSiblings = deref(
+        Object.fromEntries(
+          Object.entries(node).filter(([key]) => key !== "$ref"),
+        ),
+        nextSeen,
+      );
+      return isPlainRecord(resolvedSiblings)
+        ? mergeResolvedRefWithSiblings(resolvedTarget, resolvedSiblings)
+        : { ...resolvedTarget, ...description };
     }
     return Object.fromEntries(
       Object.entries(node)
@@ -657,34 +767,38 @@ function extractNameOnlyBranchDiscriminator(
   option: unknown,
   root: Record<string, unknown>,
   seenRefs: Set<string>,
-): string[] {
+): { names: string[]; requiresName: boolean } | null {
   const resolved =
     isPlainRecord(option) &&
-    typeof option.$ref === "string" &&
-    option.$ref.startsWith("#/") &&
-    !seenRefs.has(option.$ref)
-      ? resolveSchemaPointer(root, option.$ref)
+    isLocalSchemaRef(option.$ref) &&
+    !seenRefs.has(normalizeSchemaRefPointer(option.$ref))
+      ? resolveSchemaPointer(root, normalizeSchemaRefPointer(option.$ref))
       : option;
   if (!isPlainRecord(resolved) || !isPlainRecord(resolved.properties)) {
-    return [];
+    return null;
   }
-  if (
-    Array.isArray(resolved.required) &&
-    resolved.required.some((req) => typeof req === "string" && req !== "name")
-  ) {
-    return [];
+  const branchRequired = Array.isArray(resolved.required)
+    ? resolved.required.filter((req): req is string => typeof req === "string")
+    : [];
+  if (branchRequired.some((req) => req !== "name")) {
+    return null;
   }
   const nameProp = resolved.properties.name;
   if (!isPlainRecord(nameProp)) {
-    return [];
+    return null;
   }
-  if (Array.isArray(nameProp.enum)) {
-    return nameProp.enum.filter((v): v is string => typeof v === "string");
+  const names = Array.isArray(nameProp.enum)
+    ? nameProp.enum.filter((v): v is string => typeof v === "string")
+    : typeof nameProp.const === "string"
+      ? [nameProp.const]
+      : [];
+  if (names.length === 0) {
+    return null;
   }
-  if (typeof nameProp.const === "string") {
-    return [nameProp.const];
-  }
-  return [];
+  return {
+    names,
+    requiresName: branchRequired.includes("name"),
+  };
 }
 
 function tryCollapseNameDiscriminatedItemUnion(
@@ -708,13 +822,21 @@ function tryCollapseNameDiscriminatedItemUnion(
   if (parentRequired.some((r) => r !== "name")) {
     return null;
   }
-  const branchNames = nonNullBranches.map((option) =>
+  const branchInfos = nonNullBranches.map((option) =>
     extractNameOnlyBranchDiscriminator(option, rootSchema, seenRefs),
   );
-  if (branchNames.some((names) => names.length === 0)) {
+  if (
+    branchInfos.some(
+      (info): info is null => info === null || info.names.length === 0,
+    )
+  ) {
     return null;
   }
-  const mergedNames = [...new Set(branchNames.flat())];
+  const validInfos = branchInfos as Array<{
+    names: string[];
+    requiresName: boolean;
+  }>;
+  const mergedNames = [...new Set(validInfos.flatMap((info) => info.names))];
   const itemType = primarySchemaType(currentItems) ?? "object";
   const normalizedContainer = Object.fromEntries(
     Object.entries(current)
@@ -730,7 +852,10 @@ function tryCollapseNameDiscriminatedItemUnion(
     type: itemType,
     properties: { name: { type: "string", enum: mergedNames } },
   };
-  if (parentRequired.includes("name")) {
+  if (
+    parentRequired.includes("name") ||
+    validInfos.every((info) => info.requiresName)
+  ) {
     collapsedItemSchema.required = ["name"];
   }
   return {
@@ -789,24 +914,41 @@ export function normalizeCopilotToolSchema(
 
   const obj = value;
   const rootSchema = root ?? obj;
+  const effectiveSeenRefs =
+    root === undefined ? new Set([...seenRefs, "#"]) : seenRefs;
 
-  if (typeof obj.$ref === "string" && obj.$ref.startsWith("#/")) {
+  if (isLocalSchemaRef(obj.$ref)) {
+    const normalizedRef = normalizeSchemaRefPointer(obj.$ref);
     const description =
       typeof obj.description === "string" && obj.description
         ? { description: obj.description }
         : {};
-    if (seenRefs.has(obj.$ref)) {
+    if (effectiveSeenRefs.has(normalizedRef)) {
       return { type: "string", ...description };
     }
-    const target = resolveSchemaPointer(rootSchema, obj.$ref);
+    const target = resolveSchemaPointer(rootSchema, normalizedRef);
     if (!target) {
       return { type: "string", ...description };
     }
-    const nextSeen = new Set([...seenRefs, obj.$ref]);
+    const nextSeen = new Set([...effectiveSeenRefs, normalizedRef]);
     const resolved = normalizeCopilotToolSchema(target, rootSchema, nextSeen);
-    return isPlainRecord(resolved)
-      ? { ...resolved, ...description }
-      : { type: "string", ...description };
+    if (!isPlainRecord(resolved)) {
+      return { type: "string", ...description };
+    }
+    const siblingEntries = Object.entries(obj).filter(
+      ([key]) => key !== "$ref",
+    );
+    if (siblingEntries.length === 0) {
+      return resolved;
+    }
+    const normalizedSiblings = normalizeCopilotToolSchema(
+      Object.fromEntries(siblingEntries),
+      rootSchema,
+      nextSeen,
+    );
+    return isPlainRecord(normalizedSiblings)
+      ? mergeResolvedRefWithSiblings(resolved, normalizedSiblings)
+      : { ...resolved, ...description };
   }
 
   const hasEmptyProperties =
@@ -816,7 +958,11 @@ export function normalizeCopilotToolSchema(
     (Array.isArray(obj.oneOf) || Array.isArray(obj.anyOf)) &&
     hasEmptyProperties
   ) {
-    const flattened = flattenUnionObjectSchema(obj, rootSchema, seenRefs);
+    const flattened = flattenUnionObjectSchema(
+      obj,
+      rootSchema,
+      effectiveSeenRefs,
+    );
     if (flattened) {
       return flattened;
     }
@@ -835,15 +981,59 @@ export function normalizeCopilotToolSchema(
       const resolved = normalizeCopilotToolSchema(
         nonNull[0],
         rootSchema,
-        seenRefs,
+        effectiveSeenRefs,
       );
       return isPlainRecord(resolved)
         ? { ...resolved, ...description }
         : { type: "string", ...description };
     }
     if (nonNull.length > 1) {
+      const normalizedBranches = nonNull
+        .map((branch) =>
+          normalizeCopilotToolSchema(branch, rootSchema, effectiveSeenRefs),
+        )
+        .filter(isPlainRecord);
+      if (
+        normalizedBranches.length > 0 &&
+        normalizedBranches.every(
+          (branch) =>
+            primarySchemaType(branch) === "array" ||
+            isPlainRecord(branch.items),
+        )
+      ) {
+        const mergedArray = normalizedBranches
+          .slice(1)
+          .reduce<unknown>(
+            (acc, branch) => mergeUnionPropertySchemas(acc, branch),
+            normalizedBranches[0],
+          );
+        const normalizedMerged = normalizeCopilotToolSchema(
+          mergedArray,
+          rootSchema,
+          effectiveSeenRefs,
+        );
+        if (isPlainRecord(normalizedMerged)) {
+          return { ...normalizedMerged, ...description };
+        }
+      }
+      const mergedBranch =
+        normalizedBranches.length > 0
+          ? normalizedBranches
+              .slice(1)
+              .reduce<unknown>(
+                (acc, branch) => mergeUnionPropertySchemas(acc, branch),
+                normalizedBranches[0],
+              )
+          : undefined;
+      if (
+        isPlainRecord(mergedBranch) &&
+        typeof mergedBranch.type === "string" &&
+        !["object", "array"].includes(mergedBranch.type)
+      ) {
+        return { ...mergedBranch, ...description };
+      }
       const primaryType =
-        nonNull.find(
+        normalizedBranches.find(
           (branch) =>
             typeof branch.type === "string" &&
             !["object", "array"].includes(branch.type),
@@ -896,7 +1086,7 @@ export function normalizeCopilotToolSchema(
   const collapsedItemUnion = tryCollapseNameDiscriminatedItemUnion(
     current,
     rootSchema,
-    seenRefs,
+    effectiveSeenRefs,
   );
   if (collapsedItemUnion) {
     return collapsedItemUnion;
@@ -915,12 +1105,19 @@ export function normalizeCopilotToolSchema(
             Object.fromEntries(
               Object.entries(item).map(([propName, propSchema]) => [
                 propName,
-                normalizeCopilotToolSchema(propSchema, rootSchema, seenRefs),
+                normalizeCopilotToolSchema(
+                  propSchema,
+                  rootSchema,
+                  effectiveSeenRefs,
+                ),
               ]),
             ),
           ];
         }
-        return [key, normalizeCopilotToolSchema(item, rootSchema, seenRefs)];
+        return [
+          key,
+          normalizeCopilotToolSchema(item, rootSchema, effectiveSeenRefs),
+        ];
       }),
   );
 }
