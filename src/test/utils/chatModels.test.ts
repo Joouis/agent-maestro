@@ -584,4 +584,158 @@ suite("Chat Models QuickPick Test Suite", () => {
       },
     });
   });
+
+  test("handles array JSON pointers, $ref sibling intersection, numeric/scalar union widening, nested branch requireds, and parent-typed unions", () => {
+    const normalized = normalizeCopilotToolSchema({
+      type: "object",
+      $defs: {
+        Choice: {
+          anyOf: [
+            {
+              type: "object",
+              properties: { target: { type: "string" } },
+              required: ["target"],
+            },
+          ],
+        },
+        ModeConfig: {
+          type: "object",
+          properties: {
+            mode: { type: "string", enum: ["read", "write"] },
+            limit: { type: "integer", minimum: 1, maximum: 100 },
+          },
+          required: ["mode"],
+        },
+        NamedStep: {
+          type: "object",
+          properties: {
+            name: { type: "string", enum: ["s1", "s2", "s3", "s4", "s5"] },
+          },
+          required: ["name"],
+        },
+      },
+      properties: {
+        indexedRef: {
+          $ref: "#/$defs/Choice/anyOf/0",
+        },
+        intersectedRef: {
+          $ref: "#/$defs/ModeConfig",
+          properties: {
+            mode: { type: "string", const: "read" },
+            limit: { type: "integer", minimum: 10, maximum: 50 },
+          },
+          required: ["limit"],
+        },
+        numericLiteralUnion: {
+          anyOf: [{ type: "integer", const: 1 }, { type: "number" }],
+        },
+        scalarRangeUnion: {
+          anyOf: [
+            { type: "integer", minimum: 10 },
+            { type: "integer", maximum: 0 },
+          ],
+        },
+        nestedRequiredUnion: {
+          anyOf: [
+            {
+              type: "object",
+              required: ["name"],
+              anyOf: [
+                {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    a: { type: "string" },
+                  },
+                },
+                {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    b: { type: "string" },
+                  },
+                },
+              ],
+            },
+            {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                c: { type: "string" },
+              },
+              required: ["name"],
+            },
+          ],
+        },
+        refSiblingsInItems: {
+          type: "array",
+          items: {
+            anyOf: ["s1", "s2", "s3", "s4", "s5"].map((tag) => ({
+              $ref: "#/$defs/NamedStep",
+              properties: {
+                name: { type: "string", const: tag },
+                payload: { type: "string" },
+              },
+              required: ["payload"],
+            })),
+          },
+        },
+        parentTypedEnumUnion: {
+          type: "integer",
+          description: "Priority level",
+          anyOf: [{ enum: [1] }, { enum: [2] }],
+        },
+      },
+    }) as Record<string, unknown>;
+
+    const props = normalized.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.deepStrictEqual(props.indexedRef, {
+      type: "object",
+      properties: { target: { type: "string" } },
+      required: ["target"],
+    });
+    assert.deepStrictEqual(props.intersectedRef, {
+      type: "object",
+      properties: {
+        mode: { type: "string", const: "read" },
+        limit: { type: "integer", minimum: 10, maximum: 50 },
+      },
+      required: ["mode", "limit"],
+    });
+    assert.deepStrictEqual(props.numericLiteralUnion, {
+      type: "number",
+    });
+    assert.deepStrictEqual(props.scalarRangeUnion, {
+      type: "integer",
+    });
+    assert.deepStrictEqual(props.nestedRequiredUnion, {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        a: { type: "string" },
+        b: { type: "string" },
+        c: { type: "string" },
+      },
+      required: ["name"],
+    });
+    assert.deepStrictEqual(props.refSiblingsInItems, {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string", enum: ["s1", "s2", "s3", "s4", "s5"] },
+          payload: { type: "string" },
+        },
+        required: ["name", "payload"],
+      },
+    });
+    assert.deepStrictEqual(props.parentTypedEnumUnion, {
+      type: "integer",
+      description: "Priority level",
+      enum: [1, 2],
+    });
+  });
 });
