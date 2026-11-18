@@ -738,4 +738,182 @@ suite("Chat Models QuickPick Test Suite", () => {
       enum: [1, 2],
     });
   });
+
+  test("handles unconstrained object/array union alternatives, nested union properties, parent annotations, nonrecursive ref siblings, and ref array enums", () => {
+    const normalized = normalizeCopilotToolSchema({
+      type: "object",
+      $defs: {
+        BaseNode: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+          },
+          required: ["id"],
+        },
+        Severity: {
+          type: "array",
+          items: { type: "integer" },
+        },
+      },
+      properties: {
+        unconstrainedObjectUnion: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                settings: {
+                  type: "object",
+                  properties: { a: { type: "string" } },
+                  required: ["a"],
+                },
+              },
+              required: ["settings"],
+            },
+            {
+              type: "object",
+              properties: {
+                settings: { type: "object" },
+              },
+              required: ["settings"],
+            },
+          ],
+        },
+        unconstrainedArrayUnion: {
+          anyOf: [
+            { type: "array", items: { type: "integer" } },
+            { type: "array" },
+          ],
+        },
+        nestedUnionPropertyMerge: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                mode: {
+                  anyOf: [
+                    { type: "string", const: "a" },
+                    { type: "string", const: "b" },
+                  ],
+                },
+              },
+              required: ["mode"],
+            },
+            {
+              type: "object",
+              properties: {
+                mode: {
+                  anyOf: [
+                    { type: "string", const: "c" },
+                    { type: "string", const: "d" },
+                  ],
+                },
+              },
+              required: ["mode"],
+            },
+          ],
+        },
+        annotatedObjectUnion: {
+          description: "Optional filter configuration",
+          default: { enabled: true },
+          anyOf: [
+            {
+              type: "object",
+              properties: { enabled: { type: "boolean" } },
+            },
+            { type: "null" },
+          ],
+        },
+        collapsedItemsWithParentProp: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              payload: { type: "string", description: "Optional step payload" },
+            },
+            required: ["name"],
+            anyOf: ["s1", "s2", "s3", "s4", "s5"].map((tag) => ({
+              type: "object",
+              properties: {
+                name: { type: "string", const: tag },
+              },
+            })),
+          },
+        },
+        nonRecursiveSiblingRef: {
+          $ref: "#/$defs/BaseNode",
+          properties: {
+            child: { $ref: "#/$defs/BaseNode" },
+          },
+        },
+        refArrayWithSiblingEnum: {
+          $ref: "#/$defs/Severity",
+          enum: [0, 1, 2],
+        },
+      },
+    }) as Record<string, unknown>;
+
+    const props = normalized.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.deepStrictEqual(props.unconstrainedObjectUnion, {
+      type: "object",
+      properties: {
+        settings: {
+          type: "object",
+          properties: { a: { type: "string" } },
+        },
+      },
+      required: ["settings"],
+    });
+    assert.deepStrictEqual(props.unconstrainedArrayUnion, {
+      type: "array",
+    });
+    assert.deepStrictEqual(props.nestedUnionPropertyMerge, {
+      type: "object",
+      properties: {
+        mode: {
+          type: "string",
+          enum: ["a", "b", "c", "d"],
+        },
+      },
+      required: ["mode"],
+    });
+    assert.deepStrictEqual(props.annotatedObjectUnion, {
+      type: "object",
+      description: "Optional filter configuration",
+      default: { enabled: true },
+      properties: { enabled: { type: "boolean" } },
+    });
+    assert.deepStrictEqual(props.collapsedItemsWithParentProp, {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          payload: { type: "string", description: "Optional step payload" },
+          name: { type: "string", enum: ["s1", "s2", "s3", "s4", "s5"] },
+        },
+        required: ["name"],
+      },
+    });
+    assert.deepStrictEqual(props.nonRecursiveSiblingRef, {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        child: {
+          type: "object",
+          properties: { id: { type: "string" } },
+          required: ["id"],
+        },
+      },
+      required: ["id"],
+    });
+    assert.deepStrictEqual(props.refArrayWithSiblingEnum, {
+      type: "array",
+      items: {
+        type: "integer",
+        enum: [0, 1, 2],
+      },
+    });
+  });
 });
