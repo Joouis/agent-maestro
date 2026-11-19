@@ -1,6 +1,9 @@
 import * as assert from "assert";
 
-import { mimeForVscodeLm } from "../../server/utils/imageMime";
+import {
+  canonicalizeImageMime,
+  mimeForVscodeLm,
+} from "../../server/utils/imageMime";
 import { JPEG_50x50_BASE64, WEBP_1024x935_BASE64 } from "./imageMime.fixtures";
 
 /**
@@ -191,6 +194,48 @@ suite("imageMime Test Suite", () => {
           mimeForVscodeLm(Buffer.alloc(0), "image/webp"),
           "image/webp",
         );
+      });
+    });
+
+    suite("preserveMimeType and canonicalization", () => {
+      test("canonicalizes common aliases, case, and parameters", () => {
+        assert.strictEqual(canonicalizeImageMime("image/jpg"), "image/jpeg");
+        assert.strictEqual(
+          canonicalizeImageMime("IMAGE/JPEG; charset=utf-8"),
+          "image/jpeg",
+        );
+        assert.strictEqual(canonicalizeImageMime("image/x-png"), "image/png");
+        assert.strictEqual(canonicalizeImageMime("image/unknown"), undefined);
+      });
+
+      test("preserves canonicalized mime for large images when preserveMimeType is true", () => {
+        const webp = Buffer.from(WEBP_1024x935_BASE64, "base64");
+        assert.strictEqual(
+          mimeForVscodeLm(webp, "image/webp", { preserveMimeType: true }),
+          "image/webp",
+        );
+        assert.strictEqual(
+          mimeForVscodeLm(webp, "IMAGE/JPG;quality=90", {
+            preserveMimeType: true,
+          }),
+          "image/jpeg",
+        );
+      });
+
+      test("falls back to byte sniffing when preserveMimeType is true but declared mime is unknown", () => {
+        const webp = Buffer.from(WEBP_1024x935_BASE64, "base64");
+        assert.strictEqual(
+          mimeForVscodeLm(webp, "image/unknown", { preserveMimeType: true }),
+          "image/webp",
+        );
+      });
+
+      test("accepts a non-Buffer Uint8Array view without copying", () => {
+        const webp = Buffer.from(WEBP_1024x935_BASE64, "base64");
+        const padded = new Uint8Array(webp.length + 8);
+        padded.set(webp, 4);
+        const view = padded.subarray(4, 4 + webp.length);
+        assert.strictEqual(mimeForVscodeLm(view, "image/webp"), "image/png");
       });
     });
   });

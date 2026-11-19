@@ -30,7 +30,7 @@ import {
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
-import { mimeForVscodeLm } from "./imageMime";
+import { type ImageMimeOptions, mimeForVscodeLm } from "./imageMime";
 import {
   ThinkingPart,
   createModelMessage,
@@ -725,12 +725,12 @@ export const writeFunctionToolCallOutputItem = async (
  */
 const convertInputImageToVSCodePart = (
   content: ResponseInputImage,
-  options: { preserveMimeType?: boolean } = {},
+  options: ImageMimeOptions = {},
 ): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
   if (content.image_url) {
-    // Parse data URI: data:image/png;base64,<data>
+    // Parse data URI: data:image/png;base64,<data> (including optional media parameters)
     const match = content.image_url.match(
-      /^data:(image\/[\w+.-]+);base64,(.+)$/,
+      /^data:(image\/[\w+.-]+(?:\s*;[^;,=]+=[^;,]+)*);base64,(.+)$/i,
     );
     if (match) {
       const mimeType = match[1];
@@ -738,7 +738,7 @@ const convertInputImageToVSCodePart = (
       const bytes = Buffer.from(base64Data, "base64");
       return new vscode.LanguageModelDataPart(
         bytes,
-        options.preserveMimeType ? mimeType : mimeForVscodeLm(bytes, mimeType),
+        mimeForVscodeLm(bytes, mimeType, options),
       );
     }
   }
@@ -752,7 +752,7 @@ const convertInputImageToVSCodePart = (
  */
 export const convertInputContentToVSCodePart = (
   content: ResponseInputContent | ResponseOutputText,
-  options: { preserveMimeType?: boolean } = {},
+  options: ImageMimeOptions = {},
 ): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
   // Encrypted reasoning belongs to top-level reasoning items, not message
   // text content. Never put ciphertext into the model's ordinary prompt.
@@ -799,11 +799,10 @@ const convertToolOutputToVSCodeParts = (
     return [new vscode.LanguageModelTextPart(JSON.stringify(output) ?? "")];
   }
 
-  // Images inside LanguageModelToolResultPart are NOT re-encoded by VS Code's
-  // sendChatRequest (only top-level User message images are converted to PNG
-  // without a mimeType argument). Instead, Copilot's tool-result renderer calls
-  // `_chat.resizeImage(data, mimeType)`, which preserves JPEG when mimeType is
-  // `image/jpeg` but re-encodes to a multi-MB PNG if relabeled to `image/png`.
+  // Tool-result image parts are not run through the top-level user-image
+  // PNG re-encode path; their declared MIME type is used directly when resizing
+  // tool outputs, so preserve the canonicalized MIME type instead of relabeling
+  // large (>768x768) images to `image/png`.
   return output.map((part) => {
     if (isConvertibleToolOutputPart(part)) {
       return convertInputContentToVSCodePart(part, {

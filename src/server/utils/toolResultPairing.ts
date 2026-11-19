@@ -130,12 +130,9 @@ export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
   ): ToolHistoryContent => {
     if (
       part instanceof vscode.LanguageModelDataPart &&
-      part.mimeType.startsWith("image/")
+      part.mimeType.toLowerCase().startsWith("image/")
     ) {
-      const normalizedMime = mimeForVscodeLm(
-        Buffer.from(part.data),
-        part.mimeType,
-      );
+      const normalizedMime = mimeForVscodeLm(part.data, part.mimeType);
       if (normalizedMime !== part.mimeType) {
         return new vscode.LanguageModelDataPart(part.data, normalizedMime);
       }

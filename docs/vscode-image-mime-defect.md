@@ -68,24 +68,26 @@ This makes the declared type match the bytes the provider actually receives.
 ### Tool-Result Exception
 
 Images nested in `LanguageModelToolResultPart` blocks (Anthropic `tool_result`
-and OpenAI Responses `function_call_output` / `custom_tool_call_output`) take a
-different path: `mainThreadLanguageModels.ts` skips `tool_result` parts, and
-Copilot Chat's tool-result serializer calls `_chat.resizeImage(data, mimeType)`
-with the part's declared `mimeType`. Both the
-[Anthropic converter](../src/server/utils/anthropic.ts) and the
+and OpenAI Responses `function_call_output` / `custom_tool_call_output`) are
+not run through the same top-level image normalization path: their declared
+MIME type is used directly when tool-result images are resized, so JPEG tool
+outputs remain JPEG rather than being unconditionally re-encoded to PNG. Both
+the [Anthropic converter](../src/server/utils/anthropic.ts) and the
 [OpenAI Responses converter](../src/server/utils/openaiResponses.ts) therefore
-pass `preserveMimeType: true` and retain the declared MIME type. Applying the
-top-level large-image relabeling there caused a format mismatch (or forced
-lossless PNG re-encoding of large JPEG photos inside tool results). Keep that
-exception when maintaining the workaround; do not assume all
-`LanguageModelDataPart` instances undergo the same upstream transformation.
+pass `{ preserveMimeType: true }` to `mimeForVscodeLm`, which canonicalizes
+valid declared image MIME types (such as `image/jpg` → `image/jpeg`) and falls
+back to byte sniffing when the declared MIME is not in the allowed canonical
+set. Applying the top-level large-image PNG relabeling to tool results caused a
+format mismatch or forced lossless PNG re-encoding of large JPEG photos inside
+tool outputs. Keep that exception when maintaining the workaround; do not assume
+all `LanguageModelDataPart` instances undergo the same upstream transformation.
 
 When history normalization promotes an orphaned or conflicting tool result into
 ordinary user context (`src/server/utils/toolResultPairing.ts`), its image
-parts leave `LanguageModelToolResultPart` and re-enter the top-level
-`image_url` resize path, so `toolResultPairing.ts` normalizes their MIME types
-with `mimeForVscodeLm`. Revalidate affected image paths separately if
-conversion placement or upstream serialization changes.
+parts leave `LanguageModelToolResultPart` and re-enter the top-level user-image
+normalization path, so `toolResultPairing.ts` normalizes their MIME types with
+`mimeForVscodeLm`. Revalidate affected image paths separately if conversion
+placement or upstream serialization changes.
 
 ## ⚠️ When VS Code fixes this, revisit the workaround
 

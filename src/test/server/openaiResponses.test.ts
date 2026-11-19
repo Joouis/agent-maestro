@@ -1362,6 +1362,24 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       assert.strictEqual(toolResult.content[0].mimeType, "image/webp");
     });
 
+    test("should canonicalize non-standard image mimeType in function_call_output", () => {
+      const item = {
+        type: "function_call_output" as const,
+        call_id: "call_view_image_jpg_alias",
+        output: [
+          {
+            type: "input_image" as const,
+            image_url: `data:IMAGE/JPG;charset=utf-8;base64,${WEBP_1024x935_BASE64}`,
+            detail: "original" as const,
+          },
+        ],
+      };
+      const result = convertResponsesItemToVSCode(item as any);
+      const toolResult = (result!.content as any[])[0];
+      assert.ok(toolResult.content[0] instanceof vscode.LanguageModelDataPart);
+      assert.strictEqual(toolResult.content[0].mimeType, "image/jpeg");
+    });
+
     test("should convert custom_tool_call item", () => {
       const item = {
         type: "custom_tool_call" as const,
