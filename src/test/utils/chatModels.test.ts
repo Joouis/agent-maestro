@@ -916,4 +916,95 @@ suite("Chat Models QuickPick Test Suite", () => {
       },
     });
   });
+
+  test("bounds exponential ref DAG expansion, promotes fractional untyped enums, flattens allOf branches, and intersects empty object alternatives", () => {
+    const dagDefs: Record<string, unknown> = {
+      L0: {
+        type: "object",
+        properties: { leaf: { type: "string" } },
+      },
+    };
+    for (let i = 1; i <= 12; i += 1) {
+      dagDefs[`L${i}`] = {
+        type: "object",
+        properties: {
+          left: { $ref: `#/$defs/L${i - 1}` },
+          right: { $ref: `#/$defs/L${i - 1}` },
+        },
+      };
+    }
+
+    const normalized = normalizeCopilotToolSchema({
+      type: "object",
+      $defs: dagDefs,
+      properties: {
+        boundedDag: { $ref: "#/$defs/L12" },
+        fractionalBothLiterals: {
+          anyOf: [{ type: "integer", enum: [1] }, { enum: [2.5] }],
+        },
+        fractionalSingleLiteralSide: {
+          anyOf: [{ enum: [2.5] }, { type: "integer" }],
+        },
+        allOfUnion: {
+          anyOf: [
+            {
+              allOf: [
+                {
+                  type: "object",
+                  properties: { file: { type: "string" } },
+                  required: ["file"],
+                },
+              ],
+            },
+            {
+              type: "object",
+              properties: { url: { type: "string" } },
+              required: ["url"],
+            },
+          ],
+        },
+        emptyAlternativeUnion: {
+          type: "object",
+          anyOf: [
+            {
+              properties: { id: { type: "string" } },
+              required: ["id"],
+            },
+            {},
+          ],
+        },
+      },
+    }) as Record<string, unknown>;
+
+    const props = normalized.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.strictEqual(props.boundedDag.type, "object");
+    assert.strictEqual(
+      JSON.stringify(props.boundedDag).includes("$ref"),
+      false,
+    );
+
+    assert.deepStrictEqual(props.fractionalBothLiterals, {
+      type: "number",
+      enum: [1, 2.5],
+    });
+    assert.deepStrictEqual(props.fractionalSingleLiteralSide, {
+      type: "number",
+    });
+    assert.deepStrictEqual(props.allOfUnion, {
+      type: "object",
+      properties: {
+        file: { type: "string" },
+        url: { type: "string" },
+      },
+    });
+    assert.deepStrictEqual(props.emptyAlternativeUnion, {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+      },
+    });
+  });
 });
