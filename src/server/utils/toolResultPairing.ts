@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import { mimeForVscodeLm } from "./imageMime";
 import {
   ModelInputPart,
   ThinkingPart,
@@ -91,6 +92,10 @@ const isReasoningOnlyAssistantMessage = (
   message.role === "assistant" &&
   message.parts.length > 0 &&
   message.parts.every((part) => part.kind === "reasoning");
+
+// Copilot rejects large binary parts nested inside tool results even though the
+// same data is accepted as ordinary user image content.
+const MAX_INLINE_TOOL_RESULT_DATA_BYTES = 1_000_000;
 
 /** Analyze a complete request snapshot; no decisions depend on another request. */
 export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
@@ -508,10 +513,70 @@ export function toolHistoryToVSCode(
       message.content.splice(0, message.content.length, ...tools, ...context);
     }
   }
+  const safeOutput: vscode.LanguageModelChatMessage[] = [];
+  for (const message of output) {
+    const promotedGroups: Array<{
+      callId: string;
+      parts: ToolHistoryContent[];
+    }> = [];
+    const content = message.content.map((part) => {
+      if (!(part instanceof vscode.LanguageModelToolResultPart)) {
+        return part;
+      }
+      const data = part.content.filter(
+        (item): item is vscode.LanguageModelDataPart =>
+          item instanceof vscode.LanguageModelDataPart,
+      );
+      const totalBytes = data.reduce(
+        (sum, item) => sum + item.data.byteLength,
+        0,
+      );
+      if (totalBytes <= MAX_INLINE_TOOL_RESULT_DATA_BYTES) {
+        return part;
+      }
+      promotedGroups.push({
+        callId: part.callId,
+        parts: part.content.reduce<ToolHistoryContent[]>((items, item) => {
+          if (item instanceof vscode.LanguageModelDataPart) {
+            items.push(
+              new vscode.LanguageModelDataPart(
+                item.data,
+                mimeForVscodeLm(Buffer.from(item.data), item.mimeType),
+              ),
+            );
+          } else if (item instanceof vscode.LanguageModelTextPart) {
+            items.push(item);
+          }
+          return items;
+        }, []),
+      });
+      const text = part.content.filter(
+        (item): item is vscode.LanguageModelTextPart =>
+          item instanceof vscode.LanguageModelTextPart,
+      );
+      return new vscode.LanguageModelToolResultPart(part.callId, [
+        ...text,
+        new vscode.LanguageModelTextPart(
+          "[Large binary tool result is attached in the following user message.]",
+        ),
+      ]);
+    });
+    safeOutput.push(createModelMessage(message.role, content));
+    for (const group of promotedGroups) {
+      safeOutput.push(
+        vscode.LanguageModelChatMessage.User([
+          new vscode.LanguageModelTextPart(
+            "[Content promoted from tool result " + group.callId + ".]",
+          ),
+          ...group.parts,
+        ]),
+      );
+    }
+  }
   if (Object.values(recoveries).some((count) => count > 0)) {
     logger.warn(
       adapter + " tool history normalization: " + JSON.stringify(diagnostics),
     );
   }
-  return output;
+  return safeOutput;
 }
