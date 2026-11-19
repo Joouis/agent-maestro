@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import { mimeForVscodeLm } from "./imageMime";
 import {
   ModelInputPart,
   ThinkingPart,
@@ -124,6 +125,21 @@ export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
   let results: Occurrence<Result>[] = [];
   let phase: "calls" | "results" | undefined;
 
+  const promoteResultContentPart = (
+    part: ToolHistoryContent,
+  ): ToolHistoryContent => {
+    if (
+      part instanceof vscode.LanguageModelDataPart &&
+      part.mimeType.toLowerCase().startsWith("image/")
+    ) {
+      const normalizedMime = mimeForVscodeLm(part.data, part.mimeType);
+      if (normalizedMime !== part.mimeType) {
+        return new vscode.LanguageModelDataPart(part.data, normalizedMime);
+      }
+    }
+    return part;
+  };
+
   const resultContext = (entry: Occurrence<Result>, conflict = false) => {
     const { part } = entry;
     decisions.set(entry.index, {
@@ -145,7 +161,7 @@ export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
         ...(part.isError
           ? [new vscode.LanguageModelTextPart("[Tool reported an error]")]
           : []),
-        ...part.parts,
+        ...part.parts.map(promoteResultContentPart),
       ],
     });
   };

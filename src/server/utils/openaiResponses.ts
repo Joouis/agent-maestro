@@ -30,7 +30,7 @@ import {
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
-import { mimeForVscodeLm } from "./imageMime";
+import { type ImageMimeOptions, mimeForVscodeLm } from "./imageMime";
 import {
   ThinkingPart,
   createModelMessage,
@@ -725,11 +725,12 @@ export const writeFunctionToolCallOutputItem = async (
  */
 const convertInputImageToVSCodePart = (
   content: ResponseInputImage,
+  options: ImageMimeOptions = {},
 ): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
   if (content.image_url) {
-    // Parse data URI: data:image/png;base64,<data>
+    // Parse data URI: data:image/png;base64,<data> (including optional media parameters)
     const match = content.image_url.match(
-      /^data:(image\/[\w+.-]+);base64,(.+)$/,
+      /^data:(image\/[\w+.-]+(?:\s*;[^;,=]+=[^;,]+)*);base64,(.+)$/i,
     );
     if (match) {
       const mimeType = match[1];
@@ -737,7 +738,7 @@ const convertInputImageToVSCodePart = (
       const bytes = Buffer.from(base64Data, "base64");
       return new vscode.LanguageModelDataPart(
         bytes,
-        mimeForVscodeLm(bytes, mimeType),
+        mimeForVscodeLm(bytes, mimeType, options),
       );
     }
   }
@@ -751,6 +752,7 @@ const convertInputImageToVSCodePart = (
  */
 export const convertInputContentToVSCodePart = (
   content: ResponseInputContent | ResponseOutputText,
+  options: ImageMimeOptions = {},
 ): vscode.LanguageModelTextPart | vscode.LanguageModelDataPart => {
   // Encrypted reasoning belongs to top-level reasoning items, not message
   // text content. Never put ciphertext into the model's ordinary prompt.
@@ -767,7 +769,7 @@ export const convertInputContentToVSCodePart = (
       // Accept output_text for compatibility with persisted response content.
       return new vscode.LanguageModelTextPart(content.text ?? "");
     case "input_image":
-      return convertInputImageToVSCodePart(content);
+      return convertInputImageToVSCodePart(content, options);
     case "input_file":
       logger.warn("input_file not supported, serializing as JSON");
       return new vscode.LanguageModelTextPart(JSON.stringify(content));
@@ -797,9 +799,15 @@ const convertToolOutputToVSCodeParts = (
     return [new vscode.LanguageModelTextPart(JSON.stringify(output) ?? "")];
   }
 
+  // Tool-result image parts are not run through the top-level user-image
+  // PNG re-encode path; their declared MIME type is used directly when resizing
+  // tool outputs, so preserve the canonicalized MIME type instead of relabeling
+  // large (>768x768) images to `image/png`.
   return output.map((part) => {
     if (isConvertibleToolOutputPart(part)) {
-      return convertInputContentToVSCodePart(part);
+      return convertInputContentToVSCodePart(part, {
+        preserveMimeType: true,
+      });
     }
     return new vscode.LanguageModelTextPart(JSON.stringify(part) ?? "");
   });
@@ -875,7 +883,9 @@ const convertEasyInputMessage = (
     }
   }
 
-  const parts = msg.content.map(convertInputContentToVSCodePart);
+  const parts = msg.content.map((part) =>
+    convertInputContentToVSCodePart(part),
+  );
   switch (msg.role) {
     case "user":
       return vscode.LanguageModelChatMessage.User(parts);
@@ -895,7 +905,9 @@ const convertEasyInputMessage = (
 const convertInputMessage = (
   msg: ResponseInputItem.Message,
 ): vscode.LanguageModelChatMessage => {
-  const parts = msg.content.map(convertInputContentToVSCodePart);
+  const parts = msg.content.map((part) =>
+    convertInputContentToVSCodePart(part),
+  );
   switch (msg.role) {
     case "user":
       return vscode.LanguageModelChatMessage.User(parts);
@@ -1120,7 +1132,9 @@ export const convertResponsesItemToVSCode = (
       recipient?: string;
       content?: ResponseInputContent[];
     };
-    const parts = (am.content ?? []).map(convertInputContentToVSCodePart);
+    const parts = (am.content ?? []).map((part) =>
+      convertInputContentToVSCodePart(part),
+    );
     const header = `[agent_message${am.author ? ` from ${am.author}` : ""}${
       am.recipient ? ` to ${am.recipient}` : ""
     }]`;
