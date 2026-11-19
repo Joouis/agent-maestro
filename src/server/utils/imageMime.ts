@@ -22,10 +22,11 @@ const IMAGE_MIME_ALIASES: Record<string, string> = {
 
 export interface ImageMimeOptions {
   /**
-   * When true, preserve a valid canonical declared image MIME type instead of
-   * relabeling large (>768x768) images to `image/png`. Use for tool-result
-   * image parts that are not passed through the top-level user-image resize
-   * path.
+   * When true, skip relabeling large (>768x768) images to `image/png` while
+   * still sniffing the true format from image bytes (or falling back to the
+   * canonicalized declared MIME when dimensions cannot be read). Use for
+   * tool-result image parts that are not passed through the top-level
+   * user-image PNG re-encode path.
    */
   preserveMimeType?: boolean;
 }
@@ -63,11 +64,11 @@ function toBufferView(bytes: Uint8Array): Buffer {
  *    exceed 768px (the early-return is `(width <= 768 || height <= 768)`).
  *
  * So, using the sniffed true format as the baseline:
- *   - `options.preserveMimeType` with a valid canonical/aliased image MIME →
- *     the canonicalized declared MIME (tool-result parts preserve their
- *     declared format instead of being re-encoded to PNG)
- *   - both sides > 768px (when `preserveMimeType` is not set) → `image/png`
- *   - otherwise → the sniffed true mimeType (bytes pass through unchanged)
+ *   - both sides > 768px (when `options.preserveMimeType` is not set) →
+ *     `image/png` (VS Code re-encodes top-level images to PNG)
+ *   - otherwise (including all tool-result images with `preserveMimeType: true`) →
+ *     the sniffed true canonical mimeType (correcting mislabeled bytes while
+ *     preserving the real format for large tool-result images)
  *   - bytes not recognizable as an image → fall back to the canonicalized or
  *     declared mimeType
  *
@@ -79,12 +80,7 @@ export function mimeForVscodeLm(
   originalMime: string,
   options: ImageMimeOptions = {},
 ): string {
-  const canonicalDeclared = canonicalizeImageMime(originalMime);
-  if (options.preserveMimeType && canonicalDeclared) {
-    return canonicalDeclared;
-  }
-
-  const fallbackMime = canonicalDeclared ?? originalMime;
+  const fallbackMime = canonicalizeImageMime(originalMime) ?? originalMime;
   let dimensions:
     | { width?: number; height?: number; type?: string }
     | undefined;

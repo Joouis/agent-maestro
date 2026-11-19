@@ -208,25 +208,29 @@ suite("imageMime Test Suite", () => {
         assert.strictEqual(canonicalizeImageMime("image/unknown"), undefined);
       });
 
-      test("preserves canonicalized mime for large images when preserveMimeType is true", () => {
+      test("preserves true format for large images when preserveMimeType is true", () => {
         const webp = Buffer.from(WEBP_1024x935_BASE64, "base64");
         assert.strictEqual(
           mimeForVscodeLm(webp, "image/webp", { preserveMimeType: true }),
           "image/webp",
         );
+      });
+
+      test("corrects mislabeled bytes even when preserveMimeType is true", () => {
+        const jpeg = Buffer.from(JPEG_50x50_BASE64, "base64");
         assert.strictEqual(
-          mimeForVscodeLm(webp, "IMAGE/JPG;quality=90", {
-            preserveMimeType: true,
-          }),
+          mimeForVscodeLm(jpeg, "image/png", { preserveMimeType: true }),
           "image/jpeg",
         );
       });
 
-      test("falls back to byte sniffing when preserveMimeType is true but declared mime is unknown", () => {
-        const webp = Buffer.from(WEBP_1024x935_BASE64, "base64");
+      test("canonicalizes declared mime fallback when dimensions are unreadable", () => {
+        const garbage = Buffer.from([0x01, 0x02, 0x03]);
         assert.strictEqual(
-          mimeForVscodeLm(webp, "image/unknown", { preserveMimeType: true }),
-          "image/webp",
+          mimeForVscodeLm(garbage, "IMAGE/JPG;quality=90", {
+            preserveMimeType: true,
+          }),
+          "image/jpeg",
         );
       });
 

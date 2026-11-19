@@ -74,13 +74,14 @@ MIME type is used directly when tool-result images are resized, so JPEG tool
 outputs remain JPEG rather than being unconditionally re-encoded to PNG. Both
 the [Anthropic converter](../src/server/utils/anthropic.ts) and the
 [OpenAI Responses converter](../src/server/utils/openaiResponses.ts) therefore
-pass `{ preserveMimeType: true }` to `mimeForVscodeLm`, which canonicalizes
-valid declared image MIME types (such as `image/jpg` → `image/jpeg`) and falls
-back to byte sniffing when the declared MIME is not in the allowed canonical
-set. Applying the top-level large-image PNG relabeling to tool results caused a
-format mismatch or forced lossless PNG re-encoding of large JPEG photos inside
-tool outputs. Keep that exception when maintaining the workaround; do not assume
-all `LanguageModelDataPart` instances undergo the same upstream transformation.
+pass `{ preserveMimeType: true }` to `mimeForVscodeLm`, which skips the `>768px`
+PNG relabeling while still sniffing image bytes (and canonicalizing the
+declared MIME fallback such as `image/jpg` → `image/jpeg` when dimensions are
+unreadable). Applying the top-level large-image PNG relabeling to tool results
+caused a format mismatch or forced lossless PNG re-encoding of large JPEG
+photos inside tool outputs. Keep that exception when maintaining the
+workaround; do not assume all `LanguageModelDataPart` instances undergo the
+same upstream transformation.
 
 When history normalization promotes an orphaned or conflicting tool result into
 ordinary user context (`src/server/utils/toolResultPairing.ts`), its image

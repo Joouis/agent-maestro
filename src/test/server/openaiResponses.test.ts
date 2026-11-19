@@ -32,7 +32,10 @@ import {
 } from "../../server/utils/openaiResponses";
 import { toolHistoryToVSCode } from "../../server/utils/toolResultPairing";
 import { logger } from "../../utils/logger";
-import { WEBP_1024x935_BASE64 } from "../utils/imageMime.fixtures";
+import {
+  JPEG_50x50_BASE64,
+  WEBP_1024x935_BASE64,
+} from "../utils/imageMime.fixtures";
 
 const encode = (value: unknown): Uint8Array =>
   new TextEncoder().encode(JSON.stringify(value));
@@ -1369,7 +1372,7 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
         output: [
           {
             type: "input_image" as const,
-            image_url: `data:IMAGE/JPG;charset=utf-8;base64,${WEBP_1024x935_BASE64}`,
+            image_url: `data:IMAGE/JPG;charset=utf-8;base64,${JPEG_50x50_BASE64}`,
             detail: "original" as const,
           },
         ],
