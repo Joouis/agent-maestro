@@ -536,14 +536,28 @@ function mergeResolvedRefWithSiblings(
   return isPlainRecord(intersected) ? intersected : resolvedTarget;
 }
 
+function collapseTypeArray(types: unknown[]): string | undefined {
+  const nonNull = types.filter(
+    (t): t is string => typeof t === "string" && t !== "null",
+  );
+  if (nonNull.length === 0) {
+    return undefined;
+  }
+  if (nonNull.includes("number") && nonNull.includes("integer")) {
+    const others = nonNull.filter((t) => t !== "number" && t !== "integer");
+    if (others.length === 0) {
+      return "number";
+    }
+  }
+  return nonNull[0];
+}
+
 function primarySchemaType(node: Record<string, unknown>): string | undefined {
   if (typeof node.type === "string") {
     return node.type;
   }
   if (Array.isArray(node.type)) {
-    return node.type.find(
-      (t): t is string => typeof t === "string" && t !== "null",
-    );
+    return collapseTypeArray(node.type);
   }
   return undefined;
 }
@@ -842,6 +856,9 @@ function mergeUnionPropertySchemas(
 
 function collapseAllOfInRecord(
   node: Record<string, unknown>,
+  root: Record<string, unknown>,
+  seenRefs: Set<string>,
+  refBudget: SchemaRefExpansionBudget,
 ): Record<string, unknown> {
   if (!Array.isArray(node.allOf)) {
     return node;
@@ -850,7 +867,26 @@ function collapseAllOfInRecord(
   let combined: Record<string, unknown> = rest;
   for (const part of allOf) {
     if (isPlainRecord(part)) {
-      const collapsedPart = collapseAllOfInRecord(part);
+      let collapsedPart = collapseAllOfInRecord(
+        part,
+        root,
+        seenRefs,
+        refBudget,
+      );
+      if (
+        Array.isArray(collapsedPart.anyOf) ||
+        Array.isArray(collapsedPart.oneOf)
+      ) {
+        const flattenedPart = flattenUnionObjectSchema(
+          collapsedPart,
+          root,
+          seenRefs,
+          refBudget,
+        );
+        if (flattenedPart) {
+          collapsedPart = flattenedPart;
+        }
+      }
       const intersected = intersectSchemaDefinitions(combined, collapsedPart);
       if (isPlainRecord(intersected)) {
         combined = intersected;
@@ -922,7 +958,7 @@ function flattenUnionObjectSchema(
           return [key, deref(item, seen)];
         }),
     );
-    return collapseAllOfInRecord(derefedEntries);
+    return collapseAllOfInRecord(derefedEntries, root, seen, refBudget);
   }
 
   const resolved = deref(schema);
@@ -962,7 +998,7 @@ function flattenUnionObjectSchema(
     if (!isPlainRecord(rawNode)) {
       return;
     }
-    const node = collapseAllOfInRecord(rawNode);
+    const node = collapseAllOfInRecord(rawNode, root, seenRefs, refBudget);
     const oneOf = Array.isArray(node.oneOf) ? node.oneOf : [];
     const anyOf = Array.isArray(node.anyOf) ? node.anyOf : [];
     const subBranches = [...oneOf, ...anyOf];
@@ -1085,7 +1121,7 @@ function extractNameOnlyBranchDiscriminator(
     }
     resolved = mergeResolvedRefWithSiblings(target, option);
   }
-  resolved = collapseAllOfInRecord(resolved);
+  resolved = collapseAllOfInRecord(resolved, root, seenRefs, refBudget);
   if (!isPlainRecord(resolved.properties)) {
     return null;
   }
@@ -1389,7 +1425,16 @@ export function normalizeCopilotToolSchema(
         return branch;
       }
       const combined = intersectSchemaDefinitions(parentConstraints, branch);
-      return isPlainRecord(combined) ? combined : branch;
+      if (!isPlainRecord(combined)) {
+        return branch;
+      }
+      const normalizedCombined = normalizeCopilotToolSchema(
+        combined,
+        rootSchema,
+        effectiveSeenRefs,
+        refBudget,
+      );
+      return isPlainRecord(normalizedCombined) ? normalizedCombined : combined;
     };
     if (nonNull.length === 1) {
       const resolved = normalizeCopilotToolSchema(
@@ -1450,19 +1495,17 @@ export function normalizeCopilotToolSchema(
       if (
         isPlainRecord(mergedBranch) &&
         typeof mergedBranch.type === "string" &&
-        !["object", "array"].includes(mergedBranch.type)
+        mergedBranch.type !== "array"
       ) {
         return { ...mergedBranch, ...description };
       }
       const primaryType =
-        (typeof parentType === "string" &&
-        !["object", "array"].includes(parentType)
+        (typeof parentType === "string" && parentType !== "array"
           ? parentType
           : undefined) ??
         normalizedBranches.find(
           (branch) =>
-            typeof branch.type === "string" &&
-            !["object", "array"].includes(branch.type),
+            typeof branch.type === "string" && branch.type !== "array",
         )?.type ??
         "string";
       return { type: primaryType, ...description };
@@ -1471,10 +1514,10 @@ export function normalizeCopilotToolSchema(
 
   let current: Record<string, unknown> = obj;
   if (Array.isArray(current.type)) {
-    const nonNull = current.type.filter(
-      (t): t is string => typeof t === "string" && t !== "null",
-    );
-    current = { ...current, type: nonNull[0] ?? "string" };
+    current = {
+      ...current,
+      type: collapseTypeArray(current.type) ?? "string",
+    };
   }
   if (Array.isArray(current.enum) && current.enum.includes(null)) {
     current = {
