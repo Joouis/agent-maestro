@@ -1,7 +1,13 @@
 import * as vscode from "vscode";
 
 import { readConfiguration } from "./config";
+import {
+  normalizeCopilotToolSchema,
+  normalizeToolsForCopilotModel,
+} from "./copilotToolSchema";
 import { logger } from "./logger";
+
+export { normalizeCopilotToolSchema };
 
 const SUPPORTED_VENDOR = "copilot";
 const warnedUnavailableFallbackModelIds = new Set<string>();
@@ -353,6 +359,12 @@ export function withCopilotConfiguration(
     return options;
   }
 
+  const normalizedTools = normalizeToolsForCopilotModel(
+    client,
+    options.tools,
+    SUPPORTED_VENDOR,
+  );
+
   // Copilot treats contextSize as the prompt/input budget; response tokens stay
   // controlled separately by max_tokens/max_output_tokens in modelOptions.
   const contextSize = client.maxInputTokens;
@@ -367,6 +379,7 @@ export function withCopilotConfiguration(
 
   return {
     ...options,
+    ...(normalizedTools !== options.tools ? { tools: normalizedTools } : {}),
     configuration: copilotConfiguration,
   } as ChatRequestOptionsWithConfig;
 }
