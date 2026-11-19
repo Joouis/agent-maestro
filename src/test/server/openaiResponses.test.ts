@@ -1196,6 +1196,176 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
     });
   });
 
+  suite("convertResponsesInputToVSCode", () => {
+    test("keeps only the 10 most recent images when replaying history", () => {
+      const base64Data =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const input = Array.from({ length: 12 }, (_, index) => ({
+        role: "user" as const,
+        content: [
+          { type: "input_text" as const, text: `image ${index}` },
+          {
+            type: "input_image" as const,
+            image_url: `data:image/png;base64,${base64Data}`,
+            detail: "auto" as const,
+          },
+        ],
+      }));
+
+      const messages = convertResponsesInputToVSCode(input);
+      const contents = messages.map((message) => message.content);
+      assert.strictEqual(
+        contents
+          .flat()
+          .filter((part) => part instanceof vscode.LanguageModelDataPart)
+          .length,
+        10,
+      );
+      for (const index of [0, 1]) {
+        assert.ok(
+          contents[index].some(
+            (part) =>
+              part instanceof vscode.LanguageModelTextPart &&
+              part.value.includes("Earlier image omitted"),
+          ),
+        );
+      }
+      for (const index of [2, 11]) {
+        assert.ok(
+          contents[index].some(
+            (part) => part instanceof vscode.LanguageModelDataPart,
+          ),
+        );
+      }
+    });
+
+    test("applies image budget after deduplicating duplicate tool outputs", () => {
+      const base64Data =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const tenImagesOutput = Array.from({ length: 10 }, (_, index) => ({
+        type: "input_image" as const,
+        image_url: `data:image/png;base64,${base64Data}`,
+        detail: "auto" as const,
+        id: `img_${index}`,
+      }));
+
+      const messages = convertResponsesInputToVSCode([
+        {
+          type: "function_call" as const,
+          id: "fc_1",
+          call_id: "call_dup_images",
+          name: "view_images",
+          arguments: "{}",
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_dup_images",
+          output: tenImagesOutput,
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_dup_images",
+          output: tenImagesOutput,
+        },
+      ] as any);
+
+      const toolResults = messages
+        .flatMap((message) => message.content)
+        .filter(
+          (part): part is vscode.LanguageModelToolResultPart =>
+            part instanceof vscode.LanguageModelToolResultPart,
+        );
+      assert.strictEqual(toolResults.length, 1);
+      assert.strictEqual(
+        toolResults[0].content.filter(
+          (part) => part instanceof vscode.LanguageModelDataPart,
+        ).length,
+        10,
+      );
+      assert.ok(
+        !toolResults[0].content.some(
+          (part) =>
+            part instanceof vscode.LanguageModelTextPart &&
+            part.value.includes("Earlier image omitted"),
+        ),
+      );
+    });
+
+    test("preserves original image order across orphan and matched tool outputs", () => {
+      const base64Data =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const makeImage = () => ({
+        type: "input_image" as const,
+        image_url: `data:image/png;base64,${base64Data}`,
+        detail: "auto" as const,
+      });
+      const fiveImages = Array.from({ length: 5 }, () => makeImage());
+
+      const messages = convertResponsesInputToVSCode([
+        {
+          type: "function_call" as const,
+          id: "fc_1",
+          call_id: "call_matched_1",
+          name: "view_images",
+          arguments: "{}",
+        },
+        {
+          type: "function_call" as const,
+          id: "fc_2",
+          call_id: "call_matched_2",
+          name: "view_images",
+          arguments: "{}",
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_orphan_first",
+          output: [makeImage()],
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_matched_1",
+          output: fiveImages,
+        },
+        {
+          type: "function_call_output" as const,
+          call_id: "call_matched_2",
+          output: fiveImages,
+        },
+      ] as any);
+
+      const userMessage = messages.find(
+        (message) => message.role === vscode.LanguageModelChatMessageRole.User,
+      );
+      assert.ok(userMessage);
+      const toolResults = userMessage.content.filter(
+        (part): part is vscode.LanguageModelToolResultPart =>
+          part instanceof vscode.LanguageModelToolResultPart,
+      );
+      assert.strictEqual(toolResults.length, 2);
+      for (const toolResult of toolResults) {
+        assert.strictEqual(
+          toolResult.content.filter(
+            (part) => part instanceof vscode.LanguageModelDataPart,
+          ).length,
+          5,
+        );
+      }
+      assert.strictEqual(
+        userMessage.content.filter(
+          (part) => part instanceof vscode.LanguageModelDataPart,
+        ).length,
+        0,
+      );
+      assert.ok(
+        userMessage.content.some(
+          (part) =>
+            part instanceof vscode.LanguageModelTextPart &&
+            part.value.includes("Earlier image omitted"),
+        ),
+      );
+    });
+  });
+
   suite("convertResponsesItemToVSCode", () => {
     test("should convert EasyInputMessage with string content (user)", () => {
       const item = { role: "user" as const, content: "Hello" };
