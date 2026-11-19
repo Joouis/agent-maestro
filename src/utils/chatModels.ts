@@ -361,6 +361,24 @@ const STRIPPED_SCHEMA_KEYWORDS = new Set([
   "additionalProperties",
 ]);
 
+const MAX_SCHEMA_REF_EXPANSIONS = 256;
+
+interface SchemaRefExpansionBudget {
+  remaining: number;
+}
+
+function createRefExpansionBudget(): SchemaRefExpansionBudget {
+  return { remaining: MAX_SCHEMA_REF_EXPANSIONS };
+}
+
+function consumeRefExpansionBudget(budget: SchemaRefExpansionBudget): boolean {
+  if (budget.remaining <= 0) {
+    return false;
+  }
+  budget.remaining -= 1;
+  return true;
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -542,6 +560,41 @@ function extractAllowedLiterals(
   return null;
 }
 
+function inferLiteralSchemaType(literals: unknown[]): string | undefined {
+  if (literals.length === 0) {
+    return undefined;
+  }
+  if (literals.every((v) => typeof v === "string")) {
+    return "string";
+  }
+  if (literals.every((v) => typeof v === "number" && Number.isInteger(v))) {
+    return "integer";
+  }
+  if (literals.every((v) => typeof v === "number")) {
+    return "number";
+  }
+  if (literals.every((v) => typeof v === "boolean")) {
+    return "boolean";
+  }
+  return undefined;
+}
+
+function effectiveScalarSchemaType(
+  node: Record<string, unknown>,
+  literals: unknown[] | null,
+): string | undefined {
+  const declared = primarySchemaType(node);
+  const inferred =
+    literals !== null ? inferLiteralSchemaType(literals) : undefined;
+  if (
+    (declared === "integer" && inferred === "number") ||
+    (declared === "number" && inferred === "integer")
+  ) {
+    return "number";
+  }
+  return declared ?? inferred;
+}
+
 const SCALAR_BOUND_MIN_KEYS = [
   "minimum",
   "exclusiveMinimum",
@@ -627,8 +680,8 @@ function mergeUnionPropertySchemas(
       (v) => typeof v === "number" && Number.isInteger(v),
     );
     const allNumbers = mergedLiterals.every((v) => typeof v === "number");
-    const typeA = primarySchemaType(existing);
-    const typeB = primarySchemaType(incoming);
+    const typeA = effectiveScalarSchemaType(existing, existingLiterals);
+    const typeB = effectiveScalarSchemaType(incoming, incomingLiterals);
     const mergedType =
       typeA && typeB && typeA !== typeB
         ? allStrings
@@ -636,15 +689,17 @@ function mergeUnionPropertySchemas(
           : allNumbers
             ? "number"
             : "string"
-        : (typeA ??
-          typeB ??
-          (allStrings
-            ? "string"
-            : allIntegers
-              ? "integer"
-              : allNumbers
-                ? "number"
-                : undefined));
+        : allNumbers && !allIntegers
+          ? "number"
+          : (typeA ??
+            typeB ??
+            (allStrings
+              ? "string"
+              : allIntegers
+                ? "integer"
+                : allNumbers
+                  ? "number"
+                  : undefined));
     const widenedBase = widenScalarBranchSchemas(
       existing,
       incoming,
@@ -660,9 +715,11 @@ function mergeUnionPropertySchemas(
 
   if (existingLiterals !== null || incomingLiterals !== null) {
     const base = existingLiterals !== null ? existing : incoming;
+    const baseLiterals =
+      existingLiterals !== null ? existingLiterals : incomingLiterals;
     const other = existingLiterals !== null ? incoming : existing;
-    const typeA = primarySchemaType(base);
-    const typeB = primarySchemaType(other);
+    const typeA = effectiveScalarSchemaType(base, baseLiterals);
+    const typeB = effectiveScalarSchemaType(other, null);
     const isNumPair =
       (typeA === "integer" && typeB === "number") ||
       (typeA === "number" && typeB === "integer");
@@ -783,10 +840,31 @@ function mergeUnionPropertySchemas(
   return widenScalarBranchSchemas(existing, incoming, typeA ?? typeB);
 }
 
+function collapseAllOfInRecord(
+  node: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!Array.isArray(node.allOf)) {
+    return node;
+  }
+  const { allOf, ...rest } = node;
+  let combined: Record<string, unknown> = rest;
+  for (const part of allOf) {
+    if (isPlainRecord(part)) {
+      const collapsedPart = collapseAllOfInRecord(part);
+      const intersected = intersectSchemaDefinitions(combined, collapsedPart);
+      if (isPlainRecord(intersected)) {
+        combined = intersected;
+      }
+    }
+  }
+  return combined;
+}
+
 function flattenUnionObjectSchema(
   schema: Record<string, unknown>,
   root: Record<string, unknown> = schema,
   seenRefs = new Set<string>(["#"]),
+  refBudget = createRefExpansionBudget(),
 ): Record<string, unknown> | null {
   function deref(node: unknown, seen = new Set<string>(seenRefs)): unknown {
     if (Array.isArray(node)) {
@@ -801,7 +879,7 @@ function flattenUnionObjectSchema(
         typeof node.description === "string" && node.description
           ? { description: node.description }
           : {};
-      if (seen.has(normalizedRef)) {
+      if (seen.has(normalizedRef) || !consumeRefExpansionBudget(refBudget)) {
         return { type: "string", ...description };
       }
       const target = resolveSchemaPointer(root, normalizedRef);
@@ -823,7 +901,7 @@ function flattenUnionObjectSchema(
         ? mergeResolvedRefWithSiblings(resolvedTarget, resolvedSiblings)
         : { ...resolvedTarget, ...description };
     }
-    return Object.fromEntries(
+    const derefedEntries = Object.fromEntries(
       Object.entries(node)
         .filter(([key]) => !STRIPPED_SCHEMA_KEYWORDS.has(key))
         .map(([key, item]) => {
@@ -844,6 +922,7 @@ function flattenUnionObjectSchema(
           return [key, deref(item, seen)];
         }),
     );
+    return collapseAllOfInRecord(derefedEntries);
   }
 
   const resolved = deref(schema);
@@ -859,7 +938,12 @@ function flattenUnionObjectSchema(
 
   function collectProperties(propsRecord: Record<string, unknown>): void {
     for (const [key, prop] of Object.entries(propsRecord)) {
-      const normalizedProp = normalizeCopilotToolSchema(prop, root, seenRefs);
+      const normalizedProp = normalizeCopilotToolSchema(
+        prop,
+        root,
+        seenRefs,
+        refBudget,
+      );
       if (!Object.hasOwn(properties, key)) {
         properties[key] = normalizedProp;
       } else {
@@ -872,12 +956,13 @@ function flattenUnionObjectSchema(
   }
 
   function collectBranch(
-    node: unknown,
+    rawNode: unknown,
     inheritedRequired = new Set<string>(),
   ): void {
-    if (!isPlainRecord(node)) {
+    if (!isPlainRecord(rawNode)) {
       return;
     }
+    const node = collapseAllOfInRecord(rawNode);
     const oneOf = Array.isArray(node.oneOf) ? node.oneOf : [];
     const anyOf = Array.isArray(node.anyOf) ? node.anyOf : [];
     const subBranches = [...oneOf, ...anyOf];
@@ -900,11 +985,13 @@ function flattenUnionObjectSchema(
       return;
     }
 
-    if (
-      node.type === "object" ||
-      isPlainRecord(node.properties) ||
-      combinedRequired.size > 0
-    ) {
+    const branchType = primarySchemaType(node);
+    const hasIncompatibleConstraint =
+      (branchType !== undefined && branchType !== "object") ||
+      node.type === "null" ||
+      isPlainRecord(node.items) ||
+      extractAllowedLiterals(node) !== null;
+    if (!hasIncompatibleConstraint) {
       branchRequiredSets.push(combinedRequired);
     }
   }
@@ -941,7 +1028,7 @@ function flattenUnionObjectSchema(
   const normalizedProperties = Object.fromEntries(
     Object.entries(properties).map(([key, prop]) => [
       key,
-      normalizeCopilotToolSchema(prop, root, seenRefs),
+      normalizeCopilotToolSchema(prop, root, seenRefs, refBudget),
     ]),
   );
 
@@ -953,6 +1040,7 @@ function flattenUnionObjectSchema(
           ![
             "anyOf",
             "oneOf",
+            "allOf",
             "type",
             "properties",
             "required",
@@ -964,7 +1052,7 @@ function flattenUnionObjectSchema(
         key,
         LITERAL_SCHEMA_FIELDS.has(key)
           ? item
-          : normalizeCopilotToolSchema(item, root, seenRefs),
+          : normalizeCopilotToolSchema(item, root, seenRefs, refBudget),
       ]),
   );
 
@@ -980,6 +1068,7 @@ function extractNameOnlyBranchDiscriminator(
   option: unknown,
   root: Record<string, unknown>,
   seenRefs: Set<string>,
+  refBudget: SchemaRefExpansionBudget,
 ): { names: string[]; requiresName: boolean } | null {
   if (!isPlainRecord(option)) {
     return null;
@@ -987,7 +1076,7 @@ function extractNameOnlyBranchDiscriminator(
   let resolved: Record<string, unknown> = option;
   if (isLocalSchemaRef(option.$ref)) {
     const normalizedRef = normalizeSchemaRefPointer(option.$ref);
-    if (seenRefs.has(normalizedRef)) {
+    if (seenRefs.has(normalizedRef) || !consumeRefExpansionBudget(refBudget)) {
       return null;
     }
     const target = resolveSchemaPointer(root, normalizedRef);
@@ -996,6 +1085,7 @@ function extractNameOnlyBranchDiscriminator(
     }
     resolved = mergeResolvedRefWithSiblings(target, option);
   }
+  resolved = collapseAllOfInRecord(resolved);
   if (!isPlainRecord(resolved.properties)) {
     return null;
   }
@@ -1031,6 +1121,7 @@ function tryCollapseNameDiscriminatedItemUnion(
   current: Record<string, unknown>,
   rootSchema: Record<string, unknown>,
   seenRefs: Set<string>,
+  refBudget: SchemaRefExpansionBudget,
 ): Record<string, unknown> | null {
   const currentItems = isPlainRecord(current.items) ? current.items : undefined;
   const itemAnyOf = Array.isArray(currentItems?.anyOf)
@@ -1049,7 +1140,7 @@ function tryCollapseNameDiscriminatedItemUnion(
     return null;
   }
   const branchInfos = nonNullBranches.map((option) =>
-    extractNameOnlyBranchDiscriminator(option, rootSchema, seenRefs),
+    extractNameOnlyBranchDiscriminator(option, rootSchema, seenRefs, refBudget),
   );
   if (
     branchInfos.some(
@@ -1071,7 +1162,7 @@ function tryCollapseNameDiscriminatedItemUnion(
         key,
         LITERAL_SCHEMA_FIELDS.has(key)
           ? item
-          : normalizeCopilotToolSchema(item, rootSchema, seenRefs),
+          : normalizeCopilotToolSchema(item, rootSchema, seenRefs, refBudget),
       ]),
   );
   const collapsedItemSchema: Record<string, unknown> = {
@@ -1087,7 +1178,12 @@ function tryCollapseNameDiscriminatedItemUnion(
   const { anyOf: _itemAnyOf, ...parentItemWithoutAnyOf } = currentItems;
   const normalizedParentItems =
     Object.keys(parentItemWithoutAnyOf).length > 0
-      ? normalizeCopilotToolSchema(parentItemWithoutAnyOf, rootSchema, seenRefs)
+      ? normalizeCopilotToolSchema(
+          parentItemWithoutAnyOf,
+          rootSchema,
+          seenRefs,
+          refBudget,
+        )
       : undefined;
   const mergedItemSchema = isPlainRecord(normalizedParentItems)
     ? intersectSchemaDefinitions(normalizedParentItems, collapsedItemSchema)
@@ -1138,10 +1234,11 @@ export function normalizeCopilotToolSchema(
   value: unknown,
   root?: Record<string, unknown>,
   seenRefs = new Set<string>(),
+  refBudget = createRefExpansionBudget(),
 ): unknown {
   if (Array.isArray(value)) {
     return value.map((item) =>
-      normalizeCopilotToolSchema(item, root, seenRefs),
+      normalizeCopilotToolSchema(item, root, seenRefs, refBudget),
     );
   }
   if (!isPlainRecord(value)) {
@@ -1159,7 +1256,10 @@ export function normalizeCopilotToolSchema(
       typeof obj.description === "string" && obj.description
         ? { description: obj.description }
         : {};
-    if (effectiveSeenRefs.has(normalizedRef)) {
+    if (
+      effectiveSeenRefs.has(normalizedRef) ||
+      !consumeRefExpansionBudget(refBudget)
+    ) {
       return { type: "string", ...description };
     }
     const target = resolveSchemaPointer(rootSchema, normalizedRef);
@@ -1167,7 +1267,12 @@ export function normalizeCopilotToolSchema(
       return { type: "string", ...description };
     }
     const nextSeen = new Set([...effectiveSeenRefs, normalizedRef]);
-    const resolved = normalizeCopilotToolSchema(target, rootSchema, nextSeen);
+    const resolved = normalizeCopilotToolSchema(
+      target,
+      rootSchema,
+      nextSeen,
+      refBudget,
+    );
     if (!isPlainRecord(resolved)) {
       return { type: "string", ...description };
     }
@@ -1181,6 +1286,7 @@ export function normalizeCopilotToolSchema(
       Object.fromEntries(siblingEntries),
       rootSchema,
       effectiveSeenRefs,
+      refBudget,
     );
     if (!isPlainRecord(normalizedSiblings)) {
       return { ...resolved, ...description };
@@ -1193,8 +1299,46 @@ export function normalizeCopilotToolSchema(
       mergedRef,
       rootSchema,
       effectiveSeenRefs,
+      refBudget,
     );
     return isPlainRecord(normalizedMergedRef) ? normalizedMergedRef : mergedRef;
+  }
+
+  if (Array.isArray(obj.allOf)) {
+    const { allOf, ...rest } = obj;
+    const normalizedRest = normalizeCopilotToolSchema(
+      rest,
+      rootSchema,
+      effectiveSeenRefs,
+      refBudget,
+    );
+    let combined: Record<string, unknown> = isPlainRecord(normalizedRest)
+      ? normalizedRest
+      : {};
+    for (const part of allOf) {
+      const normalizedPart = normalizeCopilotToolSchema(
+        part,
+        rootSchema,
+        effectiveSeenRefs,
+        refBudget,
+      );
+      if (isPlainRecord(normalizedPart)) {
+        const intersected = intersectSchemaDefinitions(
+          combined,
+          normalizedPart,
+        );
+        if (isPlainRecord(intersected)) {
+          combined = intersected;
+        }
+      }
+    }
+    const normalizedCombined = normalizeCopilotToolSchema(
+      combined,
+      rootSchema,
+      effectiveSeenRefs,
+      refBudget,
+    );
+    return isPlainRecord(normalizedCombined) ? normalizedCombined : combined;
   }
 
   const hasEmptyProperties =
@@ -1208,6 +1352,7 @@ export function normalizeCopilotToolSchema(
       obj,
       rootSchema,
       effectiveSeenRefs,
+      refBudget,
     );
     if (flattened) {
       return flattened;
@@ -1251,6 +1396,7 @@ export function normalizeCopilotToolSchema(
         nonNull[0],
         rootSchema,
         effectiveSeenRefs,
+        refBudget,
       );
       return isPlainRecord(resolved)
         ? { ...applyParentToBranch(resolved), ...description }
@@ -1259,7 +1405,12 @@ export function normalizeCopilotToolSchema(
     if (nonNull.length > 1) {
       const normalizedBranches = nonNull
         .map((branch) =>
-          normalizeCopilotToolSchema(branch, rootSchema, effectiveSeenRefs),
+          normalizeCopilotToolSchema(
+            branch,
+            rootSchema,
+            effectiveSeenRefs,
+            refBudget,
+          ),
         )
         .filter(isPlainRecord)
         .map(applyParentToBranch);
@@ -1281,6 +1432,7 @@ export function normalizeCopilotToolSchema(
           mergedArray,
           rootSchema,
           effectiveSeenRefs,
+          refBudget,
         );
         if (isPlainRecord(normalizedMerged)) {
           return { ...normalizedMerged, ...description };
@@ -1362,6 +1514,7 @@ export function normalizeCopilotToolSchema(
     current,
     rootSchema,
     effectiveSeenRefs,
+    refBudget,
   );
   if (collapsedItemUnion) {
     return collapsedItemUnion;
@@ -1384,6 +1537,7 @@ export function normalizeCopilotToolSchema(
                   propSchema,
                   rootSchema,
                   effectiveSeenRefs,
+                  refBudget,
                 ),
               ]),
             ),
@@ -1391,7 +1545,12 @@ export function normalizeCopilotToolSchema(
         }
         return [
           key,
-          normalizeCopilotToolSchema(item, rootSchema, effectiveSeenRefs),
+          normalizeCopilotToolSchema(
+            item,
+            rootSchema,
+            effectiveSeenRefs,
+            refBudget,
+          ),
         ];
       }),
   );
