@@ -66,9 +66,12 @@ function toBufferView(bytes: Uint8Array): Buffer {
  * So, using the sniffed true format as the baseline:
  *   - both sides > 768px (when `options.preserveMimeType` is not set) →
  *     `image/png` (VS Code re-encodes top-level images to PNG)
- *   - otherwise (including all tool-result images with `preserveMimeType: true`) →
+ *   - otherwise (including all tool-result images with `preserveMimeType: true`,
+ *     where the downstream tool-result serializer passes `mimeType` to
+ *     `resizeImage(data, mimeType)` and re-sniffs the post-resize bytes to
+ *     update any format converted to PNG such as large WebP/BMP or GIF) →
  *     the sniffed true canonical mimeType (correcting mislabeled bytes while
- *     preserving the real format for large tool-result images)
+ *     keeping `image/jpeg` so large JPEG tool outputs are not forced to PNG)
  *   - bytes not recognizable as an image → fall back to the canonicalized or
  *     declared mimeType
  *

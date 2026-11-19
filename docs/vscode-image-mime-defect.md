@@ -69,17 +69,29 @@ This makes the declared type match the bytes the provider actually receives.
 
 Images nested in `LanguageModelToolResultPart` blocks (Anthropic `tool_result`
 and OpenAI Responses `function_call_output` / `custom_tool_call_output`) are
-not run through the same top-level image normalization path: their declared
-MIME type is used directly when tool-result images are resized, so JPEG tool
-outputs remain JPEG rather than being unconditionally re-encoded to PNG. Both
-the [Anthropic converter](../src/server/utils/anthropic.ts) and the
-[OpenAI Responses converter](../src/server/utils/openaiResponses.ts) therefore
-pass `{ preserveMimeType: true }` to `mimeForVscodeLm`, which skips the `>768px`
-PNG relabeling while still sniffing image bytes (and canonicalizing the
-declared MIME fallback such as `image/jpg` → `image/jpeg` when dimensions are
-unreadable). Applying the top-level large-image PNG relabeling to tool results
-caused a format mismatch or forced lossless PNG re-encoding of large JPEG
-photos inside tool outputs. Keep that exception when maintaining the
+not run through the same top-level image normalization path:
+
+1. `mainThreadLanguageModels.ts` only runs `resizeImage(data)` on top-level
+   `image_url` parts and skips `tool_result` parts.
+2. When serializing tool-result images, the downstream language model provider
+   calls `resizeImage(data, mimeType)` with the part's declared `mimeType`
+   (which preserves `image/jpeg` on `>768x768` JPEGs while re-encoding resized
+   `>768x768` WebP/BMP or any GIF to `image/png`) and then sniffs the magic
+   bytes of the post-resize buffer (`image/png`, `image/jpeg`, `image/gif`,
+   `image/webp`, `image/bmp`) to update the provider-visible `mimeType` and
+   `data:<mime>;base64,...` header whenever `resizeImage` changes the format.
+
+Because the tool-result path updates its outgoing MIME from the post-resize
+bytes, only the input `mimeType` passed _into_ `resizeImage(data, mimeType)`
+depends on the `LanguageModelDataPart.mimeType`: if a `>768x768` JPEG is
+pre-relabeled as `image/png`, `resizeImage` sees `mimeType = "image/png"` and
+re-encodes the resized photo as a multi-megabyte lossless PNG instead of a
+compact JPEG. Both the [Anthropic converter](../src/server/utils/anthropic.ts)
+and the [OpenAI Responses converter](../src/server/utils/openaiResponses.ts)
+therefore pass `{ preserveMimeType: true }` to `mimeForVscodeLm`, which skips
+the `>768px` PNG relabeling while still sniffing image bytes (and
+canonicalizing the declared MIME fallback such as `image/jpg` → `image/jpeg`
+when dimensions are unreadable). Keep that exception when maintaining the
 workaround; do not assume all `LanguageModelDataPart` instances undergo the
 same upstream transformation.
 
