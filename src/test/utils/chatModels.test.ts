@@ -1007,4 +1007,105 @@ suite("Chat Models QuickPick Test Suite", () => {
       },
     });
   });
+
+  test("preserves unions across allOf conjuncts, normalizes parent-merged constraints, preserves dictionary object unions, and collapses integer/number type arrays", () => {
+    const normalized = normalizeCopilotToolSchema({
+      type: "object",
+      $defs: {
+        ItemRef: {
+          type: "integer",
+        },
+      },
+      properties: {
+        allOfConjunctUnions: {
+          anyOf: [
+            {
+              allOf: [
+                {
+                  anyOf: [
+                    {
+                      type: "object",
+                      properties: { file: { type: "string" } },
+                      required: ["file"],
+                    },
+                    {
+                      type: "object",
+                      properties: { url: { type: "string" } },
+                      required: ["url"],
+                    },
+                  ],
+                },
+                {
+                  anyOf: [
+                    {
+                      type: "object",
+                      properties: { token: { type: "string" } },
+                      required: ["token"],
+                    },
+                    {
+                      type: "object",
+                      properties: { password: { type: "string" } },
+                      required: ["password"],
+                    },
+                  ],
+                },
+              ],
+            },
+            { type: "null" },
+          ],
+        },
+        parentConstraintNormalized: {
+          type: "array",
+          items: { $ref: "#/$defs/ItemRef" },
+          enum: [1, 2],
+          anyOf: [{ minItems: 1 }, { type: "null" }],
+        },
+        dictionaryObjectUnion: {
+          anyOf: [
+            {
+              type: "object",
+              additionalProperties: { type: "string" },
+            },
+            {
+              type: "object",
+              additionalProperties: { type: "number" },
+            },
+          ],
+        },
+        integerNumberNullableTypeArray: {
+          type: ["integer", "number", "null"],
+          description: "Numeric score",
+        },
+      },
+    }) as Record<string, unknown>;
+
+    const props = normalized.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.deepStrictEqual(props.allOfConjunctUnions, {
+      type: "object",
+      properties: {
+        file: { type: "string" },
+        url: { type: "string" },
+        token: { type: "string" },
+        password: { type: "string" },
+      },
+    });
+    assert.deepStrictEqual(props.parentConstraintNormalized, {
+      type: "array",
+      items: {
+        type: "integer",
+        enum: [1, 2],
+      },
+      minItems: 1,
+    });
+    assert.deepStrictEqual(props.dictionaryObjectUnion, {
+      type: "object",
+    });
+    assert.deepStrictEqual(props.integerNumberNullableTypeArray, {
+      type: "number",
+      description: "Numeric score",
+    });
+  });
 });
