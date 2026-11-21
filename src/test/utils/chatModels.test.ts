@@ -7,6 +7,7 @@ import {
   normalizeCopilotToolSchema,
   withCopilotConfiguration,
 } from "../../utils/chatModels";
+import { logger } from "../../utils/logger";
 
 function createMockModel(
   id: string,
@@ -156,7 +157,7 @@ suite("Chat Models QuickPick Test Suite", () => {
     );
   });
 
-  test("normalizes complex MCP tool schemas in withCopilotConfiguration for Gemini models only", () => {
+  test("rewrites only 400-inducing tool schemas for Copilot Gemini models and logs debug diagnostics", () => {
     const geminiModel = createMockModel(
       "gemini-4-argon",
       "Gemini 4 Argon",
@@ -167,7 +168,25 @@ suite("Chat Models QuickPick Test Suite", () => {
       "GPT-6.1 Sol",
       "gpt-6.1-sol",
     );
+
+    const cleanSchema = {
+      type: "object",
+      $defs: {
+        Tag: { type: "string" },
+      },
+      properties: {
+        tag: { $ref: "#/$defs/Tag" },
+        nullableText: { type: ["string", "null"] },
+      },
+      additionalProperties: false,
+    };
+
     const rawTools: vscode.LanguageModelChatTool[] = [
+      {
+        name: "clean_tool",
+        description: "Already accepted by Gemini",
+        inputSchema: cleanSchema,
+      },
       {
         name: "mcp__workiq__retrieve",
         description: "Retrieve M365 grounding",
@@ -175,13 +194,6 @@ suite("Chat Models QuickPick Test Suite", () => {
           type: "object",
           properties: {
             query: { type: "string" },
-            additionalProperties: {
-              type: ["string", "null"],
-              default: {
-                type: "UPPERCASE_LITERAL",
-                additionalProperties: true,
-              },
-            },
             capabilities: {
               type: ["array", "null"],
               items: {
@@ -192,6 +204,7 @@ suite("Chat Models QuickPick Test Suite", () => {
                   {
                     type: "object",
                     properties: {
+                      include_related_content: { type: ["boolean", "null"] },
                       name: { type: "string", enum: ["People"] },
                     },
                   },
@@ -201,32 +214,11 @@ suite("Chat Models QuickPick Test Suite", () => {
                       name: { type: "string", enum: ["Meetings"] },
                     },
                   },
-                  {
-                    type: "object",
-                    properties: {
-                      name: {
-                        type: "string",
-                        enum: ["OneDriveAndSharePoint"],
-                      },
-                    },
-                  },
-                  {
-                    type: "object",
-                    properties: {
-                      name: { type: "string", enum: ["Email"] },
-                    },
-                  },
-                  {
-                    type: "object",
-                    properties: {
-                      name: { type: "string", enum: ["TeamsMessages"] },
-                    },
-                  },
                 ],
               },
             },
           },
-          required: ["query", "additionalProperties"],
+          required: ["query"],
         },
       },
       {
@@ -248,864 +240,1293 @@ suite("Chat Models QuickPick Test Suite", () => {
           },
         },
       },
+      {
+        name: "mcp__etw__add_condition",
+        description: "Add ETW condition",
+        inputSchema: {
+          type: "object",
+          properties: {
+            value: true,
+          },
+        },
+      },
     ];
 
     const gptOptions = withCopilotConfiguration(gptModel, { tools: rawTools });
     assert.strictEqual(gptOptions.tools, rawTools);
 
-    const options = withCopilotConfiguration(geminiModel, { tools: rawTools });
-    const retrieveSchema = options.tools?.[0].inputSchema as Record<
+    const debugLogs: string[] = [];
+    const origDebug = logger.debug;
+    logger.debug = (...args: unknown[]) => {
+      debugLogs.push(args.map(String).join(" "));
+    };
+
+    let options: vscode.LanguageModelChatRequestOptions;
+    try {
+      options = withCopilotConfiguration(geminiModel, { tools: rawTools });
+    } finally {
+      logger.debug = origDebug;
+    }
+
+    assert.strictEqual(options.tools?.[0], rawTools[0]);
+    assert.ok(
+      debugLogs.some(
+        (msg) =>
+          msg.includes(
+            "Normalized Copilot Gemini tool schema(s) for gemini-4-argon",
+          ) &&
+          msg.includes("mcp__workiq__retrieve") &&
+          msg.includes("mcp__icm__search_incidents") &&
+          msg.includes("mcp__etw__add_condition") &&
+          !msg.includes("clean_tool"),
+      ),
+    );
+
+    const retrieveSchema = options.tools?.[1].inputSchema as Record<
       string,
       unknown
     >;
-    const retrieveProps = retrieveSchema.properties as Record<
-      string,
-      Record<string, unknown>
-    >;
-    assert.deepStrictEqual(retrieveProps.additionalProperties, {
-      type: "string",
-      default: { type: "UPPERCASE_LITERAL", additionalProperties: true },
-    });
-    const capabilities = retrieveProps.capabilities;
-    assert.strictEqual(capabilities.type, "array");
-    assert.deepStrictEqual(capabilities.items, {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          enum: [
-            "People",
-            "Meetings",
-            "OneDriveAndSharePoint",
-            "Email",
-            "TeamsMessages",
-          ],
-        },
+    const capabilities = (
+      retrieveSchema.properties as Record<string, Record<string, unknown>>
+    ).capabilities;
+    assert.deepStrictEqual(capabilities, {
+      type: ["array", "null"],
+      items: {
+        anyOf: [
+          {
+            type: "object",
+            properties: {
+              include_related_content: { type: ["boolean", "null"] },
+              name: { type: "string", enum: ["People"] },
+            },
+            required: ["name"],
+          },
+          {
+            type: "object",
+            properties: {
+              name: { type: "string", enum: ["Meetings"] },
+            },
+            required: ["name"],
+          },
+        ],
       },
-      required: ["name"],
     });
 
-    const icmSchema = options.tools?.[1].inputSchema as Record<string, unknown>;
+    const icmSchema = options.tools?.[2].inputSchema as Record<string, unknown>;
     const icmProps = icmSchema.properties as Record<
       string,
       Record<string, unknown>
     >;
-    assert.strictEqual(icmProps.severity.type, "array");
-    assert.strictEqual(icmProps.severity.enum, undefined);
-    assert.deepStrictEqual(icmProps.severity.items, {
-      type: "integer",
-      enum: [0, 1, 2, 3, 4, 25],
-    });
-    assert.strictEqual(icmProps.matrix.enum, undefined);
-    assert.deepStrictEqual(icmProps.matrix.items, { type: "integer" });
-  });
-
-  test("handles recursive $ref unions, root $defs, const discriminators, optional branches, and non-name item unions", () => {
-    const normalized = normalizeCopilotToolSchema({
-      type: "object",
-      $defs: {
-        Node: {
-          anyOf: [
-            {
-              type: "object",
-              properties: {
-                value: { type: "string" },
-                next: { $ref: "#/$defs/Node" },
-              },
-              required: ["value"],
-            },
-            { type: "null" },
-          ],
-        },
-        CreatePayload: {
-          type: "object",
-          properties: {
-            action: { type: "string", const: "create" },
-            title: { type: "string" },
-            value: { type: "integer" },
-            additionalProperties: {
-              type: "string",
-              default: { $defs: "keep-literal" },
-            },
-          },
-          required: ["action", "title"],
-        },
-        UpdatePayload: {
-          type: "object",
-          properties: {
-            action: { type: "string", const: "update" },
-            id: { type: "integer" },
-            value: { type: "string" },
-          },
-        },
-      },
-      properties: {
-        tree: { $ref: "#/$defs/Node" },
-        payload: {
-          anyOf: [
-            { $ref: "#/$defs/CreatePayload" },
-            { $ref: "#/$defs/UpdatePayload" },
-          ],
-        },
-        events: {
-          type: "array",
-          items: {
-            anyOf: [
-              {
-                type: "object",
-                properties: {
-                  kind: { type: "string", const: "a" },
-                  payload: { type: "string" },
-                },
-                required: ["kind", "payload"],
-              },
-              {
-                type: "object",
-                properties: {
-                  kind: { type: "string", const: "b" },
-                  payload: { type: "string" },
-                },
-                required: ["kind", "payload"],
-              },
-              {
-                type: "object",
-                properties: {
-                  kind: { type: "string", const: "c" },
-                  payload: { type: "string" },
-                },
-                required: ["kind", "payload"],
-              },
-              {
-                type: "object",
-                properties: {
-                  kind: { type: "string", const: "d" },
-                  payload: { type: "string" },
-                },
-                required: ["kind", "payload"],
-              },
-              {
-                type: "object",
-                properties: {
-                  kind: { type: "string", const: "e" },
-                  payload: { type: "string" },
-                },
-                required: ["kind", "payload"],
-              },
-            ],
-          },
-        },
-      },
-    }) as Record<string, unknown>;
-
-    const props = normalized.properties as Record<
-      string,
-      Record<string, unknown>
-    >;
-    assert.deepStrictEqual(props.tree, {
-      type: "object",
-      properties: {
-        value: { type: "string" },
-        next: { type: "string" },
-      },
-      required: ["value"],
-    });
-    assert.deepStrictEqual(props.payload, {
-      type: "object",
-      properties: {
-        action: { type: "string", enum: ["create", "update"] },
-        title: { type: "string" },
-        value: { type: "string" },
-        additionalProperties: {
-          type: "string",
-          default: { $defs: "keep-literal" },
-        },
-        id: { type: "integer" },
-      },
-    });
-    assert.deepStrictEqual(props.events, {
-      type: "array",
+    assert.deepStrictEqual(icmProps.severity, {
+      type: ["array", "null"],
       items: {
-        type: "object",
-        properties: {
-          kind: { type: "string", enum: ["a", "b", "c", "d", "e"] },
-          payload: { type: "string" },
-        },
-        required: ["kind", "payload"],
+        type: "integer",
+        enum: [0, 1, 2, 3, 4, 25],
       },
     });
-  });
-
-  test("preserves array item merges, branch-required discriminators, root self-references, $ref siblings, and non-object unions", () => {
-    const rootSelfRef = normalizeCopilotToolSchema({
-      type: "object",
-      properties: {
-        label: { type: "string" },
-        child: { $ref: "#", description: "Recursive child" },
-      },
-      required: ["label"],
-    });
-    assert.deepStrictEqual(rootSelfRef, {
-      type: "object",
-      properties: {
-        label: { type: "string" },
-        child: { type: "string", description: "Recursive child" },
-      },
-      required: ["label"],
-    });
-
-    const normalized = normalizeCopilotToolSchema({
-      type: "object",
-      $defs: {
-        BaseFilter: {
-          type: "object",
-          properties: {
-            limit: { type: "integer" },
-          },
-          required: ["limit"],
-        },
-        IntA: { type: "integer", const: 1 },
-        IntB: { type: "integer", const: 2 },
-      },
-      properties: {
-        mergedUnion: {
-          anyOf: [
-            {
-              type: "object",
-              properties: {
-                action: { type: "string", const: "first" },
-                values: {
-                  type: "array",
-                  items: { type: "string", enum: ["a"] },
-                },
-              },
-              required: ["action", "values"],
-            },
-            {
-              type: "object",
-              properties: {
-                action: { type: "string", const: "second" },
-                values: {
-                  type: "array",
-                  items: { type: "string", enum: ["b"] },
-                },
-              },
-              required: ["action", "values"],
-            },
-          ],
-        },
-        discriminatedItems: {
-          type: "array",
-          items: {
-            anyOf: ["one", "two", "three", "four", "five"].map((name) => ({
-              type: "object",
-              properties: {
-                name: { type: "string", const: name },
-              },
-              required: ["name"],
-            })),
-          },
-        },
-        refWithSiblings: {
-          $ref: "#/$defs/BaseFilter",
-          description: "Combined filter",
-          properties: {
-            query: { type: "string" },
-          },
-          required: ["query"],
-        },
-        refScalarUnion: {
-          description: "Choice of integer constants",
-          anyOf: [{ $ref: "#/$defs/IntA" }, { $ref: "#/$defs/IntB" }],
-        },
-        arrayUnion: {
-          description: "Union of string arrays",
-          anyOf: [
-            {
-              type: "array",
-              items: { type: "string", enum: ["a"] },
-            },
-            {
-              type: "array",
-              items: { type: "string", enum: ["b"] },
-            },
-          ],
-        },
-      },
-    }) as Record<string, unknown>;
-
-    const props = normalized.properties as Record<
-      string,
-      Record<string, unknown>
-    >;
-    assert.deepStrictEqual(props.mergedUnion, {
-      type: "object",
-      properties: {
-        action: { type: "string", enum: ["first", "second"] },
-        values: {
-          type: "array",
-          items: { type: "string", enum: ["a", "b"] },
-        },
-      },
-      required: ["action", "values"],
-    });
-    assert.deepStrictEqual(props.discriminatedItems, {
+    assert.deepStrictEqual(icmProps.matrix, {
       type: "array",
-      items: {
-        type: "object",
-        properties: {
-          name: {
-            type: "string",
-            enum: ["one", "two", "three", "four", "five"],
-          },
-        },
-        required: ["name"],
-      },
+      items: { type: "integer" },
     });
-    assert.deepStrictEqual(props.refWithSiblings, {
-      type: "object",
-      description: "Combined filter",
-      properties: {
-        limit: { type: "integer" },
-        query: { type: "string" },
-      },
-      required: ["limit", "query"],
-    });
-    assert.deepStrictEqual(props.refScalarUnion, {
-      type: "integer",
-      description: "Choice of integer constants",
-      enum: [1, 2],
-    });
-    assert.deepStrictEqual(props.arrayUnion, {
-      type: "array",
-      description: "Union of string arrays",
-      items: {
-        type: "string",
-        enum: ["a", "b"],
-      },
-    });
-  });
 
-  test("handles array JSON pointers, $ref sibling intersection, numeric/scalar union widening, nested branch requireds, and parent-typed unions", () => {
-    const normalized = normalizeCopilotToolSchema({
+    const etwSchema = options.tools?.[3].inputSchema as Record<string, unknown>;
+    assert.deepStrictEqual(etwSchema, {
       type: "object",
-      $defs: {
-        Choice: {
-          anyOf: [
-            {
-              type: "object",
-              properties: { target: { type: "string" } },
-              required: ["target"],
-            },
-          ],
-        },
-        ModeConfig: {
-          type: "object",
+      properties: {
+        value: {},
+      },
+    });
+    assert.strictEqual(normalizeCopilotToolSchema(cleanSchema), cleanSchema);
+
+    const objectEnumSchema = {
+      type: "object",
+      enum: [{ mode: "read" }],
+      properties: {
+        mode: { type: "string" },
+      },
+    };
+    assert.strictEqual(
+      normalizeCopilotToolSchema(objectEnumSchema),
+      objectEnumSchema,
+    );
+
+    const unionWithSharedPropsAndClosure = {
+      type: "object",
+      properties: {
+        name: { type: "string", minLength: 3 },
+        count: { type: "integer" },
+        meta: { enum: [{ a: 1, b: 2 }] },
+        refCopy: { $ref: "#/properties/name" },
+      },
+      dependencies: {
+        type: ["name"],
+        anyOf: ["count"],
+      },
+      dependentRequired: {
+        type: ["name"],
+        anyOf: ["count"],
+      },
+      unevaluatedProperties: false,
+      additionalProperties: false,
+      anyOf: [
+        {
           properties: {
-            mode: { type: "string", enum: ["read", "write"] },
-            limit: { type: "integer", minimum: 1, maximum: 100 },
-          },
-          required: ["mode"],
-        },
-        NamedStep: {
-          type: "object",
-          properties: {
-            name: { type: "string", enum: ["s1", "s2", "s3", "s4", "s5"] },
+            name: { enum: ["a", "abcd"] },
+            meta: { enum: [{ b: 2, a: 1 }] },
           },
           required: ["name"],
         },
-      },
-      properties: {
-        indexedRef: {
-          $ref: "#/$defs/Choice/anyOf/0",
+        {
+          required: ["count"],
+          unevaluatedProperties: false,
         },
-        intersectedRef: {
-          $ref: "#/$defs/ModeConfig",
-          properties: {
-            mode: { type: "string", const: "read" },
-            limit: { type: "integer", minimum: 10, maximum: 50 },
+      ],
+    };
+    assert.deepStrictEqual(
+      normalizeCopilotToolSchema(unionWithSharedPropsAndClosure),
+      {
+        $defs: {
+          name: { type: "string", minLength: 3 },
+        },
+        dependencies: {
+          type: ["name"],
+          anyOf: ["count"],
+        },
+        dependentRequired: {
+          type: ["name"],
+          anyOf: ["count"],
+        },
+        unevaluatedProperties: false,
+        anyOf: [
+          {
+            type: "object",
+            properties: {
+              name: { type: "string", minLength: 3, enum: ["a", "abcd"] },
+              count: { type: "integer" },
+              meta: { enum: [{ a: 1, b: 2 }] },
+              refCopy: { $ref: "#/$defs/name" },
+            },
+            required: ["name"],
+            additionalProperties: false,
           },
-          required: ["limit"],
+          {
+            type: "object",
+            properties: {
+              name: { type: "string", minLength: 3 },
+              count: { type: "integer" },
+              meta: { enum: [{ a: 1, b: 2 }] },
+              refCopy: { $ref: "#/$defs/name" },
+            },
+            required: ["count"],
+            additionalProperties: false,
+            allOf: [
+              {
+                required: ["count"],
+                unevaluatedProperties: false,
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    const arrayEnumWithUnion = {
+      type: "array",
+      enum: [1, 2],
+      items: { type: "integer" },
+      anyOf: [{ minItems: 1 }],
+    };
+    assert.deepStrictEqual(normalizeCopilotToolSchema(arrayEnumWithUnion), {
+      items: { type: "integer", enum: [1, 2] },
+      anyOf: [{ type: "array", minItems: 1 }],
+    });
+
+    const refScopeAndAnchorSchema = {
+      type: "object",
+      properties: {
+        "a b": { $anchor: "AnchorA", type: "string" },
+        encodedRef: { $ref: "#/properties/a%20b" },
+        anchorRef: { $ref: "#AnchorA" },
+        blocked: {
+          type: "object",
+          anyOf: [{ type: "string" }],
         },
-        numericLiteralUnion: {
-          anyOf: [{ type: "integer", const: 1 }, { type: "number" }],
+        blockedRef: { $ref: "#/properties/blocked/anyOf/0" },
+        nestedResource: {
+          $id: "https://example.com/nested.json",
+          type: "object",
+          properties: {
+            "a b": { type: "number" },
+            localRef: { $ref: "#/properties/a%20b" },
+          },
         },
-        scalarRangeUnion: {
-          anyOf: [
-            { type: "integer", minimum: 10 },
-            { type: "integer", maximum: 0 },
+      },
+      anyOf: [
+        {
+          properties: {
+            "a b": { minLength: 3 },
+          },
+        },
+      ],
+    };
+    assert.deepStrictEqual(
+      normalizeCopilotToolSchema(refScopeAndAnchorSchema),
+      {
+        $defs: {
+          "a b": { $anchor: "AnchorA", type: "string" },
+          blocked: {
+            type: "object",
+            anyOf: [{ type: "string" }],
+          },
+        },
+        anyOf: [
+          {
+            type: "object",
+            properties: {
+              "a b": { type: "string", minLength: 3 },
+              encodedRef: { $ref: "#/$defs/a%20b" },
+              anchorRef: { $ref: "#AnchorA" },
+              blocked: {
+                type: "object",
+                anyOf: [{ type: "string" }],
+              },
+              blockedRef: { $ref: "#/$defs/blocked/anyOf/0" },
+              nestedResource: {
+                $id: "https://example.com/nested.json",
+                type: "object",
+                properties: {
+                  "a b": { type: "number" },
+                  localRef: { $ref: "#/properties/a%20b" },
+                },
+              },
+            },
+          },
+        ],
+      },
+    );
+
+    const round6Schema = {
+      type: "object",
+      required: ["name"],
+      properties: {
+        a: { minimum: 0, exclusiveMinimum: true },
+        encodedSlashRef: { $ref: "#/properties%2Fa" },
+        embeddedRef: { $ref: "https://example.com/value" },
+      },
+      anyOf: [
+        {
+          $id: "https://example.com/value",
+          type: "string",
+        },
+        {
+          $ref: "#/$defs/B",
+          type: "string",
+          properties: {
+            a: { minimum: 1 },
+          },
+        },
+        {
+          properties: {
+            a: { minimum: 1 },
+          },
+        },
+      ],
+      $defs: {
+        B: { type: "object" },
+      },
+    };
+    assert.deepStrictEqual(normalizeCopilotToolSchema(round6Schema), {
+      $defs: {
+        B: { type: "object" },
+        anyOf_0: {
+          $id: "https://example.com/value",
+          type: "string",
+        },
+        a: { minimum: 0, exclusiveMinimum: true },
+      },
+      anyOf: [
+        {
+          type: "object",
+          required: ["name"],
+          properties: {
+            a: { minimum: 0, exclusiveMinimum: true },
+            encodedSlashRef: { $ref: "#/$defs/a" },
+            embeddedRef: { $ref: "https://example.com/value" },
+          },
+          allOf: [
+            {
+              $ref: "#/$defs/B",
+              type: "string",
+              properties: {
+                a: { minimum: 1 },
+              },
+            },
           ],
         },
-        nestedRequiredUnion: {
+        {
+          type: "object",
+          required: ["name"],
+          properties: {
+            a: {
+              allOf: [{ minimum: 0, exclusiveMinimum: true }, { minimum: 1 }],
+            },
+            encodedSlashRef: { $ref: "#/$defs/a" },
+            embeddedRef: { $ref: "https://example.com/value" },
+          },
+        },
+      ],
+    });
+  });
+
+  test("preserves Draft-07 property $refs, legacy #fragment id anchors, unevaluatedProperties vs parent additionalProperties, outer pointer aliases across $id, and stripped-resource relative refs", () => {
+    const round7Schema = {
+      type: "object",
+      $defs: {
+        BaseProp: { type: "string", minLength: 1 },
+      },
+      properties: {
+        refProp: {
+          $ref: "#/$defs/BaseProp",
+          id: "#LegacyPropAnchor",
+        },
+        legacyRefUser: { $ref: "#LegacyPropAnchor" },
+        outerPointerUser: {
+          $ref: "#/properties/nestedIdUnion/properties/innerA",
+        },
+        rootSelfRefUser: { $ref: "#/anyOf/1" },
+        nestedIdUnion: {
+          $id: "https://example.com/nested",
+          type: "object",
+          properties: {
+            innerA: { type: "string" },
+          },
+          anyOf: [
+            {
+              properties: {
+                innerB: { type: "number" },
+              },
+            },
+          ],
+        },
+      },
+      additionalProperties: { type: "string" },
+      anyOf: [
+        false,
+        {
+          properties: {
+            refProp: { maxLength: 10 },
+            selfRoot: { $ref: "#" },
+          },
+          unevaluatedProperties: false,
+        },
+        {
+          $id: "https://example.com/branch-resource",
+          $defs: {
+            Val: { type: "string" },
+          },
+          properties: {
+            v: { $ref: "#/$defs/Val" },
+          },
+        },
+      ],
+    };
+
+    assert.deepStrictEqual(normalizeCopilotToolSchema(round7Schema), {
+      $defs: {
+        BaseProp: { type: "string", minLength: 1 },
+        anyOf_1: {
+          properties: {
+            refProp: { maxLength: 10 },
+            selfRoot: { $ref: "#" },
+          },
+          unevaluatedProperties: false,
+        },
+        refProp: {
+          $ref: "#/$defs/BaseProp",
+          id: "#LegacyPropAnchor",
+        },
+        nestedIdUnion: {
+          $id: "https://example.com/nested",
+          $defs: {
+            innerA: { type: "string" },
+          },
           anyOf: [
             {
               type: "object",
-              required: ["name"],
+              properties: {
+                innerA: { type: "string" },
+                innerB: { type: "number" },
+              },
+            },
+          ],
+        },
+      },
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            refProp: {
+              allOf: [{ $ref: "#/$defs/BaseProp" }, { maxLength: 10 }],
+            },
+            legacyRefUser: { $ref: "#LegacyPropAnchor" },
+            outerPointerUser: {
+              $ref: "#/$defs/nestedIdUnion/$defs/innerA",
+            },
+            rootSelfRefUser: { $ref: "#/$defs/anyOf_1" },
+            nestedIdUnion: {
               anyOf: [
                 {
                   type: "object",
                   properties: {
-                    name: { type: "string" },
-                    a: { type: "string" },
-                  },
-                },
-                {
-                  type: "object",
-                  properties: {
-                    name: { type: "string" },
-                    b: { type: "string" },
+                    innerA: { type: "string" },
+                    innerB: { type: "number" },
                   },
                 },
               ],
             },
+            selfRoot: {
+              allOf: [{ type: "string" }, { $ref: "#" }],
+            },
+          },
+          additionalProperties: { type: "string" },
+          allOf: [
             {
-              type: "object",
               properties: {
-                name: { type: "string" },
-                c: { type: "string" },
+                refProp: { maxLength: 10 },
+                selfRoot: { $ref: "#" },
               },
-              required: ["name"],
+              unevaluatedProperties: false,
             },
           ],
         },
-        refSiblingsInItems: {
-          type: "array",
-          items: {
-            anyOf: ["s1", "s2", "s3", "s4", "s5"].map((tag) => ({
-              $ref: "#/$defs/NamedStep",
-              properties: {
-                name: { type: "string", const: tag },
-                payload: { type: "string" },
-              },
-              required: ["payload"],
-            })),
+        {
+          type: "object",
+          properties: {
+            refProp: { $ref: "#/$defs/BaseProp" },
+            legacyRefUser: { $ref: "#LegacyPropAnchor" },
+            outerPointerUser: {
+              $ref: "#/$defs/nestedIdUnion/$defs/innerA",
+            },
+            rootSelfRefUser: { $ref: "#/$defs/anyOf_1" },
+            nestedIdUnion: {
+              anyOf: [
+                {
+                  type: "object",
+                  properties: {
+                    innerA: { type: "string" },
+                    innerB: { type: "number" },
+                  },
+                },
+              ],
+            },
           },
+          additionalProperties: { type: "string" },
+          allOf: [
+            {
+              $id: "https://example.com/branch-resource",
+              $defs: {
+                Val: { type: "string" },
+              },
+              properties: {
+                v: { $ref: "#/$defs/Val" },
+              },
+            },
+          ],
         },
-        parentTypedEnumUnion: {
-          type: "integer",
-          description: "Priority level",
-          anyOf: [{ enum: [1] }, { enum: [2] }],
-        },
-      },
-    }) as Record<string, unknown>;
-
-    const props = normalized.properties as Record<
-      string,
-      Record<string, unknown>
-    >;
-    assert.deepStrictEqual(props.indexedRef, {
-      type: "object",
-      properties: { target: { type: "string" } },
-      required: ["target"],
-    });
-    assert.deepStrictEqual(props.intersectedRef, {
-      type: "object",
-      properties: {
-        mode: { type: "string", const: "read" },
-        limit: { type: "integer", minimum: 10, maximum: 50 },
-      },
-      required: ["mode", "limit"],
-    });
-    assert.deepStrictEqual(props.numericLiteralUnion, {
-      type: "number",
-    });
-    assert.deepStrictEqual(props.scalarRangeUnion, {
-      type: "integer",
-    });
-    assert.deepStrictEqual(props.nestedRequiredUnion, {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        a: { type: "string" },
-        b: { type: "string" },
-        c: { type: "string" },
-      },
-      required: ["name"],
-    });
-    assert.deepStrictEqual(props.refSiblingsInItems, {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          name: { type: "string", enum: ["s1", "s2", "s3", "s4", "s5"] },
-          payload: { type: "string" },
-        },
-        required: ["name", "payload"],
-      },
-    });
-    assert.deepStrictEqual(props.parentTypedEnumUnion, {
-      type: "integer",
-      description: "Priority level",
-      enum: [1, 2],
+      ],
     });
   });
 
-  test("handles unconstrained object/array union alternatives, nested union properties, parent annotations, nonrecursive ref siblings, and ref array enums", () => {
-    const normalized = normalizeCopilotToolSchema({
+  test("rebases stripped-resource descendant refs to stable hoisted $defs target even after filtered branches", () => {
+    const strippedResourceSchema = {
       type: "object",
-      $defs: {
-        BaseNode: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
+      properties: {
+        extUser: { $ref: "https://example.com/branch-res#/$defs/Val" },
+      },
+      anyOf: [
+        false,
+        {
+          $id: "https://example.com/branch-res",
+          $defs: {
+            Val: { type: "string" },
           },
-          required: ["id"],
+          properties: {
+            v: { $ref: "#/$defs/Val" },
+            selfRoot: { $ref: "#" },
+          },
         },
-        Severity: {
-          type: "array",
-          items: { type: "integer" },
+      ],
+    };
+
+    assert.deepStrictEqual(normalizeCopilotToolSchema(strippedResourceSchema), {
+      $defs: {
+        anyOf_1: {
+          $id: "https://example.com/branch-res",
+          $defs: {
+            Val: { type: "string" },
+          },
+          properties: {
+            v: { $ref: "#/$defs/Val" },
+            selfRoot: { $ref: "#" },
+          },
         },
       },
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            extUser: { $ref: "https://example.com/branch-res#/$defs/Val" },
+          },
+          allOf: [
+            {
+              $defs: {
+                Val: { type: "string" },
+              },
+              properties: {
+                v: { $ref: "#/$defs/anyOf_1/$defs/Val" },
+                selfRoot: { $ref: "#/$defs/anyOf_1" },
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  test("isolates patternProperties closures without RegExp evaluation, returns false on disjoint enums, deduplicates unreferenced distributed anchors, and isolates equal relative $id strings", () => {
+    const round8Schema = {
+      $id: "nested/",
+      type: "object",
       properties: {
-        unconstrainedObjectUnion: {
-          anyOf: [
+        a: { $anchor: "UnrefA", enum: ["x"] },
+      },
+      patternProperties: {
+        "^(a+)+$": { type: "string" },
+      },
+      additionalProperties: false,
+      anyOf: [
+        {
+          properties: {
+            a: { enum: ["y"] },
+            b: { type: "number" },
+          },
+        },
+        {
+          $id: "nested/",
+          properties: {
+            c: { type: "boolean" },
+          },
+        },
+      ],
+    };
+
+    assert.deepStrictEqual(normalizeCopilotToolSchema(round8Schema), {
+      $id: "nested/",
+      $defs: {
+        a: { $anchor: "UnrefA", enum: ["x"] },
+      },
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            a: false,
+            b: { type: "number" },
+          },
+          patternProperties: {
+            "^(a+)+$": { type: "string" },
+          },
+          allOf: [
             {
+              properties: {
+                a: { enum: ["x"] },
+              },
+              patternProperties: {
+                "^(a+)+$": { type: "string" },
+              },
+              additionalProperties: false,
+            },
+          ],
+        },
+        {
+          type: "object",
+          properties: {
+            a: { enum: ["x"] },
+          },
+          patternProperties: {
+            "^(a+)+$": { type: "string" },
+          },
+          additionalProperties: false,
+          allOf: [
+            {
+              $id: "nested/",
+              properties: {
+                c: { type: "boolean" },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const round9Schema = {
+      type: "object",
+      properties: {
+        p: {
+          $id: "sub/p.json",
+          type: "object",
+          $anchor: "PAnchor",
+          properties: {
+            ext: { $ref: "q.json#QVal" },
+            anchorSelf: { $ref: "#PAnchor" },
+          },
+        },
+      },
+      patternProperties: {
+        "^x_": { $anchor: "PatternAnchor", type: "string" },
+      },
+      additionalProperties: false,
+      anyOf: [
+        {
+          properties: {
+            b: { $anchor: "BranchPropAnchor", type: "number" },
+          },
+          unevaluatedProperties: false,
+        },
+      ],
+    };
+
+    assert.deepStrictEqual(normalizeCopilotToolSchema(round9Schema), {
+      $defs: {
+        anyOf_0: {
+          properties: {
+            b: { $anchor: "BranchPropAnchor", type: "number" },
+          },
+          unevaluatedProperties: false,
+        },
+        p: {
+          $id: "sub/p.json",
+          type: "object",
+          $anchor: "PAnchor",
+          properties: {
+            ext: { $ref: "q.json#QVal" },
+            anchorSelf: { $ref: "#PAnchor" },
+          },
+        },
+        "^x_": { $anchor: "PatternAnchor", type: "string" },
+      },
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            p: {
               type: "object",
               properties: {
-                settings: {
+                ext: { $ref: "sub/q.json#QVal" },
+                anchorSelf: { $ref: "sub/p.json#PAnchor" },
+              },
+            },
+            b: { type: "number" },
+          },
+          patternProperties: {
+            "^x_": { type: "string" },
+          },
+          allOf: [
+            {
+              properties: {
+                p: {
                   type: "object",
-                  properties: { a: { type: "string" } },
-                  required: ["a"],
+                  properties: {
+                    ext: { $ref: "sub/q.json#QVal" },
+                    anchorSelf: { $ref: "sub/p.json#PAnchor" },
+                  },
                 },
               },
-              required: ["settings"],
+              patternProperties: {
+                "^x_": { type: "string" },
+              },
+              additionalProperties: false,
             },
             {
+              properties: {
+                b: { type: "number" },
+              },
+              unevaluatedProperties: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    // Round 10:
+    // 1. Recursive nested union subtrees are hoisted once into $defs and shared
+    //    via $ref instead of expanding 2^N times, and schemas exceeding the
+    //    expansion budget fall back cleanly without hanging.
+    let deepUnion: Record<string, unknown> = { type: "string" };
+    for (let depth = 0; depth < 25; depth++) {
+      deepUnion = {
+        type: "object",
+        properties: { child: deepUnion },
+        anyOf: [{ required: ["child"] }, { additionalProperties: true }],
+      };
+    }
+    const startMs = Date.now();
+    const normalizedDeep = normalizeCopilotToolSchema(deepUnion) as Record<
+      string,
+      unknown
+    >;
+    assert.ok(Date.now() - startMs < 1000);
+    assert.ok(typeof normalizedDeep.$defs === "object");
+
+    // 2. Same-resource legacy URI#fragment id preserves enclosing pointer;
+    // 3. Colon-prefixed relative refs preserve "./";
+    // 4. Nested hoisting rewrites references to the canonical hoisted branch ($defs.a, not $defs.a_1).
+    const round10Schema = {
+      $id: "https://example.com/root.json",
+      type: "object",
+      properties: {
+        child: {
+          id: "https://example.com/root.json#child",
+          type: "object",
+          properties: {
+            a: { type: "string" },
+          },
+          anyOf: [{ required: ["a"] }],
+        },
+        refToChildA: {
+          $ref: "#/properties/child/properties/a",
+        },
+        x: {
+          type: "object",
+          $defs: {
+            a: { type: "number" },
+          },
+          properties: {
+            b: { type: "boolean" },
+          },
+        },
+        refToBranchXA: {
+          $ref: "#/anyOf/0/properties/x/properties/a",
+        },
+      },
+      anyOf: [
+        {
+          properties: {
+            x: {
               type: "object",
               properties: {
-                settings: { type: "object" },
+                a: { type: "string" },
               },
-              required: ["settings"],
+              anyOf: [{ required: ["a"] }],
             },
-          ],
+          },
         },
-        unconstrainedArrayUnion: {
-          anyOf: [
-            { type: "array", items: { type: "integer" } },
-            { type: "array" },
-          ],
-        },
-        nestedUnionPropertyMerge: {
-          anyOf: [
-            {
+        {
+          properties: {
+            colonProp: {
+              $id: "p.json",
               type: "object",
               properties: {
-                mode: {
-                  anyOf: [
-                    { type: "string", const: "a" },
-                    { type: "string", const: "b" },
-                  ],
-                },
+                target: { $ref: "./q:value.json" },
               },
-              required: ["mode"],
             },
-            {
-              type: "object",
-              properties: {
-                mode: {
-                  anyOf: [
-                    { type: "string", const: "c" },
-                    { type: "string", const: "d" },
-                  ],
-                },
-              },
-              required: ["mode"],
-            },
-          ],
+          },
         },
-        annotatedObjectUnion: {
-          description: "Optional filter configuration",
-          default: { enabled: true },
-          anyOf: [
-            {
-              type: "object",
-              properties: { enabled: { type: "boolean" } },
-            },
-            { type: "null" },
-          ],
+      ],
+    };
+
+    const normalizedRound10 = normalizeCopilotToolSchema(round10Schema) as {
+      $defs: Record<string, unknown>;
+      anyOf: Array<Record<string, unknown>>;
+    };
+    const branch0Props = normalizedRound10.anyOf[0].properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.strictEqual(branch0Props.refToChildA.$ref, "#/$defs/child/$defs/a");
+    assert.strictEqual(
+      branch0Props.refToBranchXA.$ref,
+      "#/$defs/anyOf_0/properties/x/$defs/a",
+    );
+
+    const noRootColonSchema = {
+      type: "object",
+      properties: {
+        p: {
+          $id: "p.json",
+          type: "object",
+          properties: {
+            v: { $ref: "./q:value.json" },
+          },
         },
-        collapsedItemsWithParentProp: {
+      },
+      anyOf: [{ required: ["p"] }, { additionalProperties: false }],
+    };
+    const normalizedColon = normalizeCopilotToolSchema(noRootColonSchema) as {
+      anyOf: Array<{
+        properties: { p: { properties: { v: { $ref: string } } } };
+      }>;
+    };
+    assert.strictEqual(
+      normalizedColon.anyOf[0].properties.p.properties.v.$ref,
+      "./q:value.json",
+    );
+
+    // Round 11:
+    // 1. Nested union sharing inside hoisted subtrees rewrites generated $ref
+    //    pointers to the hoisted destination (#/$defs/child/$defs/child)
+    //    rather than the removed original path (#/properties/child/$defs/child).
+    const topDefs = normalizedDeep.$defs as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const firstHoistedChild = topDefs.child;
+    const firstHoistedBranch0Props = (
+      (firstHoistedChild.anyOf as Array<Record<string, unknown>>)[0]
+        .properties as Record<string, Record<string, unknown>>
+    ).child;
+    assert.strictEqual(
+      firstHoistedBranch0Props.$ref,
+      "#/$defs/child/$defs/child",
+    );
+
+    // 2. Nested union branches and union-bearing merged properties never emit
+    //    type/properties/required alongside anyOf/oneOf.
+    const nestedUnionSchema = {
+      type: "object",
+      properties: {
+        shared: {
+          type: "object",
+          properties: {
+            a: { type: "string" },
+          },
+        },
+      },
+      anyOf: [
+        {
+          anyOf: [{ required: ["shared"] }],
+        },
+        {
+          properties: {
+            shared: {
+              anyOf: [{ required: ["a"] }],
+            },
+          },
+        },
+      ],
+    };
+    const normalizedNestedUnion = normalizeCopilotToolSchema(
+      nestedUnionSchema,
+    ) as {
+      anyOf: Array<Record<string, unknown>>;
+    };
+    assert.strictEqual(normalizedNestedUnion.anyOf[0].type, "object");
+    assert.strictEqual(normalizedNestedUnion.anyOf[0].anyOf, undefined);
+    assert.ok(Array.isArray(normalizedNestedUnion.anyOf[0].allOf));
+    const branch1Shared = (
+      normalizedNestedUnion.anyOf[1].properties as Record<
+        string,
+        Record<string, unknown>
+      >
+    ).shared;
+    assert.strictEqual(branch1Shared.type, undefined);
+    assert.strictEqual(branch1Shared.anyOf, undefined);
+    assert.ok(Array.isArray(branch1Shared.allOf));
+
+    // Round 12:
+    // 1. Same-resource fragment ID with a root-relative descendant reference
+    //    preserves #/$defs/V instead of rebasing to #/$defs/child/$defs/V;
+    // 2. URI-qualified same-resource legacy fragment anchor on a union branch
+    //    is hoisted to $defs before parent constraints are distributed;
+    // 3. Wrapped nested union property (array items containing two levels of
+    //    nested unions) hoists the wrapper and rewrites generated descendant
+    //    references to #/$defs/wrapped/items/$defs/child;
+    // 4. Union node without sibling type, properties, or required (e.g. only
+    //    additionalProperties: false) remains untouched.
+    const round12Schema = {
+      id: "https://example.com/root.json",
+      type: "object",
+      $defs: {
+        V: { type: "string" },
+      },
+      properties: {
+        child: {
+          id: "https://example.com/root.json#child",
+          type: "object",
+          properties: {
+            v: { $ref: "#/$defs/V" },
+          },
+        },
+        value: {
+          $ref: "#Branch",
+        },
+        wrapped: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              payload: { type: "string", description: "Optional step payload" },
+              child: {
+                type: "object",
+                properties: {
+                  leaf: { type: "string" },
+                },
+                anyOf: [{ required: ["leaf"] }, { additionalProperties: true }],
+              },
             },
-            required: ["name"],
-            anyOf: ["s1", "s2", "s3", "s4", "s5"].map((tag) => ({
+            anyOf: [{ required: ["child"] }, { additionalProperties: true }],
+          },
+        },
+        untouchedUnion: {
+          anyOf: [{}],
+          additionalProperties: false,
+        },
+      },
+      anyOf: [
+        {
+          id: "https://example.com/root.json#Branch",
+        },
+        {
+          required: ["child", "wrapped"],
+        },
+      ],
+    };
+
+    const normalizedRound12 = normalizeCopilotToolSchema(round12Schema) as {
+      $defs: Record<string, Record<string, unknown>>;
+      anyOf: Array<Record<string, unknown>>;
+    };
+    assert.deepStrictEqual(normalizedRound12.$defs.anyOf_0, {
+      id: "https://example.com/root.json#Branch",
+    });
+    assert.strictEqual(normalizedRound12.anyOf[0].id, undefined);
+    const r12Branch0Props = normalizedRound12.anyOf[0].properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.strictEqual(
+      (
+        r12Branch0Props.child.properties as Record<
+          string,
+          Record<string, unknown>
+        >
+      ).v.$ref,
+      "#/$defs/V",
+    );
+    const wrappedItemsBranch0 = (
+      (r12Branch0Props.wrapped.items as Record<string, unknown>).anyOf as Array<
+        Record<string, unknown>
+      >
+    )[0];
+    assert.strictEqual(
+      (
+        wrappedItemsBranch0.properties as Record<
+          string,
+          Record<string, unknown>
+        >
+      ).child.$ref,
+      "#/$defs/wrapped/items/$defs/child",
+    );
+    assert.strictEqual(typeof normalizedRound12.$defs.wrapped, "object");
+    assert.deepStrictEqual(r12Branch0Props.untouchedUnion, {
+      anyOf: [{}],
+      additionalProperties: false,
+    });
+
+    const round13EmptyUnionSchema = {
+      type: "object",
+      properties: {
+        impossible: {
+          type: "object",
+          properties: {
+            nested: {
+              $id: "https://example.com/nested-id.json",
+              type: "array",
+              enum: ["a", "b"],
+              items: { type: "string" },
+            },
+            refNestedEnum: {
+              $ref: "#/properties/impossible/properties/nested/enum",
+            },
+          },
+          anyOf: [{ type: "string" }],
+        },
+        singleSurvivor: {
+          type: "object",
+          properties: {
+            sub: {
+              $id: "https://example.com/sub-id.json",
+              type: "string",
+            },
+          },
+          anyOf: [{ type: "string" }, { required: ["sub"] }],
+        },
+        relocatedUnion: {
+          type: "array",
+          anyOf: [{ enum: ["x", "y"], items: { type: "string" } }],
+        },
+        relocatedMergedProp: {
+          type: "object",
+          properties: {
+            tags: { type: "array", items: { type: "string" } },
+          },
+          anyOf: [
+            {
+              properties: {
+                tags: { enum: ["p", "q"] },
+              },
+            },
+          ],
+        },
+      },
+      anyOf: [
+        {
+          required: ["impossible"],
+          properties: {
+            refEnum: {
+              $ref: "#/properties/relocatedUnion/anyOf/0/enum",
+            },
+          },
+        },
+      ],
+    };
+
+    const normalizedRound13 = normalizeCopilotToolSchema(
+      round13EmptyUnionSchema,
+    ) as {
+      $defs: Record<string, Record<string, unknown>>;
+      anyOf: Array<Record<string, unknown>>;
+    };
+    const r13Branch0Props = normalizedRound13.anyOf[0].properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.deepStrictEqual(r13Branch0Props.impossible.anyOf, [
+      { type: "string" },
+    ]);
+    const impossibleProps = r13Branch0Props.impossible.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.strictEqual(r13Branch0Props.impossible.$defs, undefined);
+    const impossibleDefsProps = (
+      normalizedRound13.$defs.impossible as Record<string, unknown>
+    ).properties as Record<string, Record<string, unknown>>;
+    assert.strictEqual(
+      impossibleDefsProps.nested.$id,
+      "https://example.com/nested-id.json",
+    );
+    assert.deepStrictEqual(impossibleProps.nested.items, {
+      type: "string",
+      enum: ["a", "b"],
+    });
+    assert.strictEqual(
+      impossibleProps.refNestedEnum.$ref,
+      "#/$defs/impossible/properties/nested/items/enum",
+    );
+    const singleSurvivorBranch0 = (
+      r13Branch0Props.singleSurvivor.anyOf as Array<Record<string, unknown>>
+    )[0];
+    assert.strictEqual(
+      (
+        (singleSurvivorBranch0.properties as Record<string, unknown>)
+          .sub as Record<string, unknown>
+      ).$id,
+      "https://example.com/sub-id.json",
+    );
+    const relocatedUnionBranch0 = (
+      r13Branch0Props.relocatedUnion.anyOf as Array<Record<string, unknown>>
+    )[0];
+    assert.strictEqual(relocatedUnionBranch0.enum, undefined);
+    assert.deepStrictEqual(relocatedUnionBranch0.items, {
+      type: "string",
+      enum: ["x", "y"],
+    });
+    assert.strictEqual(
+      r13Branch0Props.refEnum.$ref,
+      "#/$defs/relocatedUnion/$defs/anyOf_0/items/enum",
+    );
+    const mergedTagsProp = (
+      (
+        r13Branch0Props.relocatedMergedProp.anyOf as Array<
+          Record<string, unknown>
+        >
+      )[0].properties as Record<string, unknown>
+    ).tags as Record<string, unknown>;
+    assert.strictEqual(mergedTagsProp.enum, undefined);
+    assert.deepStrictEqual(mergedTagsProp.items, {
+      type: "string",
+      enum: ["p", "q"],
+    });
+
+    // Round 14: nested overlapping object properties inside union distribution
+    // must preserve both parent and branch reference scopes without throwing,
+    // and union branches relocating array-level enum via parent `items` must
+    // not copy raw unnormalized `node.items` into branches.
+    const round14EdgeCases = {
+      type: "object",
+      properties: {
+        nestedMerge: {
+          type: "object",
+          properties: {
+            config: {
               type: "object",
               properties: {
-                name: { type: "string", const: tag },
+                tags: {
+                  type: "array",
+                  items: { type: "string" },
+                },
               },
-            })),
+            },
           },
+          anyOf: [
+            {
+              properties: {
+                config: {
+                  type: "object",
+                  properties: {
+                    tags: {
+                      enum: ["alpha", "beta"],
+                    },
+                  },
+                },
+              },
+            },
+            { required: ["config"] },
+          ],
         },
-        nonRecursiveSiblingRef: {
-          $ref: "#/$defs/BaseNode",
-          properties: {
-            child: { $ref: "#/$defs/BaseNode" },
+        refNestedBranchEnum: {
+          $ref: "#/properties/nestedMerge/anyOf/0/properties/config/properties/tags/enum",
+        },
+        inheritedItemsUnion: {
+          type: "array",
+          items: {
+            $id: "https://example.com/item-id.json",
+            type: "string",
+            anyOf: [{ minLength: 1 }],
           },
+          anyOf: [{ enum: ["a", "b"] }],
         },
-        refArrayWithSiblingEnum: {
-          $ref: "#/$defs/Severity",
-          enum: [0, 1, 2],
-        },
-      },
-    }) as Record<string, unknown>;
-
-    const props = normalized.properties as Record<
-      string,
-      Record<string, unknown>
-    >;
-    assert.deepStrictEqual(props.unconstrainedObjectUnion, {
-      type: "object",
-      properties: {
-        settings: {
-          type: "object",
-          properties: { a: { type: "string" } },
-        },
-      },
-      required: ["settings"],
-    });
-    assert.deepStrictEqual(props.unconstrainedArrayUnion, {
-      type: "array",
-    });
-    assert.deepStrictEqual(props.nestedUnionPropertyMerge, {
-      type: "object",
-      properties: {
-        mode: {
-          type: "string",
-          enum: ["a", "b", "c", "d"],
-        },
-      },
-      required: ["mode"],
-    });
-    assert.deepStrictEqual(props.annotatedObjectUnion, {
-      type: "object",
-      description: "Optional filter configuration",
-      default: { enabled: true },
-      properties: { enabled: { type: "boolean" } },
-    });
-    assert.deepStrictEqual(props.collapsedItemsWithParentProp, {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          payload: { type: "string", description: "Optional step payload" },
-          name: { type: "string", enum: ["s1", "s2", "s3", "s4", "s5"] },
-        },
-        required: ["name"],
-      },
-    });
-    assert.deepStrictEqual(props.nonRecursiveSiblingRef, {
-      type: "object",
-      properties: {
-        id: { type: "string" },
-        child: {
-          type: "object",
-          properties: { id: { type: "string" } },
-          required: ["id"],
-        },
-      },
-      required: ["id"],
-    });
-    assert.deepStrictEqual(props.refArrayWithSiblingEnum, {
-      type: "array",
-      items: {
-        type: "integer",
-        enum: [0, 1, 2],
-      },
-    });
-  });
-
-  test("bounds exponential ref DAG expansion, promotes fractional untyped enums, flattens allOf branches, and intersects empty object alternatives", () => {
-    const dagDefs: Record<string, unknown> = {
-      L0: {
-        type: "object",
-        properties: { leaf: { type: "string" } },
       },
     };
-    for (let i = 1; i <= 12; i += 1) {
-      dagDefs[`L${i}`] = {
-        type: "object",
-        properties: {
-          left: { $ref: `#/$defs/L${i - 1}` },
-          right: { $ref: `#/$defs/L${i - 1}` },
-        },
-      };
-    }
-
-    const normalized = normalizeCopilotToolSchema({
-      type: "object",
-      $defs: dagDefs,
-      properties: {
-        boundedDag: { $ref: "#/$defs/L12" },
-        fractionalBothLiterals: {
-          anyOf: [{ type: "integer", enum: [1] }, { enum: [2.5] }],
-        },
-        fractionalSingleLiteralSide: {
-          anyOf: [{ enum: [2.5] }, { type: "integer" }],
-        },
-        allOfUnion: {
-          anyOf: [
-            {
-              allOf: [
-                {
-                  type: "object",
-                  properties: { file: { type: "string" } },
-                  required: ["file"],
-                },
-              ],
-            },
-            {
-              type: "object",
-              properties: { url: { type: "string" } },
-              required: ["url"],
-            },
-          ],
-        },
-        emptyAlternativeUnion: {
-          type: "object",
-          anyOf: [
-            {
-              properties: { id: { type: "string" } },
-              required: ["id"],
-            },
-            {},
-          ],
-        },
-      },
-    }) as Record<string, unknown>;
-
-    const props = normalized.properties as Record<
-      string,
-      Record<string, unknown>
-    >;
-    assert.strictEqual(props.boundedDag.type, "object");
+    const normalizedRound14 = normalizeCopilotToolSchema(round14EdgeCases) as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    const nestedMergeBranch0 = (
+      normalizedRound14.properties.nestedMerge.anyOf as Array<
+        Record<string, unknown>
+      >
+    )[0];
+    const nestedConfigTags = (
+      (nestedMergeBranch0.properties as Record<string, Record<string, unknown>>)
+        .config.properties as Record<string, Record<string, unknown>>
+    ).tags;
+    assert.strictEqual(nestedConfigTags.enum, undefined);
+    assert.deepStrictEqual(nestedConfigTags.items, {
+      type: "string",
+      enum: ["alpha", "beta"],
+    });
     assert.strictEqual(
-      JSON.stringify(props.boundedDag).includes("$ref"),
-      false,
+      normalizedRound14.properties.refNestedBranchEnum.$ref,
+      "#/properties/nestedMerge/$defs/anyOf_0/properties/config/properties/tags/items/enum",
     );
+    const inheritedItemsSchema = normalizedRound14.properties
+      .inheritedItemsUnion as Record<string, unknown>;
+    assert.deepStrictEqual(inheritedItemsSchema.items, {
+      $id: "https://example.com/item-id.json",
+      anyOf: [{ type: "string", minLength: 1 }],
+    });
+    const inheritedUnionBranch0 = (
+      inheritedItemsSchema.anyOf as Array<Record<string, unknown>>
+    )[0];
+    assert.strictEqual(inheritedUnionBranch0.enum, undefined);
+    assert.deepStrictEqual(inheritedUnionBranch0.items, {
+      enum: ["a", "b"],
+    });
 
-    assert.deepStrictEqual(props.fractionalBothLiterals, {
-      type: "number",
-      enum: [1, 2.5],
-    });
-    assert.deepStrictEqual(props.fractionalSingleLiteralSide, {
-      type: "number",
-    });
-    assert.deepStrictEqual(props.allOfUnion, {
+    // Round 15: share duplicated array-wrapped unions via `$defs` to prevent
+    // exponential output growth, rebase nested resource `$ref`s after inner
+    // normalization rewrites, and intersect own + inherited item types when
+    // checking array-level enum compatibility.
+    const round15EdgeCases = {
       type: "object",
       properties: {
-        file: { type: "string" },
-        url: { type: "string" },
-      },
-    });
-    assert.deepStrictEqual(props.emptyAlternativeUnion, {
-      type: "object",
-      properties: {
-        id: { type: "string" },
-      },
-    });
-  });
-
-  test("preserves unions across allOf conjuncts, normalizes parent-merged constraints, preserves dictionary object unions, and collapses integer/number type arrays", () => {
-    const normalized = normalizeCopilotToolSchema({
-      type: "object",
-      $defs: {
-        ItemRef: {
-          type: "integer",
-        },
-      },
-      properties: {
-        allOfConjunctUnions: {
-          anyOf: [
-            {
-              allOf: [
-                {
-                  anyOf: [
-                    {
-                      type: "object",
-                      properties: { file: { type: "string" } },
-                      required: ["file"],
-                    },
-                    {
-                      type: "object",
-                      properties: { url: { type: "string" } },
-                      required: ["url"],
-                    },
-                  ],
+        sharedArrayUnion: {
+          type: "object",
+          properties: {
+            arr: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  leaf: { type: "string" },
                 },
-                {
-                  anyOf: [
-                    {
-                      type: "object",
-                      properties: { token: { type: "string" } },
-                      required: ["token"],
-                    },
-                    {
-                      type: "object",
-                      properties: { password: { type: "string" } },
-                      required: ["password"],
-                    },
-                  ],
-                },
-              ],
+                anyOf: [{ required: ["leaf"] }, { minProperties: 1 }],
+              },
             },
-            { type: "null" },
-          ],
+          },
+          anyOf: [{ required: ["arr"] }, { minProperties: 1 }],
         },
-        parentConstraintNormalized: {
+        rebasedNestedResource: {
+          type: "object",
+          properties: {
+            p: {
+              $id: "https://example.com/p.json",
+              type: "object",
+              properties: {
+                a: {
+                  type: "object",
+                  properties: { x: { type: "string" } },
+                  anyOf: [{ required: ["x"] }, { minProperties: 1 }],
+                },
+                b: {
+                  $ref: "#/properties/a",
+                },
+              },
+              anyOf: [{ required: ["a"] }, { required: ["b"] }],
+            },
+          },
+          anyOf: [{ required: ["p"] }, { minProperties: 1 }],
+        },
+        incompatibleInheritedItems: {
           type: "array",
-          items: { $ref: "#/$defs/ItemRef" },
-          enum: [1, 2],
-          anyOf: [{ minItems: 1 }, { type: "null" }],
-        },
-        dictionaryObjectUnion: {
-          anyOf: [
-            {
-              type: "object",
-              additionalProperties: { type: "string" },
-            },
-            {
-              type: "object",
-              additionalProperties: { type: "number" },
-            },
-          ],
-        },
-        integerNumberNullableTypeArray: {
-          type: ["integer", "number", "null"],
-          description: "Numeric score",
+          items: { type: "integer" },
+          anyOf: [{ items: {}, enum: ["a"] }],
         },
       },
-    }) as Record<string, unknown>;
-
-    const props = normalized.properties as Record<
-      string,
-      Record<string, unknown>
-    >;
-    assert.deepStrictEqual(props.allOfConjunctUnions, {
-      type: "object",
-      properties: {
-        file: { type: "string" },
-        url: { type: "string" },
-        token: { type: "string" },
-        password: { type: "string" },
-      },
-    });
-    assert.deepStrictEqual(props.parentConstraintNormalized, {
-      type: "array",
-      items: {
-        type: "integer",
-        enum: [1, 2],
-      },
-      minItems: 1,
-    });
-    assert.deepStrictEqual(props.dictionaryObjectUnion, {
-      type: "object",
-    });
-    assert.deepStrictEqual(props.integerNumberNullableTypeArray, {
-      type: "number",
-      description: "Numeric score",
-    });
+    };
+    const normalizedRound15 = normalizeCopilotToolSchema(round15EdgeCases) as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    const sharedArrayUnion = normalizedRound15.properties.sharedArrayUnion as {
+      $defs: Record<string, unknown>;
+      anyOf: Array<Record<string, unknown>>;
+    };
+    assert.ok(sharedArrayUnion.$defs.arr);
+    assert.deepStrictEqual(
+      (sharedArrayUnion.anyOf[0].properties as Record<string, unknown>).arr,
+      { $ref: "#/properties/sharedArrayUnion/$defs/arr" },
+    );
+    const rebasedPBranch0 = (
+      (
+        (
+          normalizedRound15.properties.rebasedNestedResource.anyOf as Array<
+            Record<string, unknown>
+          >
+        )[0].properties as Record<string, Record<string, unknown>>
+      ).p.anyOf as Array<Record<string, unknown>>
+    )[0];
+    assert.strictEqual(
+      (
+        (rebasedPBranch0.properties as Record<string, Record<string, unknown>>)
+          .b as Record<string, unknown>
+      ).$ref,
+      "#/properties/rebasedNestedResource/$defs/p/$defs/a",
+    );
+    const incompatibleBranch0 = (
+      normalizedRound15.properties.incompatibleInheritedItems.anyOf as Array<
+        Record<string, unknown>
+      >
+    )[0];
+    assert.strictEqual(incompatibleBranch0.enum, undefined);
+    assert.deepStrictEqual(incompatibleBranch0.items, {});
   });
 });

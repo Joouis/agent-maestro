@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 
+import { logger } from "./logger";
+
 const LITERAL_SCHEMA_FIELDS = new Set([
   "default",
   "example",
@@ -7,219 +9,57 @@ const LITERAL_SCHEMA_FIELDS = new Set([
   "const",
   "enum",
   "required",
+  "dependentRequired",
 ]);
 
-const SCHEMA_MAP_FIELDS = new Set(["properties", "patternProperties"]);
-
-const STRIPPED_SCHEMA_KEYWORDS = new Set([
+const SCHEMA_MAP_FIELDS = new Set([
+  "properties",
+  "patternProperties",
   "$defs",
   "definitions",
-  "additionalProperties",
+  "dependentSchemas",
+  "dependencies",
 ]);
 
-const MAX_SCHEMA_REF_EXPANSIONS = 256;
+const BOOLEAN_SCHEMA_KEYWORDS = new Set([
+  "items",
+  "additionalItems",
+  "additionalProperties",
+  "unevaluatedProperties",
+  "unevaluatedItems",
+  "propertyNames",
+  "not",
+  "if",
+  "then",
+  "else",
+  "contains",
+  "contentSchema",
+]);
 
-const SCALAR_BOUND_MIN_KEYS = [
-  "minimum",
-  "exclusiveMinimum",
-  "minLength",
+const SCOPE_SENSITIVE_MERGE_KEYWORDS = [
+  "$id",
+  "id",
+  "$ref",
+  "$dynamicRef",
+  "anyOf",
+  "oneOf",
+  "prefixItems",
+  "additionalProperties",
+  "unevaluatedProperties",
+  "additionalItems",
+  "unevaluatedItems",
+  "if",
+  "then",
+  "else",
+  "dependentSchemas",
+  "dependencies",
+  "contains",
+  "minContains",
+  "maxContains",
 ] as const;
-
-const SCALAR_BOUND_MAX_KEYS = [
-  "maximum",
-  "exclusiveMaximum",
-  "maxLength",
-] as const;
-
-const SCALAR_EXACT_MATCH_KEYS = ["pattern", "format", "multipleOf"] as const;
-
-interface SchemaRefExpansionBudget {
-  remaining: number;
-}
-
-function createRefExpansionBudget(): SchemaRefExpansionBudget {
-  return { remaining: MAX_SCHEMA_REF_EXPANSIONS };
-}
-
-function consumeRefExpansionBudget(budget: SchemaRefExpansionBudget): boolean {
-  if (budget.remaining <= 0) {
-    return false;
-  }
-  budget.remaining -= 1;
-  return true;
-}
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isLocalSchemaRef(ref: unknown): ref is string {
-  return typeof ref === "string" && (ref === "#" || ref.startsWith("#/"));
-}
-
-function normalizeSchemaRefPointer(ref: string): string {
-  return ref === "#/" ? "#" : ref;
-}
-
-function resolveSchemaPointer(
-  root: Record<string, unknown>,
-  pointer: string,
-): Record<string, unknown> | null {
-  if (pointer === "#" || pointer === "#/") {
-    return root;
-  }
-  const parts = pointer
-    .slice(2)
-    .split("/")
-    .map((part) => part.replace(/~1/g, "/").replace(/~0/g, "~"));
-  let target: unknown = root;
-  for (const part of parts) {
-    if (Array.isArray(target)) {
-      if (!/^(?:0|[1-9]\d*)$/.test(part)) {
-        return null;
-      }
-      target = target[Number(part)];
-      continue;
-    }
-    if (!isPlainRecord(target)) {
-      return null;
-    }
-    target = target[part];
-  }
-  return isPlainRecord(target) ? target : null;
-}
-
-function intersectSchemaDefinitions(
-  target: unknown,
-  sibling: unknown,
-): unknown {
-  if (!isPlainRecord(target) || !isPlainRecord(sibling)) {
-    return sibling !== undefined ? sibling : target;
-  }
-
-  const targetLiterals = extractAllowedLiterals(target);
-  const siblingLiterals = extractAllowedLiterals(sibling);
-  const merged: Record<string, unknown> = {
-    ...target,
-    ...sibling,
-  };
-
-  const typeA = primarySchemaType(target);
-  const typeB = primarySchemaType(sibling);
-  if (typeA && typeB) {
-    if (
-      (typeA === "integer" && typeB === "number") ||
-      (typeA === "number" && typeB === "integer")
-    ) {
-      merged.type = "integer";
-    } else {
-      merged.type = typeB;
-    }
-  } else if (typeA || typeB) {
-    merged.type = typeB ?? typeA;
-  }
-
-  if (targetLiterals !== null || siblingLiterals !== null) {
-    delete merged.const;
-    delete merged.enum;
-    const effectiveLiterals =
-      targetLiterals !== null && siblingLiterals !== null
-        ? targetLiterals.filter((v) => siblingLiterals.includes(v))
-        : (siblingLiterals ?? targetLiterals ?? []);
-    if (effectiveLiterals.length === 1 && Object.hasOwn(sibling, "const")) {
-      merged.const = effectiveLiterals[0];
-    } else if (effectiveLiterals.length > 0) {
-      merged.enum = [...new Set(effectiveLiterals)];
-    }
-  }
-
-  if (isPlainRecord(target.properties) || isPlainRecord(sibling.properties)) {
-    const mergedProps: Record<string, unknown> = {
-      ...(isPlainRecord(target.properties) ? target.properties : {}),
-    };
-    if (isPlainRecord(sibling.properties)) {
-      for (const [key, prop] of Object.entries(sibling.properties)) {
-        mergedProps[key] = Object.hasOwn(mergedProps, key)
-          ? intersectSchemaDefinitions(mergedProps[key], prop)
-          : prop;
-      }
-    }
-    merged.properties = mergedProps;
-  }
-
-  if (Array.isArray(target.required) || Array.isArray(sibling.required)) {
-    const reqTarget = Array.isArray(target.required)
-      ? target.required.filter((k): k is string => typeof k === "string")
-      : [];
-    const reqSibling = Array.isArray(sibling.required)
-      ? sibling.required.filter((k): k is string => typeof k === "string")
-      : [];
-    const unionReq = [...new Set([...reqTarget, ...reqSibling])];
-    if (unionReq.length > 0) {
-      merged.required = unionReq;
-    } else {
-      delete merged.required;
-    }
-  }
-
-  if (isPlainRecord(target.items) && isPlainRecord(sibling.items)) {
-    merged.items = intersectSchemaDefinitions(target.items, sibling.items);
-  }
-
-  for (const maxBoundKey of [
-    "minimum",
-    "exclusiveMinimum",
-    "minLength",
-    "minItems",
-  ] as const) {
-    const valA = target[maxBoundKey];
-    const valB = sibling[maxBoundKey];
-    if (typeof valA === "number" && typeof valB === "number") {
-      merged[maxBoundKey] = Math.max(valA, valB);
-    }
-  }
-  for (const minBoundKey of [
-    "maximum",
-    "exclusiveMaximum",
-    "maxLength",
-    "maxItems",
-  ] as const) {
-    const valA = target[minBoundKey];
-    const valB = sibling[minBoundKey];
-    if (typeof valA === "number" && typeof valB === "number") {
-      merged[minBoundKey] = Math.min(valA, valB);
-    }
-  }
-
-  return merged;
-}
-
-function mergeResolvedRefWithSiblings(
-  resolvedTarget: Record<string, unknown>,
-  siblingNode: Record<string, unknown>,
-): Record<string, unknown> {
-  const { $ref: _ref, ...siblings } = siblingNode;
-  if (Object.keys(siblings).length === 0) {
-    return resolvedTarget;
-  }
-  const intersected = intersectSchemaDefinitions(resolvedTarget, siblings);
-  return isPlainRecord(intersected) ? intersected : resolvedTarget;
-}
-
-function collapseTypeArray(types: unknown[]): string | undefined {
-  const nonNull = types.filter(
-    (t): t is string => typeof t === "string" && t !== "null",
-  );
-  if (nonNull.length === 0) {
-    return undefined;
-  }
-  if (nonNull.includes("number") && nonNull.includes("integer")) {
-    const others = nonNull.filter((t) => t !== "number" && t !== "integer");
-    if (others.length === 0) {
-      return "number";
-    }
-  }
-  return nonNull[0];
 }
 
 function primarySchemaType(node: Record<string, unknown>): string | undefined {
@@ -227,667 +67,11 @@ function primarySchemaType(node: Record<string, unknown>): string | undefined {
     return node.type;
   }
   if (Array.isArray(node.type)) {
-    return collapseTypeArray(node.type);
+    return node.type.find(
+      (t): t is string => typeof t === "string" && t !== "null",
+    );
   }
   return undefined;
-}
-
-function extractAllowedLiterals(
-  prop: Record<string, unknown>,
-): unknown[] | null {
-  if (Array.isArray(prop.enum)) {
-    return prop.enum.filter((entry) => entry !== null);
-  }
-  if (Object.hasOwn(prop, "const") && prop.const !== null) {
-    return [prop.const];
-  }
-  return null;
-}
-
-function inferLiteralSchemaType(literals: unknown[]): string | undefined {
-  if (literals.length === 0) {
-    return undefined;
-  }
-  if (literals.every((v) => typeof v === "string")) {
-    return "string";
-  }
-  if (literals.every((v) => typeof v === "number" && Number.isInteger(v))) {
-    return "integer";
-  }
-  if (literals.every((v) => typeof v === "number")) {
-    return "number";
-  }
-  if (literals.every((v) => typeof v === "boolean")) {
-    return "boolean";
-  }
-  return undefined;
-}
-
-function effectiveScalarSchemaType(
-  node: Record<string, unknown>,
-  literals: unknown[] | null,
-): string | undefined {
-  const declared = primarySchemaType(node);
-  const inferred =
-    literals !== null ? inferLiteralSchemaType(literals) : undefined;
-  if (
-    (declared === "integer" && inferred === "number") ||
-    (declared === "number" && inferred === "integer")
-  ) {
-    return "number";
-  }
-  return declared ?? inferred;
-}
-
-function widenScalarBranchSchemas(
-  existing: Record<string, unknown>,
-  incoming: Record<string, unknown>,
-  mergedType: string | undefined,
-): Record<string, unknown> {
-  const {
-    const: _c1,
-    enum: _e1,
-    minimum: _min1,
-    maximum: _max1,
-    exclusiveMinimum: _exMin1,
-    exclusiveMaximum: _exMax1,
-    minLength: _minLen1,
-    maxLength: _maxLen1,
-    pattern: _pat1,
-    format: _fmt1,
-    multipleOf: _mul1,
-    ...rest
-  } = existing;
-  const description =
-    typeof existing.description === "string" && existing.description
-      ? { description: existing.description }
-      : typeof incoming.description === "string" && incoming.description
-        ? { description: incoming.description }
-        : {};
-  const widened: Record<string, unknown> = {
-    ...rest,
-    ...description,
-    ...(mergedType ? { type: mergedType } : {}),
-  };
-  for (const key of SCALAR_BOUND_MIN_KEYS) {
-    const valA = existing[key];
-    const valB = incoming[key];
-    if (typeof valA === "number" && typeof valB === "number") {
-      widened[key] = Math.min(valA, valB);
-    }
-  }
-  for (const key of SCALAR_BOUND_MAX_KEYS) {
-    const valA = existing[key];
-    const valB = incoming[key];
-    if (typeof valA === "number" && typeof valB === "number") {
-      widened[key] = Math.max(valA, valB);
-    }
-  }
-  for (const key of SCALAR_EXACT_MATCH_KEYS) {
-    if (existing[key] !== undefined && existing[key] === incoming[key]) {
-      widened[key] = existing[key];
-    }
-  }
-  return widened;
-}
-
-function mergeUnionPropertySchemas(
-  existing: unknown,
-  incoming: unknown,
-): unknown {
-  if (!isPlainRecord(existing) || !isPlainRecord(incoming)) {
-    return existing;
-  }
-
-  const existingLiterals = extractAllowedLiterals(existing);
-  const incomingLiterals = extractAllowedLiterals(incoming);
-  if (existingLiterals !== null && incomingLiterals !== null) {
-    const mergedLiterals = [
-      ...new Set([...existingLiterals, ...incomingLiterals]),
-    ];
-    const allStrings = mergedLiterals.every((v) => typeof v === "string");
-    const allIntegers = mergedLiterals.every(
-      (v) => typeof v === "number" && Number.isInteger(v),
-    );
-    const allNumbers = mergedLiterals.every((v) => typeof v === "number");
-    const typeA = effectiveScalarSchemaType(existing, existingLiterals);
-    const typeB = effectiveScalarSchemaType(incoming, incomingLiterals);
-    const mergedType =
-      typeA && typeB && typeA !== typeB
-        ? allStrings
-          ? "string"
-          : allNumbers
-            ? "number"
-            : "string"
-        : allNumbers && !allIntegers
-          ? "number"
-          : (typeA ??
-            typeB ??
-            (allStrings
-              ? "string"
-              : allIntegers
-                ? "integer"
-                : allNumbers
-                  ? "number"
-                  : undefined));
-    const widenedBase = widenScalarBranchSchemas(
-      existing,
-      incoming,
-      mergedType,
-    );
-    return {
-      ...widenedBase,
-      enum: mergedLiterals.map((v) =>
-        mergedType === "string" && typeof v !== "string" ? String(v) : v,
-      ),
-    };
-  }
-
-  if (existingLiterals !== null || incomingLiterals !== null) {
-    const base = existingLiterals !== null ? existing : incoming;
-    const baseLiterals =
-      existingLiterals !== null ? existingLiterals : incomingLiterals;
-    const other = existingLiterals !== null ? incoming : existing;
-    const typeA = effectiveScalarSchemaType(base, baseLiterals);
-    const typeB = effectiveScalarSchemaType(other, null);
-    const isNumPair =
-      (typeA === "integer" && typeB === "number") ||
-      (typeA === "number" && typeB === "integer");
-    const mergedType =
-      typeA && typeB && typeA !== typeB
-        ? isNumPair
-          ? "number"
-          : "string"
-        : (typeA ?? typeB);
-    return widenScalarBranchSchemas(base, other, mergedType);
-  }
-
-  const typeA = primarySchemaType(existing);
-  const typeB = primarySchemaType(incoming);
-  if (
-    typeA === "object" ||
-    typeB === "object" ||
-    isPlainRecord(existing.properties) ||
-    isPlainRecord(incoming.properties)
-  ) {
-    if ((typeA && typeA !== "object") || (typeB && typeB !== "object")) {
-      const description =
-        typeof existing.description === "string" && existing.description
-          ? { description: existing.description }
-          : typeof incoming.description === "string" && incoming.description
-            ? { description: incoming.description }
-            : {};
-      return { type: "string", ...description };
-    }
-    const existingProps = isPlainRecord(existing.properties)
-      ? existing.properties
-      : {};
-    const incomingProps = isPlainRecord(incoming.properties)
-      ? incoming.properties
-      : {};
-    const mergedProps: Record<string, unknown> = { ...existingProps };
-    for (const [k, v] of Object.entries(incomingProps)) {
-      mergedProps[k] = Object.hasOwn(mergedProps, k)
-        ? mergeUnionPropertySchemas(mergedProps[k], v)
-        : v;
-    }
-    const reqA = Array.isArray(existing.required)
-      ? new Set(
-          existing.required.filter((k): k is string => typeof k === "string"),
-        )
-      : new Set<string>();
-    const reqB = Array.isArray(incoming.required)
-      ? new Set(
-          incoming.required.filter((k): k is string => typeof k === "string"),
-        )
-      : new Set<string>();
-    const commonReq = [...reqA].filter((k) => reqB.has(k));
-    const {
-      required: _r,
-      properties: _p,
-      minProperties: _minP,
-      maxProperties: _maxP,
-      ...rest
-    } = existing;
-    return {
-      ...rest,
-      type: "object",
-      ...(Object.keys(mergedProps).length > 0
-        ? { properties: mergedProps }
-        : {}),
-      ...(commonReq.length > 0 ? { required: commonReq } : {}),
-    };
-  }
-
-  if (
-    (typeA === "array" || isPlainRecord(existing.items)) &&
-    (typeB === "array" || isPlainRecord(incoming.items))
-  ) {
-    const {
-      minItems: minA,
-      maxItems: maxA,
-      uniqueItems: uniqA,
-      items: itemsA,
-      ...rest
-    } = existing;
-    const minB = incoming.minItems;
-    const maxB = incoming.maxItems;
-    const uniqB = incoming.uniqueItems;
-    const itemsB = incoming.items;
-    const mergedItems =
-      isPlainRecord(itemsA) && isPlainRecord(itemsB)
-        ? mergeUnionPropertySchemas(itemsA, itemsB)
-        : undefined;
-    return {
-      ...rest,
-      type: "array",
-      ...(mergedItems ? { items: mergedItems } : {}),
-      ...(typeof minA === "number" && typeof minB === "number"
-        ? { minItems: Math.min(minA, minB) }
-        : {}),
-      ...(typeof maxA === "number" && typeof maxB === "number"
-        ? { maxItems: Math.max(maxA, maxB) }
-        : {}),
-      ...(uniqA === true && uniqB === true ? { uniqueItems: true } : {}),
-    };
-  }
-  if (typeA && typeB && typeA !== typeB) {
-    const isNumPair =
-      (typeA === "integer" && typeB === "number") ||
-      (typeA === "number" && typeB === "integer");
-    if (isNumPair) {
-      return widenScalarBranchSchemas(existing, incoming, "number");
-    }
-    const description =
-      typeof existing.description === "string" && existing.description
-        ? { description: existing.description }
-        : typeof incoming.description === "string" && incoming.description
-          ? { description: incoming.description }
-          : {};
-    return { type: "string", ...description };
-  }
-
-  return widenScalarBranchSchemas(existing, incoming, typeA ?? typeB);
-}
-
-function collapseAllOfInRecord(
-  node: Record<string, unknown>,
-  root: Record<string, unknown>,
-  seenRefs: Set<string>,
-  refBudget: SchemaRefExpansionBudget,
-): Record<string, unknown> {
-  if (!Array.isArray(node.allOf)) {
-    return node;
-  }
-  const { allOf, ...rest } = node;
-  let combined: Record<string, unknown> = rest;
-  for (const part of allOf) {
-    if (isPlainRecord(part)) {
-      let collapsedPart = collapseAllOfInRecord(
-        part,
-        root,
-        seenRefs,
-        refBudget,
-      );
-      if (
-        Array.isArray(collapsedPart.anyOf) ||
-        Array.isArray(collapsedPart.oneOf)
-      ) {
-        const flattenedPart = flattenUnionObjectSchema(
-          collapsedPart,
-          root,
-          seenRefs,
-          refBudget,
-        );
-        if (flattenedPart) {
-          collapsedPart = flattenedPart;
-        }
-      }
-      const intersected = intersectSchemaDefinitions(combined, collapsedPart);
-      if (isPlainRecord(intersected)) {
-        combined = intersected;
-      }
-    }
-  }
-  return combined;
-}
-
-function flattenUnionObjectSchema(
-  schema: Record<string, unknown>,
-  root: Record<string, unknown> = schema,
-  seenRefs = new Set<string>(["#"]),
-  refBudget = createRefExpansionBudget(),
-): Record<string, unknown> | null {
-  function deref(node: unknown, seen = new Set<string>(seenRefs)): unknown {
-    if (Array.isArray(node)) {
-      return node.map((item) => deref(item, seen));
-    }
-    if (!isPlainRecord(node)) {
-      return node;
-    }
-    if (isLocalSchemaRef(node.$ref)) {
-      const normalizedRef = normalizeSchemaRefPointer(node.$ref);
-      const description =
-        typeof node.description === "string" && node.description
-          ? { description: node.description }
-          : {};
-      if (seen.has(normalizedRef) || !consumeRefExpansionBudget(refBudget)) {
-        return { type: "string", ...description };
-      }
-      const target = resolveSchemaPointer(root, normalizedRef);
-      if (!target) {
-        return { type: "string", ...description };
-      }
-      const nextSeen = new Set([...seen, normalizedRef]);
-      const resolvedTarget = deref(target, nextSeen);
-      if (!isPlainRecord(resolvedTarget)) {
-        return { type: "string", ...description };
-      }
-      const resolvedSiblings = deref(
-        Object.fromEntries(
-          Object.entries(node).filter(([key]) => key !== "$ref"),
-        ),
-        seen,
-      );
-      return isPlainRecord(resolvedSiblings)
-        ? mergeResolvedRefWithSiblings(resolvedTarget, resolvedSiblings)
-        : { ...resolvedTarget, ...description };
-    }
-    const derefedEntries = Object.fromEntries(
-      Object.entries(node)
-        .filter(([key]) => !STRIPPED_SCHEMA_KEYWORDS.has(key))
-        .map(([key, item]) => {
-          if (LITERAL_SCHEMA_FIELDS.has(key)) {
-            return [key, item];
-          }
-          if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(item)) {
-            return [
-              key,
-              Object.fromEntries(
-                Object.entries(item).map(([propName, propSchema]) => [
-                  propName,
-                  deref(propSchema, seen),
-                ]),
-              ),
-            ];
-          }
-          return [key, deref(item, seen)];
-        }),
-    );
-    return collapseAllOfInRecord(derefedEntries, root, seen, refBudget);
-  }
-
-  const resolved = deref(schema);
-  if (!isPlainRecord(resolved)) {
-    return null;
-  }
-
-  const properties: Record<string, unknown> = {};
-  const parentRequired = Array.isArray(resolved.required)
-    ? resolved.required.filter((key): key is string => typeof key === "string")
-    : [];
-  const branchRequiredSets: Set<string>[] = [];
-
-  function collectProperties(propsRecord: Record<string, unknown>): void {
-    for (const [key, prop] of Object.entries(propsRecord)) {
-      const normalizedProp = normalizeCopilotToolSchema(
-        prop,
-        root,
-        seenRefs,
-        refBudget,
-      );
-      if (!Object.hasOwn(properties, key)) {
-        properties[key] = normalizedProp;
-      } else {
-        properties[key] = mergeUnionPropertySchemas(
-          properties[key],
-          normalizedProp,
-        );
-      }
-    }
-  }
-
-  function collectBranch(
-    rawNode: unknown,
-    inheritedRequired = new Set<string>(),
-  ): void {
-    if (!isPlainRecord(rawNode)) {
-      return;
-    }
-    const node = collapseAllOfInRecord(rawNode, root, seenRefs, refBudget);
-    const oneOf = Array.isArray(node.oneOf) ? node.oneOf : [];
-    const anyOf = Array.isArray(node.anyOf) ? node.anyOf : [];
-    const subBranches = [...oneOf, ...anyOf];
-    const ownRequired = Array.isArray(node.required)
-      ? node.required.filter((key): key is string => typeof key === "string")
-      : [];
-    const combinedRequired = new Set(
-      [...inheritedRequired, ownRequired].flat(),
-    );
-
-    if (
-      isPlainRecord(node.properties) &&
-      Object.keys(node.properties).length > 0
-    ) {
-      collectProperties(node.properties);
-    }
-
-    if (subBranches.length > 0) {
-      for (const branch of subBranches) {
-        collectBranch(branch, combinedRequired);
-      }
-      return;
-    }
-
-    const branchType = primarySchemaType(node);
-    const hasIncompatibleConstraint =
-      (branchType !== undefined && branchType !== "object") ||
-      node.type === "null" ||
-      isPlainRecord(node.items) ||
-      extractAllowedLiterals(node) !== null;
-    if (!hasIncompatibleConstraint) {
-      branchRequiredSets.push(combinedRequired);
-    }
-  }
-
-  if (
-    isPlainRecord(resolved.properties) &&
-    Object.keys(resolved.properties).length > 0
-  ) {
-    collectProperties(resolved.properties);
-  }
-  const topBranches = [
-    ...(Array.isArray(resolved.oneOf) ? resolved.oneOf : []),
-    ...(Array.isArray(resolved.anyOf) ? resolved.anyOf : []),
-  ];
-  for (const branch of topBranches) {
-    collectBranch(branch);
-  }
-
-  if (Object.keys(properties).length === 0) {
-    return null;
-  }
-
-  const intersectedBranchRequired =
-    branchRequiredSets.length > 0
-      ? [...branchRequiredSets[0]].filter((key) =>
-          branchRequiredSets.every((set) => set.has(key)),
-        )
-      : [];
-
-  const commonRequired = [
-    ...new Set([...parentRequired, ...intersectedBranchRequired]),
-  ].filter((key) => Object.hasOwn(properties, key));
-
-  const normalizedProperties = Object.fromEntries(
-    Object.entries(properties).map(([key, prop]) => [
-      key,
-      normalizeCopilotToolSchema(prop, root, seenRefs, refBudget),
-    ]),
-  );
-
-  const parentAnnotations = Object.fromEntries(
-    Object.entries(resolved)
-      .filter(
-        ([key]) =>
-          !STRIPPED_SCHEMA_KEYWORDS.has(key) &&
-          ![
-            "anyOf",
-            "oneOf",
-            "allOf",
-            "type",
-            "properties",
-            "required",
-            "enum",
-            "const",
-          ].includes(key),
-      )
-      .map(([key, item]) => [
-        key,
-        LITERAL_SCHEMA_FIELDS.has(key)
-          ? item
-          : normalizeCopilotToolSchema(item, root, seenRefs, refBudget),
-      ]),
-  );
-
-  return {
-    ...parentAnnotations,
-    type: "object",
-    properties: normalizedProperties,
-    ...(commonRequired.length > 0 ? { required: commonRequired } : {}),
-  };
-}
-
-function extractNameOnlyBranchDiscriminator(
-  option: unknown,
-  root: Record<string, unknown>,
-  seenRefs: Set<string>,
-  refBudget: SchemaRefExpansionBudget,
-): { names: string[]; requiresName: boolean } | null {
-  if (!isPlainRecord(option)) {
-    return null;
-  }
-  let resolved: Record<string, unknown> = option;
-  if (isLocalSchemaRef(option.$ref)) {
-    const normalizedRef = normalizeSchemaRefPointer(option.$ref);
-    if (seenRefs.has(normalizedRef) || !consumeRefExpansionBudget(refBudget)) {
-      return null;
-    }
-    const target = resolveSchemaPointer(root, normalizedRef);
-    if (!target) {
-      return null;
-    }
-    resolved = mergeResolvedRefWithSiblings(target, option);
-  }
-  resolved = collapseAllOfInRecord(resolved, root, seenRefs, refBudget);
-  if (!isPlainRecord(resolved.properties)) {
-    return null;
-  }
-  const propKeys = Object.keys(resolved.properties);
-  if (propKeys.length !== 1 || propKeys[0] !== "name") {
-    return null;
-  }
-  const branchRequired = Array.isArray(resolved.required)
-    ? resolved.required.filter((req): req is string => typeof req === "string")
-    : [];
-  if (branchRequired.some((req) => req !== "name")) {
-    return null;
-  }
-  const nameProp = resolved.properties.name;
-  if (!isPlainRecord(nameProp)) {
-    return null;
-  }
-  const names = Array.isArray(nameProp.enum)
-    ? nameProp.enum.filter((v): v is string => typeof v === "string")
-    : typeof nameProp.const === "string"
-      ? [nameProp.const]
-      : [];
-  if (names.length === 0) {
-    return null;
-  }
-  return {
-    names,
-    requiresName: branchRequired.includes("name"),
-  };
-}
-
-function tryCollapseNameDiscriminatedItemUnion(
-  current: Record<string, unknown>,
-  rootSchema: Record<string, unknown>,
-  seenRefs: Set<string>,
-  refBudget: SchemaRefExpansionBudget,
-): Record<string, unknown> | null {
-  const currentItems = isPlainRecord(current.items) ? current.items : undefined;
-  const itemAnyOf = Array.isArray(currentItems?.anyOf)
-    ? currentItems.anyOf
-    : undefined;
-  const nonNullBranches = itemAnyOf?.filter(
-    (option) => isPlainRecord(option) && option.type !== "null",
-  );
-  if (!currentItems || !nonNullBranches || nonNullBranches.length <= 4) {
-    return null;
-  }
-  const parentRequired = Array.isArray(currentItems.required)
-    ? currentItems.required.filter((r): r is string => typeof r === "string")
-    : [];
-  if (parentRequired.some((r) => r !== "name")) {
-    return null;
-  }
-  const branchInfos = nonNullBranches.map((option) =>
-    extractNameOnlyBranchDiscriminator(option, rootSchema, seenRefs, refBudget),
-  );
-  if (
-    branchInfos.some(
-      (info): info is null => info === null || info.names.length === 0,
-    )
-  ) {
-    return null;
-  }
-  const validInfos = branchInfos as Array<{
-    names: string[];
-    requiresName: boolean;
-  }>;
-  const mergedNames = [...new Set(validInfos.flatMap((info) => info.names))];
-  const itemType = primarySchemaType(currentItems) ?? "object";
-  const normalizedContainer = Object.fromEntries(
-    Object.entries(current)
-      .filter(([key]) => !STRIPPED_SCHEMA_KEYWORDS.has(key) && key !== "items")
-      .map(([key, item]) => [
-        key,
-        LITERAL_SCHEMA_FIELDS.has(key)
-          ? item
-          : normalizeCopilotToolSchema(item, rootSchema, seenRefs, refBudget),
-      ]),
-  );
-  const collapsedItemSchema: Record<string, unknown> = {
-    type: itemType,
-    properties: { name: { type: "string", enum: mergedNames } },
-  };
-  if (
-    parentRequired.includes("name") ||
-    validInfos.every((info) => info.requiresName)
-  ) {
-    collapsedItemSchema.required = ["name"];
-  }
-  const { anyOf: _itemAnyOf, ...parentItemWithoutAnyOf } = currentItems;
-  const normalizedParentItems =
-    Object.keys(parentItemWithoutAnyOf).length > 0
-      ? normalizeCopilotToolSchema(
-          parentItemWithoutAnyOf,
-          rootSchema,
-          seenRefs,
-          refBudget,
-        )
-      : undefined;
-  const mergedItemSchema = isPlainRecord(normalizedParentItems)
-    ? intersectSchemaDefinitions(normalizedParentItems, collapsedItemSchema)
-    : collapsedItemSchema;
-  return {
-    ...normalizedContainer,
-    items: isPlainRecord(mergedItemSchema)
-      ? mergedItemSchema
-      : collapsedItemSchema,
-  };
 }
 
 function isCompatibleScalarForItemType(
@@ -919,342 +103,2196 @@ function isCompatibleScalarForItemType(
   return false;
 }
 
-/**
- * Normalize complex JSON Schema constructs ($ref/$defs, nullable type arrays,
- * array-level enums, and large discriminated items.anyOf unions) that Copilot
- * Gemini backends reject with HTTP 400 invalid_request_body.
- */
-export function normalizeCopilotToolSchema(
+function extractTypeList(typeValue: unknown): string[] | undefined {
+  if (typeof typeValue === "string") {
+    return [typeValue];
+  }
+  if (Array.isArray(typeValue)) {
+    return typeValue.filter((t): t is string => typeof t === "string");
+  }
+  return undefined;
+}
+
+function intersectTypeLists(a: string[], b: string[]): string[] {
+  const result: string[] = [];
+  for (const t of a) {
+    if (b.includes(t)) {
+      result.push(t);
+    } else if (t === "integer" && b.includes("number")) {
+      result.push("integer");
+    } else if (t === "number" && b.includes("integer")) {
+      result.push("integer");
+    }
+  }
+  return [...new Set(result)];
+}
+
+function setOwnField(
+  target: Record<string, unknown>,
+  key: string,
   value: unknown,
-  root?: Record<string, unknown>,
-  seenRefs = new Set<string>(),
-  refBudget = createRefExpansionBudget(),
-): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) =>
-      normalizeCopilotToolSchema(item, root, seenRefs, refBudget),
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
+}
+
+const SYNTHETIC_ORIGIN = "https://agent-maestro.local";
+const ROOT_BASE_URI = `${SYNTHETIC_ORIGIN}/__root__/schema.json`;
+
+function encodeJsonPointerSegment(segment: string): string {
+  const escaped = segment.replace(/~/g, "~0").replace(/\//g, "~1");
+  return encodeURI(escaped).replace(/#/g, "%23");
+}
+
+function canonicalizeFragment(rawFragment: string): string {
+  if (!rawFragment) {
+    return "";
+  }
+  let decodedFragment = rawFragment;
+  try {
+    decodedFragment = decodeURIComponent(rawFragment);
+  } catch {
+    // Keep malformed percent-encoding unchanged
+  }
+  if (decodedFragment.startsWith("/")) {
+    return (
+      "/" +
+      decodedFragment
+        .slice(1)
+        .split("/")
+        .map((seg) => encodeURI(seg).replace(/#/g, "%23").replace(/\//g, "%2F"))
+        .join("/")
     );
+  }
+  return encodeURI(decodedFragment).replace(/#/g, "%23");
+}
+
+function hasNewIdScope(node: Record<string, unknown>): string | undefined {
+  if (typeof node.$id === "string") {
+    const trimmed = node.$id.trim();
+    if (trimmed && !trimmed.startsWith("#")) {
+      return trimmed;
+    }
+  }
+  if (typeof node.id === "string") {
+    const trimmed = node.id.trim();
+    if (trimmed && !trimmed.startsWith("#")) {
+      return trimmed;
+    }
+  }
+  return undefined;
+}
+
+function resolveScopeUri(baseUri: string, id: string): string {
+  const trimmed = id.trim();
+  try {
+    const url = new URL(trimmed, baseUri);
+    url.hash = "";
+    return url.href;
+  } catch {
+    const withoutHash = trimmed.replace(/#.*$/, "");
+    return `${baseUri}/${withoutHash}`;
+  }
+}
+
+function resolveScopedRef(
+  baseUri: string,
+  ref: string,
+): { targetBaseUri: string; fragment: string; scopedKey: string } {
+  const hashIdx = ref.indexOf("#");
+  const uriPart = hashIdx >= 0 ? ref.slice(0, hashIdx).trim() : ref.trim();
+  const rawFragment = hashIdx >= 0 ? ref.slice(hashIdx + 1) : "";
+  const targetBaseUri = uriPart ? resolveScopeUri(baseUri, uriPart) : baseUri;
+  const fragment = canonicalizeFragment(rawFragment);
+  return {
+    targetBaseUri,
+    fragment,
+    scopedKey: `${targetBaseUri}#${fragment}`,
+  };
+}
+
+function collectSchemaRefs(
+  node: unknown,
+  baseUri = ROOT_BASE_URI,
+  refs = new Set<string>(),
+  externalRefs = new Set<string>(),
+): { refs: Set<string>; externalRefs: Set<string> } {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      collectSchemaRefs(item, baseUri, refs, externalRefs);
+    }
+    return { refs, externalRefs };
+  }
+  if (!isPlainRecord(node)) {
+    return { refs, externalRefs };
+  }
+  const newId = hasNewIdScope(node);
+  const currentBaseUri = newId ? resolveScopeUri(baseUri, newId) : baseUri;
+  for (const refKey of ["$ref", "$dynamicRef"] as const) {
+    const rawRef = node[refKey];
+    if (typeof rawRef === "string") {
+      const resolved = resolveScopedRef(currentBaseUri, rawRef);
+      refs.add(resolved.scopedKey);
+      if (resolved.targetBaseUri !== currentBaseUri) {
+        externalRefs.add(resolved.scopedKey);
+      }
+    }
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (LITERAL_SCHEMA_FIELDS.has(key)) {
+      continue;
+    }
+    if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(child)) {
+      for (const mapEntry of Object.values(child)) {
+        if (key === "dependencies" && Array.isArray(mapEntry)) {
+          continue;
+        }
+        collectSchemaRefs(mapEntry, currentBaseUri, refs, externalRefs);
+      }
+      continue;
+    }
+    collectSchemaRefs(child, currentBaseUri, refs, externalRefs);
+  }
+  return { refs, externalRefs };
+}
+
+interface ScopeFrame {
+  baseUri: string;
+  pointer: string;
+  trackRefAliases: boolean;
+}
+
+interface NormalizationContext {
+  allRefs: Set<string>;
+  externalRefs: ReadonlySet<string>;
+  refRewrites: Map<string, string>;
+  visitedNodeCount: number;
+  budgetExceeded: boolean;
+}
+
+const MAX_NORMALIZED_SCHEMA_NODES = 10_000;
+
+function enterNodeScopeStack(
+  scopeStack: ReadonlyArray<ScopeFrame>,
+  node: Record<string, unknown>,
+  trackRefAliases = true,
+): ReadonlyArray<ScopeFrame> {
+  if (scopeStack.length === 0) {
+    return scopeStack;
+  }
+  const activeScope = scopeStack[scopeStack.length - 1];
+  const newId = hasNewIdScope(node);
+  const resolvedUri = newId
+    ? resolveScopeUri(activeScope.baseUri, newId)
+    : activeScope.baseUri;
+  if (resolvedUri === activeScope.baseUri) {
+    if (activeScope.trackRefAliases === trackRefAliases) {
+      return scopeStack;
+    }
+    return scopeStack.map((frame) => ({
+      ...frame,
+      trackRefAliases: frame.trackRefAliases && trackRefAliases,
+    }));
+  }
+  const filtered = scopeStack
+    .filter((frame) => frame.baseUri !== resolvedUri)
+    .map((frame) => ({
+      ...frame,
+      trackRefAliases: frame.trackRefAliases && trackRefAliases,
+    }));
+  return [...filtered, { baseUri: resolvedUri, pointer: "", trackRefAliases }];
+}
+
+function appendSegmentToScopeStack(
+  scopeStack: ReadonlyArray<ScopeFrame>,
+  encodedSegment: string,
+  trackRefAliases = true,
+): ReadonlyArray<ScopeFrame> {
+  return scopeStack.map((frame) => ({
+    baseUri: frame.baseUri,
+    pointer: `${frame.pointer}/${encodedSegment}`,
+    trackRefAliases: frame.trackRefAliases && trackRefAliases,
+  }));
+}
+
+function hasReferenceToPointer(
+  allRefs: ReadonlySet<string>,
+  scopedTargetPointer: string,
+): boolean {
+  for (const ref of allRefs) {
+    if (
+      ref === scopedTargetPointer ||
+      ref.startsWith(`${scopedTargetPointer}/`)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasReferenceToRelativeSuffix(
+  allRefs: ReadonlySet<string>,
+  scopeStack: ReadonlyArray<ScopeFrame>,
+  relativeSuffix: string,
+): boolean {
+  if (allRefs.size === 0) {
+    return false;
+  }
+  return scopeStack.some(
+    (frame) =>
+      frame.trackRefAliases &&
+      hasReferenceToPointer(
+        allRefs,
+        `${frame.baseUri}#${frame.pointer}${relativeSuffix}`,
+      ),
+  );
+}
+
+function hasReferencedResourceInSubtree(
+  externalRefs: ReadonlySet<string>,
+  baseUri: string,
+  node: unknown,
+): boolean {
+  if (externalRefs.size === 0) {
+    return false;
+  }
+  if (Array.isArray(node)) {
+    return node.some((item) =>
+      hasReferencedResourceInSubtree(externalRefs, baseUri, item),
+    );
+  }
+  if (!isPlainRecord(node)) {
+    return false;
+  }
+  const newId = hasNewIdScope(node);
+  const currentBaseUri = newId ? resolveScopeUri(baseUri, newId) : baseUri;
+  if (newId) {
+    const resourceRootPrefix = `${currentBaseUri}#`;
+    for (const ref of externalRefs) {
+      if (ref.startsWith(resourceRootPrefix)) {
+        return true;
+      }
+    }
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (LITERAL_SCHEMA_FIELDS.has(key)) {
+      continue;
+    }
+    if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(child)) {
+      for (const mapEntry of Object.values(child)) {
+        if (key === "dependencies" && Array.isArray(mapEntry)) {
+          continue;
+        }
+        if (
+          hasReferencedResourceInSubtree(externalRefs, currentBaseUri, mapEntry)
+        ) {
+          return true;
+        }
+      }
+      continue;
+    }
+    if (hasReferencedResourceInSubtree(externalRefs, currentBaseUri, child)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function formatRefRelativeToScope(
+  enclosingBaseUri: string,
+  targetBaseUri: string,
+  fragment: string,
+): string {
+  if (targetBaseUri === enclosingBaseUri) {
+    return `#${fragment}`;
+  }
+  if (!targetBaseUri.startsWith(SYNTHETIC_ORIGIN)) {
+    return fragment ? `${targetBaseUri}#${fragment}` : targetBaseUri;
+  }
+  try {
+    const enclosingUrl = new URL(enclosingBaseUri);
+    const targetUrl = new URL(targetBaseUri);
+    if (
+      enclosingUrl.origin === SYNTHETIC_ORIGIN &&
+      targetUrl.origin === SYNTHETIC_ORIGIN
+    ) {
+      const baseSegments = enclosingUrl.pathname.slice(1).split("/");
+      baseSegments.pop();
+      const targetSegments = targetUrl.pathname.slice(1).split("/");
+      const maxCommon = Math.min(
+        baseSegments.length,
+        Math.max(0, targetSegments.length - 1),
+      );
+      let commonLen = 0;
+      while (
+        commonLen < maxCommon &&
+        baseSegments[commonLen] === targetSegments[commonLen]
+      ) {
+        commonLen++;
+      }
+      const upSegments = Array<string>(baseSegments.length - commonLen).fill(
+        "..",
+      );
+      const relSegments = [...upSegments, ...targetSegments.slice(commonLen)];
+      let relPath = relSegments.join("/");
+      if (relPath === "") {
+        relPath = "./";
+      } else if ((relSegments[0] ?? "").includes(":")) {
+        relPath = `./${relPath}`;
+      }
+      const uriPart = `${relPath}${targetUrl.search}`;
+      return fragment ? `${uriPart}#${fragment}` : uriPart;
+    }
+  } catch {
+    // Fallback below
+  }
+  const strippedSynthetic = targetBaseUri.startsWith(ROOT_BASE_URI)
+    ? targetBaseUri.slice(ROOT_BASE_URI.length)
+    : targetBaseUri;
+  return fragment ? `${strippedSynthetic}#${fragment}` : strippedSynthetic;
+}
+
+function rebaseStrippedResourceRefs(
+  node: unknown,
+  enclosingBaseUri: string,
+  hoistedPointer: string,
+  plannedNewRefs: Set<string>,
+  relPointer = "",
+  currentSourceBaseUri = enclosingBaseUri,
+  strippedScopeRoot?: { sourceBaseUri: string; hoistedScopePointer: string },
+): unknown {
+  if (Array.isArray(node)) {
+    return node.map((item, idx) =>
+      rebaseStrippedResourceRefs(
+        item,
+        enclosingBaseUri,
+        hoistedPointer,
+        plannedNewRefs,
+        `${relPointer}/${idx}`,
+        currentSourceBaseUri,
+        strippedScopeRoot,
+      ),
+    );
+  }
+  if (!isPlainRecord(node)) {
+    return node;
+  }
+  const newId = hasNewIdScope(node);
+  const nextSourceBaseUri = newId
+    ? resolveScopeUri(currentSourceBaseUri, newId)
+    : currentSourceBaseUri;
+  const nextStrippedScopeRoot =
+    newId && nextSourceBaseUri !== currentSourceBaseUri
+      ? {
+          sourceBaseUri: nextSourceBaseUri,
+          hoistedScopePointer: `${hoistedPointer}${relPointer}`,
+        }
+      : strippedScopeRoot;
+
+  const next: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(node)) {
+    if (
+      (key === "$id" || key === "id") &&
+      typeof val === "string" &&
+      val.trim().length > 0
+    ) {
+      continue;
+    }
+    if (key === "$anchor" || key === "$dynamicAnchor") {
+      continue;
+    }
+    if ((key === "$ref" || key === "$dynamicRef") && typeof val === "string") {
+      let rebasedRef = val;
+      if (nextStrippedScopeRoot) {
+        const resolved = resolveScopedRef(
+          nextStrippedScopeRoot.sourceBaseUri,
+          val,
+        );
+        if (resolved.targetBaseUri === nextStrippedScopeRoot.sourceBaseUri) {
+          if (resolved.fragment === "" || resolved.fragment.startsWith("/")) {
+            const newFragment = `${nextStrippedScopeRoot.hoistedScopePointer}${resolved.fragment}`;
+            rebasedRef = `#${newFragment}`;
+            plannedNewRefs.add(`${enclosingBaseUri}#${newFragment}`);
+          } else {
+            rebasedRef = formatRefRelativeToScope(
+              enclosingBaseUri,
+              nextStrippedScopeRoot.sourceBaseUri,
+              resolved.fragment,
+            );
+          }
+        } else if (!val.trim().startsWith("#")) {
+          rebasedRef = formatRefRelativeToScope(
+            enclosingBaseUri,
+            resolved.targetBaseUri,
+            resolved.fragment,
+          );
+        }
+      }
+      setOwnField(next, key, rebasedRef);
+      continue;
+    }
+    if (LITERAL_SCHEMA_FIELDS.has(key)) {
+      setOwnField(next, key, val);
+    } else if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(val)) {
+      const nextMap: Record<string, unknown> = {};
+      const keySeg = encodeJsonPointerSegment(key);
+      for (const [propName, propSchema] of Object.entries(val)) {
+        if (key === "dependencies" && Array.isArray(propSchema)) {
+          setOwnField(nextMap, propName, propSchema);
+        } else {
+          const propSeg = encodeJsonPointerSegment(propName);
+          setOwnField(
+            nextMap,
+            propName,
+            rebaseStrippedResourceRefs(
+              propSchema,
+              enclosingBaseUri,
+              hoistedPointer,
+              plannedNewRefs,
+              `${relPointer}/${keySeg}/${propSeg}`,
+              nextSourceBaseUri,
+              nextStrippedScopeRoot,
+            ),
+          );
+        }
+      }
+      setOwnField(next, key, nextMap);
+    } else {
+      const keySeg = encodeJsonPointerSegment(key);
+      setOwnField(
+        next,
+        key,
+        rebaseStrippedResourceRefs(
+          val,
+          enclosingBaseUri,
+          hoistedPointer,
+          plannedNewRefs,
+          `${relPointer}/${keySeg}`,
+          nextSourceBaseUri,
+          nextStrippedScopeRoot,
+        ),
+      );
+    }
+  }
+  return next;
+}
+
+function extractAnchorNames(
+  node: Record<string, unknown>,
+  baseUri?: string,
+): string[] {
+  const anchors: string[] = [];
+  for (const anchorKey of ["$anchor", "$dynamicAnchor"] as const) {
+    const anchorVal = node[anchorKey];
+    if (typeof anchorVal === "string" && anchorVal.trim().length > 0) {
+      anchors.push(canonicalizeFragment(anchorVal.trim()));
+    }
+  }
+  for (const idKey of ["$id", "id"] as const) {
+    const idVal = node[idKey];
+    if (typeof idVal === "string") {
+      const trimmed = idVal.trim();
+      if (trimmed.startsWith("#") && trimmed.length > 1) {
+        anchors.push(canonicalizeFragment(trimmed.slice(1)));
+      } else {
+        const hashIdx = trimmed.indexOf("#");
+        if (hashIdx > 0 && hashIdx < trimmed.length - 1) {
+          const fragmentPart = trimmed.slice(hashIdx + 1);
+          if (
+            !fragmentPart.startsWith("/") &&
+            (baseUri === undefined ||
+              resolveScopeUri(baseUri, trimmed) === baseUri)
+          ) {
+            anchors.push(canonicalizeFragment(fragmentPart));
+          }
+        }
+      }
+    }
+  }
+  return anchors;
+}
+
+function hasReferencedAnchorInScope(
+  allRefs: ReadonlySet<string>,
+  baseUri: string,
+  node: unknown,
+): boolean {
+  if (allRefs.size === 0) {
+    return false;
+  }
+  if (Array.isArray(node)) {
+    return node.some((item) =>
+      hasReferencedAnchorInScope(allRefs, baseUri, item),
+    );
+  }
+  if (!isPlainRecord(node)) {
+    return false;
+  }
+  const newId = hasNewIdScope(node);
+  if (newId && resolveScopeUri(baseUri, newId) !== baseUri) {
+    return false;
+  }
+  for (const canonicalAnchor of extractAnchorNames(node, baseUri)) {
+    if (allRefs.has(`${baseUri}#${canonicalAnchor}`)) {
+      return true;
+    }
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (LITERAL_SCHEMA_FIELDS.has(key)) {
+      continue;
+    }
+    if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(child)) {
+      for (const mapEntry of Object.values(child)) {
+        if (key === "dependencies" && Array.isArray(mapEntry)) {
+          continue;
+        }
+        if (hasReferencedAnchorInScope(allRefs, baseUri, mapEntry)) {
+          return true;
+        }
+      }
+      continue;
+    }
+    if (hasReferencedAnchorInScope(allRefs, baseUri, child)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasAnyIdentifierInSubtree(node: unknown): boolean {
+  if (Array.isArray(node)) {
+    return node.some((item) => hasAnyIdentifierInSubtree(item));
+  }
+  if (!isPlainRecord(node)) {
+    return false;
+  }
+  if (hasNewIdScope(node) || extractAnchorNames(node).length > 0) {
+    return true;
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (LITERAL_SCHEMA_FIELDS.has(key)) {
+      continue;
+    }
+    if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(child)) {
+      for (const mapEntry of Object.values(child)) {
+        if (key === "dependencies" && Array.isArray(mapEntry)) {
+          continue;
+        }
+        if (hasAnyIdentifierInSubtree(mapEntry)) {
+          return true;
+        }
+      }
+      continue;
+    }
+    if (hasAnyIdentifierInSubtree(child)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasAnyRefInSubtree(node: unknown): boolean {
+  if (Array.isArray(node)) {
+    return node.some((item) => hasAnyRefInSubtree(item));
+  }
+  if (!isPlainRecord(node)) {
+    return false;
+  }
+  if (typeof node.$ref === "string" || typeof node.$dynamicRef === "string") {
+    return true;
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (LITERAL_SCHEMA_FIELDS.has(key)) {
+      continue;
+    }
+    if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(child)) {
+      for (const mapEntry of Object.values(child)) {
+        if (key === "dependencies" && Array.isArray(mapEntry)) {
+          continue;
+        }
+        if (hasAnyRefInSubtree(mapEntry)) {
+          return true;
+        }
+      }
+      continue;
+    }
+    if (hasAnyRefInSubtree(child)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasAnyMultiBranchUnionInSubtree(node: unknown): boolean {
+  if (Array.isArray(node)) {
+    return node.some((item) => hasAnyMultiBranchUnionInSubtree(item));
+  }
+  if (!isPlainRecord(node)) {
+    return false;
+  }
+  if (
+    (Array.isArray(node.anyOf) && node.anyOf.length > 1) ||
+    (Array.isArray(node.oneOf) && node.oneOf.length > 1)
+  ) {
+    return true;
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (LITERAL_SCHEMA_FIELDS.has(key)) {
+      continue;
+    }
+    if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(child)) {
+      for (const mapEntry of Object.values(child)) {
+        if (key === "dependencies" && Array.isArray(mapEntry)) {
+          continue;
+        }
+        if (hasAnyMultiBranchUnionInSubtree(mapEntry)) {
+          return true;
+        }
+      }
+      continue;
+    }
+    if (hasAnyMultiBranchUnionInSubtree(child)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function rewriteRefString(
+  ref: string,
+  baseUri: string,
+  refRewrites: ReadonlyMap<string, string>,
+): string {
+  const resolved = resolveScopedRef(baseUri, ref);
+  let currentScoped = resolved.scopedKey;
+  const sortedEntries = [...refRewrites.entries()].sort(
+    (a, b) => b[0].length - a[0].length,
+  );
+  let anyRewritten = false;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [fromPrefix, toPrefix] of sortedEntries) {
+      if (currentScoped === fromPrefix) {
+        currentScoped = toPrefix;
+        changed = true;
+        anyRewritten = true;
+      } else if (currentScoped.startsWith(`${fromPrefix}/`)) {
+        currentScoped = `${toPrefix}${currentScoped.slice(fromPrefix.length)}`;
+        changed = true;
+        anyRewritten = true;
+      }
+    }
+  }
+  if (!anyRewritten) {
+    return ref;
+  }
+  const hashIdx = currentScoped.indexOf("#");
+  const newFragment = hashIdx >= 0 ? currentScoped.slice(hashIdx + 1) : "";
+  const origHashIdx = ref.indexOf("#");
+  const origUriPart = origHashIdx >= 0 ? ref.slice(0, origHashIdx) : ref;
+  return `${origUriPart}#${newFragment}`;
+}
+
+function applyRefRewrites(
+  node: unknown,
+  refRewrites: ReadonlyMap<string, string>,
+  baseUri = ROOT_BASE_URI,
+): unknown {
+  if (refRewrites.size === 0) {
+    return node;
+  }
+  if (Array.isArray(node)) {
+    return node.map((item) => applyRefRewrites(item, refRewrites, baseUri));
+  }
+  if (!isPlainRecord(node)) {
+    return node;
+  }
+  const newId = hasNewIdScope(node);
+  const currentBaseUri = newId ? resolveScopeUri(baseUri, newId) : baseUri;
+  const next: Record<string, unknown> = { ...node };
+  for (const [key, val] of Object.entries(node)) {
+    if ((key === "$ref" || key === "$dynamicRef") && typeof val === "string") {
+      setOwnField(
+        next,
+        key,
+        rewriteRefString(val, currentBaseUri, refRewrites),
+      );
+    } else if (LITERAL_SCHEMA_FIELDS.has(key)) {
+      setOwnField(next, key, val);
+    } else if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(val)) {
+      const nextMap: Record<string, unknown> = { ...val };
+      for (const [propName, propSchema] of Object.entries(val)) {
+        if (key === "dependencies" && Array.isArray(propSchema)) {
+          setOwnField(nextMap, propName, propSchema);
+        } else {
+          setOwnField(
+            nextMap,
+            propName,
+            applyRefRewrites(propSchema, refRewrites, currentBaseUri),
+          );
+        }
+      }
+      setOwnField(next, key, nextMap);
+    } else {
+      setOwnField(
+        next,
+        key,
+        applyRefRewrites(val, refRewrites, currentBaseUri),
+      );
+    }
+  }
+  return next;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  if (isPlainRecord(value)) {
+    const entries = Object.keys(value)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function mergePropertyMaps(
+  parentMap: Record<string, unknown>,
+  branchMap: Record<string, unknown>,
+  hasParentAdditionalProps = false,
+  parentAdditionalProps?: unknown,
+  hasBranchAdditionalProps = false,
+  branchAdditionalProps?: unknown,
+  parentMapScopeStack: ReadonlyArray<ScopeFrame> = [],
+  branchMapScopeStack: ReadonlyArray<ScopeFrame> = [],
+  ctx?: NormalizationContext,
+  onPropertyRelocated?: (
+    pathSegments: ReadonlyArray<string>,
+    relocated: Record<string, unknown>,
+  ) => void,
+  resolveParentKeyScope?: (
+    key: string,
+    parentVal: unknown,
+  ) => ReadonlyArray<ScopeFrame>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...parentMap, ...branchMap };
+  for (const [key, parentVal] of Object.entries(parentMap)) {
+    const encodedKey = encodeJsonPointerSegment(key);
+    const getParentKeyScope = () =>
+      resolveParentKeyScope
+        ? resolveParentKeyScope(key, parentVal)
+        : isPlainRecord(parentVal)
+          ? enterNodeScopeStack(
+              appendSegmentToScopeStack(parentMapScopeStack, encodedKey),
+              parentVal,
+            )
+          : appendSegmentToScopeStack(parentMapScopeStack, encodedKey);
+    if (Object.hasOwn(branchMap, key)) {
+      const parentKeyScope = getParentKeyScope();
+      const branchVal = branchMap[key];
+      const branchKeyScope = isPlainRecord(branchVal)
+        ? enterNodeScopeStack(
+            appendSegmentToScopeStack(branchMapScopeStack, encodedKey),
+            branchVal,
+          )
+        : appendSegmentToScopeStack(branchMapScopeStack, encodedKey);
+      const mergedVal = mergeSchemaNodes(
+        parentVal,
+        branchVal,
+        parentKeyScope,
+        branchKeyScope,
+        ctx,
+        (subPath, relocated) =>
+          onPropertyRelocated?.([key, ...subPath], relocated),
+      );
+      setOwnField(result, key, mergedVal);
+      if (ctx?.budgetExceeded) {
+        return result;
+      }
+    } else if (hasBranchAdditionalProps) {
+      const parentKeyScope = getParentKeyScope();
+      const branchAddScope = isPlainRecord(branchAdditionalProps)
+        ? enterNodeScopeStack(branchMapScopeStack, branchAdditionalProps)
+        : branchMapScopeStack;
+      const mergedVal = mergeSchemaNodes(
+        parentVal,
+        branchAdditionalProps,
+        parentKeyScope,
+        branchAddScope,
+        ctx,
+        (subPath, relocated) =>
+          onPropertyRelocated?.([key, ...subPath], relocated),
+      );
+      setOwnField(result, key, mergedVal);
+      if (ctx?.budgetExceeded) {
+        return result;
+      }
+    } else {
+      setOwnField(result, key, parentVal);
+    }
+  }
+  for (const [key, branchVal] of Object.entries(branchMap)) {
+    if (Object.hasOwn(parentMap, key)) {
+      continue;
+    }
+    if (hasParentAdditionalProps) {
+      const encodedKey = encodeJsonPointerSegment(key);
+      const parentAddScope = isPlainRecord(parentAdditionalProps)
+        ? enterNodeScopeStack(parentMapScopeStack, parentAdditionalProps)
+        : parentMapScopeStack;
+      const branchKeyScope = isPlainRecord(branchVal)
+        ? enterNodeScopeStack(
+            appendSegmentToScopeStack(branchMapScopeStack, encodedKey),
+            branchVal,
+          )
+        : appendSegmentToScopeStack(branchMapScopeStack, encodedKey);
+      const mergedVal = mergeSchemaNodes(
+        parentAdditionalProps,
+        branchVal,
+        parentAddScope,
+        branchKeyScope,
+        ctx,
+        (subPath, relocated) =>
+          onPropertyRelocated?.([key, ...subPath], relocated),
+      );
+      setOwnField(result, key, mergedVal);
+      if (ctx?.budgetExceeded) {
+        return result;
+      }
+    } else {
+      setOwnField(result, key, branchVal);
+    }
+  }
+  return result;
+}
+
+function mergeSchemaNodes(
+  parentNode: unknown,
+  branchNode: unknown,
+  parentScopeStack: ReadonlyArray<ScopeFrame> = [],
+  branchScopeStack: ReadonlyArray<ScopeFrame> = [],
+  ctx?: NormalizationContext,
+  onRelocated?: (
+    pathSegments: ReadonlyArray<string>,
+    relocated: Record<string, unknown>,
+  ) => void,
+): unknown {
+  if (parentNode === false || branchNode === false) {
+    return false;
+  }
+  if (parentNode === true) {
+    return branchNode;
+  }
+  if (branchNode === true) {
+    return parentNode;
+  }
+  if (!isPlainRecord(parentNode) || !isPlainRecord(branchNode)) {
+    return { allOf: [parentNode, branchNode] };
+  }
+  if (Object.keys(parentNode).length === 0) {
+    return branchNode;
+  }
+  if (Object.keys(branchNode).length === 0) {
+    return parentNode;
+  }
+  if (stableStringify(parentNode) === stableStringify(branchNode)) {
+    return parentNode;
+  }
+  if (ctx) {
+    ctx.visitedNodeCount += 1;
+    if (ctx.visitedNodeCount > MAX_NORMALIZED_SCHEMA_NODES) {
+      ctx.budgetExceeded = true;
+      return parentNode;
+    }
+  }
+  if (
+    SCOPE_SENSITIVE_MERGE_KEYWORDS.some(
+      (kw) => Object.hasOwn(parentNode, kw) || Object.hasOwn(branchNode, kw),
+    ) ||
+    typeof parentNode.exclusiveMinimum === "boolean" ||
+    typeof branchNode.exclusiveMinimum === "boolean" ||
+    typeof parentNode.exclusiveMaximum === "boolean" ||
+    typeof branchNode.exclusiveMaximum === "boolean"
+  ) {
+    return { allOf: [parentNode, branchNode] };
+  }
+
+  const merged: Record<string, unknown> = { ...parentNode };
+  for (const [key, branchVal] of Object.entries(branchNode)) {
+    if (!Object.hasOwn(merged, key)) {
+      setOwnField(merged, key, branchVal);
+      continue;
+    }
+    const parentVal = merged[key];
+    if (stableStringify(parentVal) === stableStringify(branchVal)) {
+      continue;
+    }
+    if (key === "type") {
+      const parentTypes = extractTypeList(parentVal);
+      const branchTypes = extractTypeList(branchVal);
+      if (parentTypes && branchTypes) {
+        const common = intersectTypeLists(parentTypes, branchTypes);
+        if (common.length === 0) {
+          return false;
+        }
+        setOwnField(merged, key, common.length === 1 ? common[0] : common);
+        continue;
+      }
+    } else if (
+      (key === "properties" || key === "patternProperties") &&
+      isPlainRecord(parentVal) &&
+      isPlainRecord(branchVal)
+    ) {
+      const encodedMapKey = encodeJsonPointerSegment(key);
+      const parentMapScope = appendSegmentToScopeStack(
+        parentScopeStack,
+        encodedMapKey,
+      );
+      const branchMapScope = appendSegmentToScopeStack(
+        branchScopeStack,
+        encodedMapKey,
+      );
+      setOwnField(
+        merged,
+        key,
+        mergePropertyMaps(
+          parentVal,
+          branchVal,
+          false,
+          undefined,
+          false,
+          undefined,
+          parentMapScope,
+          branchMapScope,
+          ctx,
+          (subPath, relocated) => onRelocated?.([key, ...subPath], relocated),
+        ),
+      );
+      if (ctx?.budgetExceeded) {
+        return parentNode;
+      }
+      continue;
+    } else if (
+      key === "required" &&
+      Array.isArray(parentVal) &&
+      Array.isArray(branchVal)
+    ) {
+      setOwnField(merged, key, [
+        ...new Set(
+          [...parentVal, ...branchVal].filter(
+            (k): k is string => typeof k === "string",
+          ),
+        ),
+      ]);
+      continue;
+    } else if (
+      key === "enum" &&
+      Array.isArray(parentVal) &&
+      Array.isArray(branchVal)
+    ) {
+      const allowed = new Set(branchVal.map(stableStringify));
+      const commonEnum = parentVal.filter((item) =>
+        allowed.has(stableStringify(item)),
+      );
+      if (commonEnum.length === 0) {
+        return false;
+      }
+      setOwnField(merged, key, commonEnum);
+      continue;
+    } else if (
+      (key === "minLength" ||
+        key === "minimum" ||
+        key === "exclusiveMinimum" ||
+        key === "minItems" ||
+        key === "minProperties") &&
+      typeof parentVal === "number" &&
+      typeof branchVal === "number"
+    ) {
+      setOwnField(merged, key, Math.max(parentVal, branchVal));
+      continue;
+    } else if (
+      (key === "maxLength" ||
+        key === "maximum" ||
+        key === "exclusiveMaximum" ||
+        key === "maxItems" ||
+        key === "maxProperties") &&
+      typeof parentVal === "number" &&
+      typeof branchVal === "number"
+    ) {
+      setOwnField(merged, key, Math.min(parentVal, branchVal));
+      continue;
+    } else if (
+      key === "items" &&
+      !Array.isArray(parentVal) &&
+      !Array.isArray(branchVal)
+    ) {
+      const parentItemsScope = appendSegmentToScopeStack(
+        parentScopeStack,
+        "items",
+      );
+      const branchItemsScope = appendSegmentToScopeStack(
+        branchScopeStack,
+        "items",
+      );
+      setOwnField(
+        merged,
+        key,
+        mergeSchemaNodes(
+          parentVal,
+          branchVal,
+          parentItemsScope,
+          branchItemsScope,
+          ctx,
+          (subPath, relocated) =>
+            onRelocated?.(["items", ...subPath], relocated),
+        ),
+      );
+      if (ctx?.budgetExceeded) {
+        return parentNode;
+      }
+      continue;
+    } else if (key === "description" || key === "title" || key === "default") {
+      setOwnField(merged, key, branchVal);
+      continue;
+    }
+    return { allOf: [parentNode, branchNode] };
+  }
+  const relocated = relocateArrayLevelEnum(
+    merged,
+    [...parentScopeStack, ...branchScopeStack],
+    ctx ? ctx.allRefs : new Set(),
+    ctx ? ctx.refRewrites : new Map(),
+  );
+  if (relocated) {
+    onRelocated?.([], relocated);
+    return relocated;
+  }
+  return merged;
+}
+
+/**
+ * Copilot Gemini accepts `{ anyOf: [...] }` / `{ oneOf: [...] }`, but rejects
+ * any schema node that combines `anyOf` / `oneOf` with sibling `type`,
+ * `properties`, or `required` keywords on the same object (for example
+ * Microsoft 365 WorkIQ MCP `retrieve.parameters.properties.capabilities.items`).
+ * Push parent `type` and object constraints down into each compatible branch
+ * without flattening the union.
+ */
+function distributeUnionSiblingKeywords(
+  node: Record<string, unknown>,
+  scopeStack: ReadonlyArray<ScopeFrame>,
+  ctx: NormalizationContext,
+): Record<string, unknown> | null {
+  const { allRefs, externalRefs, refRewrites } = ctx;
+  const unionKey = Array.isArray(node.anyOf)
+    ? "anyOf"
+    : Array.isArray(node.oneOf)
+      ? "oneOf"
+      : null;
+  if (!unionKey) {
+    return null;
+  }
+  if (
+    !Object.hasOwn(node, "type") &&
+    !Object.hasOwn(node, "properties") &&
+    !Object.hasOwn(node, "required")
+  ) {
+    return null;
+  }
+
+  const activeScope = scopeStack[scopeStack.length - 1];
+  const baseUri = activeScope.baseUri;
+  const pointer = activeScope.pointer;
+
+  const rawBranches = node[unionKey] as unknown[];
+  const parentTypes = extractTypeList(node.type);
+
+  const rawParentProps = isPlainRecord(node.properties)
+    ? node.properties
+    : undefined;
+  const rawParentPatternProps = isPlainRecord(node.patternProperties)
+    ? node.patternProperties
+    : undefined;
+  const parentRequired = Array.isArray(node.required)
+    ? node.required.filter((k): k is string => typeof k === "string")
+    : [];
+  const hasParentAdditionalProps = Object.hasOwn(node, "additionalProperties");
+  const hasNonEmptyParentPatternProps = Boolean(
+    rawParentPatternProps && Object.keys(rawParentPatternProps).length > 0,
+  );
+
+  let nextDefs: Record<string, unknown> | undefined = isPlainRecord(node.$defs)
+    ? { ...node.$defs }
+    : undefined;
+  const pendingPointerRewrites: Array<{
+    oldSuffix: string;
+    newSuffix: string;
+  }> = [];
+  const plannedNewRefs = new Set<string>();
+
+  const hasNonEmptyParentProps = Boolean(
+    rawParentProps && Object.keys(rawParentProps).length > 0,
+  );
+  let survivingBranchCount = 0;
+  const branchSurvives: boolean[] = [];
+  let parentPropsCopyCount = 0;
+  let parentPatternPropsCopyCount = 0;
+  let parentAdditionalPropsCopyCount = 0;
+  const branchDuplicatesIdentifiers = rawBranches.map((rawBranch) => {
+    if (rawBranch === false) {
+      branchSurvives.push(false);
+      return false;
+    }
+    const branchRecord =
+      rawBranch === true
+        ? {}
+        : isPlainRecord(rawBranch)
+          ? rawBranch
+          : undefined;
+    if (!branchRecord) {
+      branchSurvives.push(true);
+      survivingBranchCount += 1;
+      return false;
+    }
+    const branchHasDirectRef =
+      typeof branchRecord.$ref === "string" ||
+      typeof branchRecord.$dynamicRef === "string";
+    const branchHasNestedUnion =
+      Array.isArray(branchRecord.anyOf) || Array.isArray(branchRecord.oneOf);
+    const branchTypes = branchHasDirectRef
+      ? undefined
+      : extractTypeList(branchRecord.type);
+    let effectiveTypes: string[] | undefined;
+    if (parentTypes !== undefined) {
+      if (branchTypes !== undefined) {
+        effectiveTypes = intersectTypeLists(branchTypes, parentTypes);
+        if (effectiveTypes.length === 0) {
+          branchSurvives.push(false);
+          return false;
+        }
+      } else {
+        effectiveTypes = parentTypes;
+      }
+    } else {
+      effectiveTypes = branchTypes;
+    }
+    branchSurvives.push(true);
+    survivingBranchCount += 1;
+    const canMatchObject =
+      effectiveTypes === undefined || effectiveTypes.includes("object");
+    if (!canMatchObject) {
+      return false;
+    }
+    const branchNewId = hasNewIdScope(branchRecord);
+    const hasDifferentIdScope = Boolean(
+      branchNewId && resolveScopeUri(baseUri, branchNewId) !== baseUri,
+    );
+    const rawBranchProps = isPlainRecord(branchRecord.properties)
+      ? branchRecord.properties
+      : undefined;
+    const rawBranchPatternProps = isPlainRecord(branchRecord.patternProperties)
+      ? branchRecord.patternProperties
+      : undefined;
+    const hasNonEmptyBranchPatternProps = Boolean(
+      rawBranchPatternProps && Object.keys(rawBranchPatternProps).length > 0,
+    );
+    const hasBranchAdditionalProps = Object.hasOwn(
+      branchRecord,
+      "additionalProperties",
+    );
+    const hasBranchUnevaluatedProps = Object.hasOwn(
+      branchRecord,
+      "unevaluatedProperties",
+    );
+    if (hasDifferentIdScope || branchHasDirectRef || branchHasNestedUnion) {
+      parentPropsCopyCount += 1;
+      parentPatternPropsCopyCount += 1;
+      parentAdditionalPropsCopyCount += 1;
+      return false;
+    }
+    const isolateParentClosure =
+      hasParentAdditionalProps &&
+      (hasNonEmptyParentPatternProps || hasNonEmptyBranchPatternProps);
+    const isolateBranchClosure =
+      hasBranchAdditionalProps &&
+      (hasNonEmptyParentPatternProps || hasNonEmptyBranchPatternProps);
+    const isolateBranchUnevaluated =
+      hasBranchUnevaluatedProps &&
+      (hasNonEmptyParentProps ||
+        hasNonEmptyParentPatternProps ||
+        hasParentAdditionalProps);
+
+    parentPropsCopyCount += isolateParentClosure ? 2 : 1;
+    parentPatternPropsCopyCount += isolateParentClosure ? 2 : 1;
+    if (isolateParentClosure) {
+      parentAdditionalPropsCopyCount += 1;
+    } else {
+      const branchOnlyPropCount = rawBranchProps
+        ? Object.keys(rawBranchProps).filter(
+            (k) => !rawParentProps || !Object.hasOwn(rawParentProps, k),
+          ).length
+        : 0;
+      parentAdditionalPropsCopyCount += 1 + branchOnlyPropCount;
+    }
+
+    const parentOnlyPropCount = rawParentProps
+      ? Object.keys(rawParentProps).filter(
+          (k) => !rawBranchProps || !Object.hasOwn(rawBranchProps, k),
+        ).length
+      : 0;
+    return (
+      isolateBranchUnevaluated ||
+      isolateBranchClosure ||
+      (hasBranchAdditionalProps &&
+        !isolateBranchClosure &&
+        parentOnlyPropCount > 0)
+    );
+  });
+
+  if (survivingBranchCount === 0) {
+    return null;
+  }
+
+  const hoistedDefKeysBySuffix = new Map<string, string>();
+
+  const prepareTargetSchema = (
+    relativeSuffix: string,
+    baseName: string,
+    targetSchema: unknown,
+    willDuplicateTarget = false,
+    isDroppedBranch = false,
+  ): unknown => {
+    if (
+      isDroppedBranch &&
+      !(
+        allRefs.size > 0 &&
+        hasReferenceToRelativeSuffix(allRefs, scopeStack, relativeSuffix)
+      ) &&
+      !(
+        allRefs.size > 0 &&
+        hasReferencedAnchorInScope(allRefs, baseUri, targetSchema)
+      ) &&
+      !(
+        externalRefs.size > 0 &&
+        hasReferencedResourceInSubtree(externalRefs, baseUri, targetSchema)
+      )
+    ) {
+      return targetSchema;
+    }
+    const targetRelativeSegments = relativeSuffix
+      .split("/")
+      .filter((s) => s.length > 0);
+    let targetScopeStack = scopeStack;
+    for (const seg of targetRelativeSegments) {
+      targetScopeStack = appendSegmentToScopeStack(targetScopeStack, seg, true);
+    }
+    const normalizedTarget = normalizeSchemaNode(
+      targetSchema,
+      true,
+      targetScopeStack,
+      ctx,
+    ).value;
+    const isReferencedByPointer =
+      allRefs.size > 0 &&
+      hasReferenceToRelativeSuffix(allRefs, scopeStack, relativeSuffix);
+    const isReferencedByAnchor =
+      allRefs.size > 0 &&
+      hasReferencedAnchorInScope(allRefs, baseUri, targetSchema);
+    const isReferencedByResource =
+      externalRefs.size > 0 &&
+      hasReferencedResourceInSubtree(externalRefs, baseUri, targetSchema);
+    const isUnionSubschema =
+      hasAnyMultiBranchUnionInSubtree(targetSchema) ||
+      hasAnyMultiBranchUnionInSubtree(normalizedTarget);
+    const hasIdentifiers = hasAnyIdentifierInSubtree(targetSchema);
+    const shouldShareViaDefs =
+      activeScope.trackRefAliases &&
+      !relativeSuffix.startsWith(`/${unionKey}/`) &&
+      willDuplicateTarget &&
+      isUnionSubschema &&
+      !hasIdentifiers &&
+      !hasAnyRefInSubtree(targetSchema) &&
+      !hasAnyRefInSubtree(normalizedTarget);
+    const hasDistributedIdentifiers = willDuplicateTarget && hasIdentifiers;
+    if (
+      !isReferencedByPointer &&
+      !isReferencedByAnchor &&
+      !isReferencedByResource &&
+      !hasDistributedIdentifiers &&
+      !shouldShareViaDefs
+    ) {
+      return normalizedTarget;
+    }
+    if (!nextDefs) {
+      nextDefs = {};
+    }
+    let defKey = baseName;
+    let suffix = 1;
+    while (Object.hasOwn(nextDefs, defKey)) {
+      defKey = `${baseName}_${suffix++}`;
+    }
+    const newSuffix = `/$defs/${encodeJsonPointerSegment(defKey)}`;
+    const hoistedPointer = `${pointer}${newSuffix}`;
+    setOwnField(nextDefs, defKey, normalizedTarget);
+    hoistedDefKeysBySuffix.set(relativeSuffix, defKey);
+    pendingPointerRewrites.push({ oldSuffix: relativeSuffix, newSuffix });
+    if (shouldShareViaDefs) {
+      plannedNewRefs.add(`${baseUri}#${hoistedPointer}`);
+      return { $ref: `#${hoistedPointer}` };
+    }
+    if (!hasIdentifiers) {
+      return normalizedTarget;
+    }
+    const rewrittenNormalizedTarget = applyRefRewrites(
+      normalizedTarget,
+      refRewrites,
+      baseUri,
+    );
+    return rebaseStrippedResourceRefs(
+      rewrittenNormalizedTarget,
+      baseUri,
+      hoistedPointer,
+      plannedNewRefs,
+    );
+  };
+
+  const buildSubpathScopeStack = (
+    relativeSuffix: string,
+    targetNode?: unknown,
+  ): ReadonlyArray<ScopeFrame> => {
+    const segments = relativeSuffix.split("/").filter((s) => s.length > 0);
+    let resultStack = scopeStack;
+    for (const seg of segments) {
+      resultStack = appendSegmentToScopeStack(resultStack, seg, true);
+    }
+    const hoistedKey = hoistedDefKeysBySuffix.get(relativeSuffix);
+    if (hoistedKey !== undefined) {
+      const encodedDefKey = encodeJsonPointerSegment(hoistedKey);
+      const hoistedFrames = scopeStack.map((frame) => ({
+        baseUri: frame.baseUri,
+        pointer: `${frame.pointer}/$defs/${encodedDefKey}`,
+        trackRefAliases: frame.trackRefAliases,
+      }));
+      resultStack = [...resultStack, ...hoistedFrames];
+    }
+    if (isPlainRecord(targetNode)) {
+      resultStack = enterNodeScopeStack(resultStack, targetNode);
+    }
+    return resultStack;
+  };
+
+  const buildPropertyMapScopeStack = (
+    mapKey: "properties" | "patternProperties",
+  ): {
+    baseStack: ReadonlyArray<ScopeFrame>;
+    forProperty: (
+      propKey: string,
+      propVal: unknown,
+    ) => ReadonlyArray<ScopeFrame>;
+  } => {
+    const baseStack = appendSegmentToScopeStack(scopeStack, mapKey);
+    return {
+      baseStack,
+      forProperty: (propKey: string, propVal: unknown) => {
+        const encodedPropKey = encodeJsonPointerSegment(propKey);
+        const relativeSuffix = `/${mapKey}/${encodedPropKey}`;
+        return buildSubpathScopeStack(relativeSuffix, propVal);
+      },
+    };
+  };
+
+  const syncHoistedMapProperty = (
+    mapKey: "properties" | "patternProperties",
+    relativePropPath: ReadonlyArray<string>,
+    branchIdx: number,
+    relocated: Record<string, unknown>,
+  ): void => {
+    if (!nextDefs || relativePropPath.length === 0) {
+      return;
+    }
+    const topPropKey = relativePropPath[0];
+    const encodedTopPropKey = encodeJsonPointerSegment(topPropKey);
+    const applyRelocatedAtPath = (
+      rootRecord: Record<string, unknown>,
+      pathSegments: ReadonlyArray<string>,
+    ): Record<string, unknown> | null => {
+      if (pathSegments.length === 0) {
+        if (!Array.isArray(rootRecord.enum)) {
+          return null;
+        }
+        return relocateArrayLevelEnum(
+          {
+            ...rootRecord,
+            ...(relocated.type !== undefined ? { type: relocated.type } : {}),
+            ...(relocated.items !== undefined &&
+            !Object.hasOwn(rootRecord, "items")
+              ? { items: relocated.items }
+              : {}),
+          },
+          [],
+          new Set(),
+          new Map(),
+        );
+      }
+      const [head, ...tail] = pathSegments;
+      const child = rootRecord[head];
+      if (!isPlainRecord(child)) {
+        return null;
+      }
+      const updatedChild = applyRelocatedAtPath(child, tail);
+      if (!updatedChild) {
+        return null;
+      }
+      const nextRecord = { ...rootRecord };
+      setOwnField(nextRecord, head, updatedChild);
+      return nextRecord;
+    };
+
+    const parentDefKey = hoistedDefKeysBySuffix.get(
+      `/${mapKey}/${encodedTopPropKey}`,
+    );
+    if (parentDefKey !== undefined && isPlainRecord(nextDefs[parentDefKey])) {
+      const updatedParent = applyRelocatedAtPath(
+        nextDefs[parentDefKey],
+        relativePropPath.slice(1),
+      );
+      if (updatedParent) {
+        setOwnField(nextDefs, parentDefKey, updatedParent);
+      }
+    }
+    const branchDefKey = hoistedDefKeysBySuffix.get(
+      `/${unionKey}/${branchIdx}`,
+    );
+    if (branchDefKey !== undefined && isPlainRecord(nextDefs[branchDefKey])) {
+      const updatedBranch = applyRelocatedAtPath(nextDefs[branchDefKey], [
+        mapKey,
+        ...relativePropPath,
+      ]);
+      if (updatedBranch) {
+        setOwnField(nextDefs, branchDefKey, updatedBranch);
+      }
+    }
+  };
+
+  const preparedBranches = rawBranches.map((rawBranch, branchIdx) => {
+    const relativeSuffix = `/${unionKey}/${branchIdx}`;
+    return prepareTargetSchema(
+      relativeSuffix,
+      `${unionKey}_${branchIdx}`,
+      rawBranch,
+      branchDuplicatesIdentifiers[branchIdx],
+      !branchSurvives[branchIdx],
+    );
+  });
+  if (ctx.budgetExceeded) {
+    return null;
+  }
+
+  let parentProps = rawParentProps;
+  if (rawParentProps) {
+    const cleanedProps: Record<string, unknown> = {};
+    for (const [propKey, propSchema] of Object.entries(rawParentProps)) {
+      const encodedPropKey = encodeJsonPointerSegment(propKey);
+      const relativeSuffix = `/properties/${encodedPropKey}`;
+      const preparedProp = prepareTargetSchema(
+        relativeSuffix,
+        propKey,
+        propSchema,
+        parentPropsCopyCount > 1,
+      );
+      if (ctx.budgetExceeded) {
+        return null;
+      }
+      setOwnField(cleanedProps, propKey, preparedProp);
+    }
+    parentProps = cleanedProps;
+  }
+
+  let parentPatternProps = rawParentPatternProps;
+  if (rawParentPatternProps) {
+    const cleanedPatternProps: Record<string, unknown> = {};
+    for (const [propKey, propSchema] of Object.entries(rawParentPatternProps)) {
+      const encodedPropKey = encodeJsonPointerSegment(propKey);
+      const relativeSuffix = `/patternProperties/${encodedPropKey}`;
+      const preparedPatternProp = prepareTargetSchema(
+        relativeSuffix,
+        propKey,
+        propSchema,
+        parentPatternPropsCopyCount > 1,
+      );
+      if (ctx.budgetExceeded) {
+        return null;
+      }
+      setOwnField(cleanedPatternProps, propKey, preparedPatternProp);
+    }
+    parentPatternProps = cleanedPatternProps;
+  }
+
+  let parentAdditionalProps = node.additionalProperties;
+  if (hasParentAdditionalProps) {
+    parentAdditionalProps = prepareTargetSchema(
+      "/additionalProperties",
+      "additionalProperties",
+      node.additionalProperties,
+      parentAdditionalPropsCopyCount > 1,
+    );
+    if (ctx.budgetExceeded) {
+      return null;
+    }
+  }
+
+  const parentPropsScope = buildPropertyMapScopeStack("properties");
+  const parentPatternPropsScope =
+    buildPropertyMapScopeStack("patternProperties");
+  const parentAdditionalPropsScopeStack = buildSubpathScopeStack(
+    "/additionalProperties",
+    parentAdditionalProps,
+  );
+
+  const branches: unknown[] = [];
+  for (let branchIdx = 0; branchIdx < rawBranches.length; branchIdx++) {
+    const rawBranch = rawBranches[branchIdx];
+    if (rawBranch === false) {
+      continue;
+    }
+    const branchRecord =
+      rawBranch === true
+        ? {}
+        : isPlainRecord(rawBranch)
+          ? rawBranch
+          : undefined;
+    if (!branchRecord) {
+      branches.push(rawBranch);
+      continue;
+    }
+
+    const branchHasDirectRef =
+      typeof branchRecord.$ref === "string" ||
+      typeof branchRecord.$dynamicRef === "string";
+    const branchTypes = branchHasDirectRef
+      ? undefined
+      : extractTypeList(branchRecord.type);
+    let effectiveTypes: string[] | undefined;
+    if (parentTypes !== undefined) {
+      if (branchTypes !== undefined) {
+        effectiveTypes = intersectTypeLists(branchTypes, parentTypes);
+        if (effectiveTypes.length === 0) {
+          continue;
+        }
+      } else {
+        effectiveTypes = parentTypes;
+      }
+    } else {
+      effectiveTypes = branchTypes;
+    }
+
+    const branchNewId = hasNewIdScope(branchRecord);
+    const hasDifferentIdScope = Boolean(
+      branchNewId && resolveScopeUri(baseUri, branchNewId) !== baseUri,
+    );
+
+    const preparedBranch = preparedBranches[branchIdx];
+    const inlineBranchRecord = (
+      isPlainRecord(preparedBranch) ? preparedBranch : branchRecord
+    ) as Record<string, unknown>;
+
+    const inlineHasNestedUnion =
+      Array.isArray(inlineBranchRecord.anyOf) ||
+      Array.isArray(inlineBranchRecord.oneOf);
+    if (hasDifferentIdScope || branchHasDirectRef || inlineHasNestedUnion) {
+      const canMatchObject =
+        effectiveTypes === undefined || effectiveTypes.includes("object");
+      const wrappedBranch: Record<string, unknown> = {
+        ...(effectiveTypes !== undefined
+          ? {
+              type:
+                effectiveTypes.length === 1
+                  ? effectiveTypes[0]
+                  : effectiveTypes,
+            }
+          : {}),
+        ...(canMatchObject && parentProps ? { properties: parentProps } : {}),
+        ...(canMatchObject && parentPatternProps
+          ? { patternProperties: parentPatternProps }
+          : {}),
+        ...(canMatchObject && parentRequired.length > 0
+          ? { required: parentRequired }
+          : {}),
+        ...(canMatchObject && hasParentAdditionalProps
+          ? { additionalProperties: parentAdditionalProps }
+          : {}),
+        allOf: [inlineBranchRecord],
+      };
+      branches.push(wrappedBranch);
+      continue;
+    }
+
+    ctx.visitedNodeCount += 1;
+    if (ctx.visitedNodeCount > MAX_NORMALIZED_SCHEMA_NODES) {
+      ctx.budgetExceeded = true;
+      return null;
+    }
+
+    const branch = inlineBranchRecord;
+    const branchRelativeSuffix = `/${unionKey}/${branchIdx}`;
+    const branchScopeStack = buildSubpathScopeStack(
+      branchRelativeSuffix,
+      branch,
+    );
+
+    let mergedBranch: Record<string, unknown> = { ...branch };
+    if (effectiveTypes !== undefined) {
+      mergedBranch.type =
+        effectiveTypes.length === 1 ? effectiveTypes[0] : effectiveTypes;
+    }
+
+    const canMatchObject =
+      effectiveTypes === undefined || effectiveTypes.includes("object");
+    if (canMatchObject) {
+      const branchProps = isPlainRecord(branch.properties)
+        ? branch.properties
+        : undefined;
+      const branchPatternProps = isPlainRecord(branch.patternProperties)
+        ? branch.patternProperties
+        : undefined;
+      const hasNonEmptyBranchPatternProps = Boolean(
+        branchPatternProps && Object.keys(branchPatternProps).length > 0,
+      );
+      const hasBranchAdditionalProps = Object.hasOwn(
+        branch,
+        "additionalProperties",
+      );
+      const hasBranchUnevaluatedProps = Object.hasOwn(
+        branch,
+        "unevaluatedProperties",
+      );
+      const hasNonEmptyParentProps = Boolean(
+        parentProps && Object.keys(parentProps).length > 0,
+      );
+
+      const isolateParentClosure =
+        hasParentAdditionalProps &&
+        (hasNonEmptyParentPatternProps || hasNonEmptyBranchPatternProps);
+      const isolateBranchClosure =
+        hasBranchAdditionalProps &&
+        (hasNonEmptyParentPatternProps || hasNonEmptyBranchPatternProps);
+      const isolateBranchUnevaluated =
+        hasBranchUnevaluatedProps &&
+        (hasNonEmptyParentProps ||
+          hasNonEmptyParentPatternProps ||
+          hasParentAdditionalProps);
+
+      if (
+        hasNonEmptyParentProps ||
+        (branchProps && hasParentAdditionalProps && !isolateParentClosure)
+      ) {
+        const branchPropsScopeStack = appendSegmentToScopeStack(
+          branchScopeStack,
+          "properties",
+        );
+        mergedBranch.properties = mergePropertyMaps(
+          parentProps ?? {},
+          branchProps ?? {},
+          hasParentAdditionalProps && !isolateParentClosure,
+          parentAdditionalProps,
+          hasBranchAdditionalProps && !isolateBranchClosure,
+          branch.additionalProperties,
+          parentPropsScope.baseStack,
+          branchPropsScopeStack,
+          ctx,
+          (propPath, relocated) =>
+            syncHoistedMapProperty(
+              "properties",
+              propPath,
+              branchIdx,
+              relocated,
+            ),
+          parentPropsScope.forProperty,
+        );
+        if (ctx.budgetExceeded) {
+          return null;
+        }
+      }
+      if (hasNonEmptyParentPatternProps) {
+        const branchPatternPropsScopeStack = appendSegmentToScopeStack(
+          branchScopeStack,
+          "patternProperties",
+        );
+        mergedBranch.patternProperties = branchPatternProps
+          ? mergePropertyMaps(
+              parentPatternProps!,
+              branchPatternProps,
+              false,
+              undefined,
+              false,
+              undefined,
+              parentPatternPropsScope.baseStack,
+              branchPatternPropsScopeStack,
+              ctx,
+              (propPath, relocated) =>
+                syncHoistedMapProperty(
+                  "patternProperties",
+                  propPath,
+                  branchIdx,
+                  relocated,
+                ),
+              parentPatternPropsScope.forProperty,
+            )
+          : { ...parentPatternProps };
+        if (ctx.budgetExceeded) {
+          return null;
+        }
+      }
+      if (parentRequired.length > 0) {
+        const branchReq = Array.isArray(branch.required)
+          ? branch.required.filter((k): k is string => typeof k === "string")
+          : [];
+        mergedBranch.required = [...new Set([...parentRequired, ...branchReq])];
+      }
+
+      const closureConjuncts: Record<string, unknown>[] = [];
+      if (isolateParentClosure) {
+        closureConjuncts.push({
+          ...(parentProps ? { properties: parentProps } : {}),
+          ...(parentPatternProps
+            ? { patternProperties: parentPatternProps }
+            : {}),
+          additionalProperties: parentAdditionalProps,
+        });
+      }
+      if (isolateBranchClosure) {
+        if (!isolateBranchUnevaluated) {
+          closureConjuncts.push({
+            ...(branchProps ? { properties: branchProps } : {}),
+            ...(branchPatternProps
+              ? { patternProperties: branchPatternProps }
+              : {}),
+            additionalProperties: branch.additionalProperties,
+          });
+        }
+        if (!hasParentAdditionalProps || isolateParentClosure) {
+          delete mergedBranch.additionalProperties;
+        }
+      }
+      if (isolateBranchUnevaluated) {
+        closureConjuncts.push({ ...branch });
+        delete mergedBranch.unevaluatedProperties;
+      }
+      if (hasParentAdditionalProps && !isolateParentClosure) {
+        const branchAddScope = appendSegmentToScopeStack(
+          branchScopeStack,
+          "additionalProperties",
+        );
+        mergedBranch.additionalProperties =
+          hasBranchAdditionalProps && !isolateBranchClosure
+            ? mergeSchemaNodes(
+                parentAdditionalProps,
+                branch.additionalProperties,
+                parentAdditionalPropsScopeStack,
+                branchAddScope,
+                ctx,
+              )
+            : parentAdditionalProps;
+        if (ctx.budgetExceeded) {
+          return null;
+        }
+      }
+      if (closureConjuncts.length > 0) {
+        const existingAllOf = Array.isArray(mergedBranch.allOf)
+          ? mergedBranch.allOf
+          : [];
+        mergedBranch.allOf = [...existingAllOf, ...closureConjuncts];
+      }
+    }
+
+    const relocatedBranch = relocateArrayLevelEnum(
+      mergedBranch,
+      branchScopeStack,
+      allRefs,
+      refRewrites,
+      isPlainRecord(node.items) ? node.items : undefined,
+    );
+    if (relocatedBranch) {
+      mergedBranch = relocatedBranch;
+      const branchDefKey = hoistedDefKeysBySuffix.get(branchRelativeSuffix);
+      if (
+        nextDefs &&
+        branchDefKey !== undefined &&
+        isPlainRecord(nextDefs[branchDefKey]) &&
+        Array.isArray(nextDefs[branchDefKey].enum)
+      ) {
+        const hoistedBranch = nextDefs[branchDefKey];
+        const updatedHoistedBranch = relocateArrayLevelEnum(
+          {
+            ...hoistedBranch,
+            ...(mergedBranch.type !== undefined
+              ? { type: mergedBranch.type }
+              : {}),
+          },
+          [],
+          new Set(),
+          new Map(),
+          isPlainRecord(node.items) ? node.items : undefined,
+        );
+        if (updatedHoistedBranch) {
+          setOwnField(nextDefs, branchDefKey, updatedHoistedBranch);
+        }
+      }
+    }
+
+    branches.push(mergedBranch);
+  }
+
+  if (branches.length === 0) {
+    return null;
+  }
+
+  for (const newRef of plannedNewRefs) {
+    allRefs.add(newRef);
+  }
+  for (const { oldSuffix, newSuffix } of pendingPointerRewrites) {
+    for (const frame of scopeStack) {
+      if (!frame.trackRefAliases) {
+        continue;
+      }
+      const scopedTargetPointer = `${frame.baseUri}#${frame.pointer}${oldSuffix}`;
+      if (hasReferenceToPointer(allRefs, scopedTargetPointer)) {
+        const scopedNewPointer = `${frame.baseUri}#${frame.pointer}${newSuffix}`;
+        refRewrites.set(scopedTargetPointer, scopedNewPointer);
+        for (const existingRef of [...allRefs]) {
+          if (existingRef === scopedTargetPointer) {
+            allRefs.delete(existingRef);
+            allRefs.add(scopedNewPointer);
+          } else if (existingRef.startsWith(`${scopedTargetPointer}/`)) {
+            allRefs.delete(existingRef);
+            allRefs.add(
+              `${scopedNewPointer}${existingRef.slice(scopedTargetPointer.length)}`,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  const {
+    type: _t,
+    properties: _p,
+    required: _r,
+    patternProperties: _pp,
+    additionalProperties: _ap,
+    ...rest
+  } = node;
+  if (nextDefs) {
+    setOwnField(rest, "$defs", nextDefs);
+  }
+  return {
+    ...rest,
+    [unionKey]: branches,
+  };
+}
+
+/**
+ * Copilot Gemini rejects `enum` declared on `type: "array"` (for example IcM
+ * MCP `search_incidents.parameters.properties.severity`). Move compatible
+ * scalar enum choices onto `items.enum`, or strip unsupported non-scalar array
+ * enums.
+ */
+function relocateArrayLevelEnum(
+  node: Record<string, unknown>,
+  scopeStack: ReadonlyArray<ScopeFrame>,
+  allRefs: Set<string>,
+  refRewrites: Map<string, string>,
+  fallbackParentItems?: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (!Array.isArray(node.enum) || primarySchemaType(node) !== "array") {
+    return null;
+  }
+
+  const nonNullEnum = node.enum.filter((entry) => entry !== null);
+  const { enum: _enumValues, ...rest } = node;
+  const ownItems = isPlainRecord(node.items) ? node.items : undefined;
+  const ownItemTypes = ownItems ? extractTypeList(ownItems.type) : undefined;
+  const parentItemTypes = fallbackParentItems
+    ? extractTypeList(fallbackParentItems.type)
+    : undefined;
+  let effectiveItemTypes: string[] | undefined;
+  if (ownItemTypes !== undefined && parentItemTypes !== undefined) {
+    effectiveItemTypes = intersectTypeLists(ownItemTypes, parentItemTypes);
+  } else {
+    effectiveItemTypes = ownItemTypes ?? parentItemTypes;
+  }
+  const hasIncompatibleItemTypes =
+    effectiveItemTypes !== undefined && effectiveItemTypes.length === 0;
+  const itemType =
+    effectiveItemTypes && effectiveItemTypes.length === 1
+      ? effectiveItemTypes[0]
+      : undefined;
+  const isCompatibleScalarEnum =
+    !hasIncompatibleItemTypes &&
+    (effectiveItemTypes === undefined || effectiveItemTypes.length === 1) &&
+    nonNullEnum.length > 0 &&
+    nonNullEnum.every((entry) =>
+      isCompatibleScalarForItemType(entry, itemType),
+    );
+
+  if (
+    isCompatibleScalarEnum &&
+    ((ownItems && !Array.isArray(ownItems.enum)) ||
+      (!Object.hasOwn(node, "items") &&
+        fallbackParentItems &&
+        !Array.isArray(fallbackParentItems.enum)))
+  ) {
+    if (allRefs.size > 0) {
+      for (const frame of scopeStack) {
+        if (!frame.trackRefAliases) {
+          continue;
+        }
+        const enumPointer = `${frame.baseUri}#${frame.pointer}/enum`;
+        const newEnumPointer = `${frame.baseUri}#${frame.pointer}/items/enum`;
+        if (hasReferenceToPointer(allRefs, enumPointer)) {
+          refRewrites.set(enumPointer, newEnumPointer);
+          for (const existingRef of [...allRefs]) {
+            if (existingRef === enumPointer) {
+              allRefs.delete(existingRef);
+              allRefs.add(newEnumPointer);
+            } else if (existingRef.startsWith(`${enumPointer}/`)) {
+              allRefs.delete(existingRef);
+              allRefs.add(
+                `${newEnumPointer}${existingRef.slice(enumPointer.length)}`,
+              );
+            }
+          }
+        }
+      }
+    }
+    return {
+      ...rest,
+      items: {
+        ...(ownItems ?? {}),
+        enum: nonNullEnum,
+      },
+    };
+  }
+  return rest;
+}
+
+function normalizeSchemaNode(
+  value: unknown,
+  inSchemaPosition = false,
+  scopeStack: ReadonlyArray<ScopeFrame> = [
+    { baseUri: ROOT_BASE_URI, pointer: "", trackRefAliases: true },
+  ],
+  ctx: NormalizationContext = {
+    allRefs: new Set(),
+    externalRefs: new Set(),
+    refRewrites: new Map(),
+    visitedNodeCount: 0,
+    budgetExceeded: false,
+  },
+): { value: unknown; changed: boolean } {
+  if (ctx.budgetExceeded) {
+    return { value, changed: false };
+  }
+  ctx.visitedNodeCount += 1;
+  if (ctx.visitedNodeCount > MAX_NORMALIZED_SCHEMA_NODES) {
+    ctx.budgetExceeded = true;
+    return { value, changed: false };
+  }
+  if (value === true && inSchemaPosition) {
+    return { value: {}, changed: true };
+  }
+  if (Array.isArray(value)) {
+    let anyChanged = false;
+    const mapped = value.map((item, index) => {
+      const res = normalizeSchemaNode(
+        item,
+        inSchemaPosition,
+        appendSegmentToScopeStack(scopeStack, String(index)),
+        ctx,
+      );
+      if (res.changed) {
+        anyChanged = true;
+      }
+      return res.value;
+    });
+    return anyChanged && !ctx.budgetExceeded
+      ? { value: mapped, changed: true }
+      : { value, changed: false };
   }
   if (!isPlainRecord(value)) {
-    return value;
+    return { value, changed: false };
   }
 
-  const obj = value;
-  const rootSchema = root ?? obj;
-  const effectiveSeenRefs =
-    root === undefined ? new Set([...seenRefs, "#"]) : seenRefs;
+  const currentScopeStack = enterNodeScopeStack(scopeStack, value);
 
-  if (isLocalSchemaRef(obj.$ref)) {
-    const normalizedRef = normalizeSchemaRefPointer(obj.$ref);
-    const description =
-      typeof obj.description === "string" && obj.description
-        ? { description: obj.description }
-        : {};
-    if (
-      effectiveSeenRefs.has(normalizedRef) ||
-      !consumeRefExpansionBudget(refBudget)
-    ) {
-      return { type: "string", ...description };
-    }
-    const target = resolveSchemaPointer(rootSchema, normalizedRef);
-    if (!target) {
-      return { type: "string", ...description };
-    }
-    const nextSeen = new Set([...effectiveSeenRefs, normalizedRef]);
-    const resolved = normalizeCopilotToolSchema(
-      target,
-      rootSchema,
-      nextSeen,
-      refBudget,
-    );
-    if (!isPlainRecord(resolved)) {
-      return { type: "string", ...description };
-    }
-    const siblingEntries = Object.entries(obj).filter(
-      ([key]) => key !== "$ref",
-    );
-    if (siblingEntries.length === 0) {
-      return resolved;
-    }
-    const normalizedSiblings = normalizeCopilotToolSchema(
-      Object.fromEntries(siblingEntries),
-      rootSchema,
-      effectiveSeenRefs,
-      refBudget,
-    );
-    if (!isPlainRecord(normalizedSiblings)) {
-      return { ...resolved, ...description };
-    }
-    const mergedRef = mergeResolvedRefWithSiblings(
-      resolved,
-      normalizedSiblings,
-    );
-    const normalizedMergedRef = normalizeCopilotToolSchema(
-      mergedRef,
-      rootSchema,
-      effectiveSeenRefs,
-      refBudget,
-    );
-    return isPlainRecord(normalizedMergedRef) ? normalizedMergedRef : mergedRef;
-  }
+  let current: Record<string, unknown> = value;
+  let nodeChanged = false;
 
-  if (Array.isArray(obj.allOf)) {
-    const { allOf, ...rest } = obj;
-    const normalizedRest = normalizeCopilotToolSchema(
-      rest,
-      rootSchema,
-      effectiveSeenRefs,
-      refBudget,
-    );
-    let combined: Record<string, unknown> = isPlainRecord(normalizedRest)
-      ? normalizedRest
-      : {};
-    for (const part of allOf) {
-      const normalizedPart = normalizeCopilotToolSchema(
-        part,
-        rootSchema,
-        effectiveSeenRefs,
-        refBudget,
-      );
-      if (isPlainRecord(normalizedPart)) {
-        const intersected = intersectSchemaDefinitions(
-          combined,
-          normalizedPart,
-        );
-        if (isPlainRecord(intersected)) {
-          combined = intersected;
-        }
-      }
-    }
-    const normalizedCombined = normalizeCopilotToolSchema(
-      combined,
-      rootSchema,
-      effectiveSeenRefs,
-      refBudget,
-    );
-    return isPlainRecord(normalizedCombined) ? normalizedCombined : combined;
-  }
-
-  const hasEmptyProperties =
-    !isPlainRecord(obj.properties) || Object.keys(obj.properties).length === 0;
-
-  if (
-    (Array.isArray(obj.oneOf) || Array.isArray(obj.anyOf)) &&
-    hasEmptyProperties
-  ) {
-    const flattened = flattenUnionObjectSchema(
-      obj,
-      rootSchema,
-      effectiveSeenRefs,
-      refBudget,
-    );
-    if (flattened) {
-      return flattened;
-    }
-    const union = (
-      Array.isArray(obj.anyOf) ? obj.anyOf : obj.oneOf
-    ) as unknown[];
-    const nonNull = union.filter(
-      (branch): branch is Record<string, unknown> =>
-        isPlainRecord(branch) && branch.type !== "null",
-    );
-    const {
-      anyOf: _anyOf,
-      oneOf: _oneOf,
-      $defs: _defs,
-      definitions: _definitions,
-      additionalProperties: _addProps,
-      ...parentConstraints
-    } = obj;
-    const parentType = primarySchemaType(parentConstraints);
-    if (parentType) {
-      parentConstraints.type = parentType;
-    } else {
-      delete parentConstraints.type;
-    }
-    const description =
-      typeof obj.description === "string" && obj.description
-        ? { description: obj.description }
-        : {};
-    const applyParentToBranch = (
-      branch: Record<string, unknown>,
-    ): Record<string, unknown> => {
-      if (Object.keys(parentConstraints).length === 0) {
-        return branch;
-      }
-      const combined = intersectSchemaDefinitions(parentConstraints, branch);
-      if (!isPlainRecord(combined)) {
-        return branch;
-      }
-      const normalizedCombined = normalizeCopilotToolSchema(
-        combined,
-        rootSchema,
-        effectiveSeenRefs,
-        refBudget,
-      );
-      return isPlainRecord(normalizedCombined) ? normalizedCombined : combined;
-    };
-    if (nonNull.length === 1) {
-      const resolved = normalizeCopilotToolSchema(
-        nonNull[0],
-        rootSchema,
-        effectiveSeenRefs,
-        refBudget,
-      );
-      return isPlainRecord(resolved)
-        ? { ...applyParentToBranch(resolved), ...description }
-        : { type: parentType ?? "string", ...description };
-    }
-    if (nonNull.length > 1) {
-      const normalizedBranches = nonNull
-        .map((branch) =>
-          normalizeCopilotToolSchema(
-            branch,
-            rootSchema,
-            effectiveSeenRefs,
-            refBudget,
-          ),
-        )
-        .filter(isPlainRecord)
-        .map(applyParentToBranch);
-      if (
-        normalizedBranches.length > 0 &&
-        normalizedBranches.every(
-          (branch) =>
-            primarySchemaType(branch) === "array" ||
-            isPlainRecord(branch.items),
-        )
-      ) {
-        const mergedArray = normalizedBranches
-          .slice(1)
-          .reduce<unknown>(
-            (acc, branch) => mergeUnionPropertySchemas(acc, branch),
-            normalizedBranches[0],
-          );
-        const normalizedMerged = normalizeCopilotToolSchema(
-          mergedArray,
-          rootSchema,
-          effectiveSeenRefs,
-          refBudget,
-        );
-        if (isPlainRecord(normalizedMerged)) {
-          return { ...normalizedMerged, ...description };
-        }
-      }
-      const mergedBranch =
-        normalizedBranches.length > 0
-          ? normalizedBranches
-              .slice(1)
-              .reduce<unknown>(
-                (acc, branch) => mergeUnionPropertySchemas(acc, branch),
-                normalizedBranches[0],
-              )
-          : undefined;
-      if (
-        isPlainRecord(mergedBranch) &&
-        typeof mergedBranch.type === "string" &&
-        mergedBranch.type !== "array"
-      ) {
-        return { ...mergedBranch, ...description };
-      }
-      const primaryType =
-        (typeof parentType === "string" && parentType !== "array"
-          ? parentType
-          : undefined) ??
-        normalizedBranches.find(
-          (branch) =>
-            typeof branch.type === "string" && branch.type !== "array",
-        )?.type ??
-        "string";
-      return { type: primaryType, ...description };
-    }
-  }
-
-  let current: Record<string, unknown> = obj;
-  if (Array.isArray(current.type)) {
-    current = {
-      ...current,
-      type: collapseTypeArray(current.type) ?? "string",
-    };
-  }
-  if (Array.isArray(current.enum) && current.enum.includes(null)) {
-    current = {
-      ...current,
-      enum: current.enum.filter((entry) => entry !== null),
-    };
-  }
-  if (
-    Array.isArray(current.enum) &&
-    typeof current.type === "string" &&
-    !["string", "integer", "number"].includes(current.type)
-  ) {
-    const { enum: enumValues, ...rest } = current;
-    const items = isPlainRecord(current.items) ? current.items : undefined;
-    const itemType = items ? primarySchemaType(items) : undefined;
-    const isCompatibleScalarEnum =
-      enumValues.length > 0 &&
-      enumValues.every((entry) =>
-        isCompatibleScalarForItemType(entry, itemType),
-      );
-    current =
-      current.type === "array" &&
-      isCompatibleScalarEnum &&
-      items &&
-      !Array.isArray(items.enum)
-        ? {
-            ...rest,
-            items: {
-              ...items,
-              enum: enumValues,
-            },
-          }
-        : rest;
-  }
-
-  const collapsedItemUnion = tryCollapseNameDiscriminatedItemUnion(
+  const relocated = relocateArrayLevelEnum(
     current,
-    rootSchema,
-    effectiveSeenRefs,
-    refBudget,
+    currentScopeStack,
+    ctx.allRefs,
+    ctx.refRewrites,
   );
-  if (collapsedItemUnion) {
-    return collapsedItemUnion;
+  if (relocated) {
+    current = relocated;
+    nodeChanged = true;
   }
 
-  return Object.fromEntries(
-    Object.entries(current)
-      .filter(([key]) => !STRIPPED_SCHEMA_KEYWORDS.has(key))
-      .map(([key, item]) => {
-        if (LITERAL_SCHEMA_FIELDS.has(key)) {
-          return [key, item];
-        }
-        if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(item)) {
-          return [
-            key,
-            Object.fromEntries(
-              Object.entries(item).map(([propName, propSchema]) => [
-                propName,
-                normalizeCopilotToolSchema(
-                  propSchema,
-                  rootSchema,
-                  effectiveSeenRefs,
-                  refBudget,
-                ),
-              ]),
-            ),
-          ];
-        }
-        return [
-          key,
-          normalizeCopilotToolSchema(
-            item,
-            rootSchema,
-            effectiveSeenRefs,
-            refBudget,
-          ),
-        ];
-      }),
+  const preHoistedDefKeys =
+    isPlainRecord(current.$defs) &&
+    (Array.isArray(current.anyOf) || Array.isArray(current.oneOf))
+      ? new Set(Object.keys(current.$defs))
+      : undefined;
+  const unionKeyBeforeDistribute = Array.isArray(current.anyOf)
+    ? "anyOf"
+    : Array.isArray(current.oneOf)
+      ? "oneOf"
+      : undefined;
+
+  const distributed = distributeUnionSiblingKeywords(
+    current,
+    currentScopeStack,
+    ctx,
   );
+  if (ctx.budgetExceeded) {
+    return { value, changed: false };
+  }
+  const newlyHoistedDefKeys = new Set<string>();
+  if (distributed) {
+    if (isPlainRecord(distributed.$defs)) {
+      for (const defKey of Object.keys(distributed.$defs)) {
+        if (!preHoistedDefKeys || !preHoistedDefKeys.has(defKey)) {
+          newlyHoistedDefKeys.add(defKey);
+        }
+      }
+    }
+    current = distributed;
+    nodeChanged = true;
+  }
+
+  let childChanged = false;
+  const nextRecord: Record<string, unknown> = { ...current };
+  for (const [key, item] of Object.entries(current)) {
+    if (LITERAL_SCHEMA_FIELDS.has(key)) {
+      setOwnField(nextRecord, key, item);
+      continue;
+    }
+    const isDistributedUnionKey =
+      distributed !== null && key === unionKeyBeforeDistribute;
+    if (isDistributedUnionKey) {
+      setOwnField(nextRecord, key, item);
+      continue;
+    }
+    const keyScopeStack = appendSegmentToScopeStack(
+      currentScopeStack,
+      encodeJsonPointerSegment(key),
+    );
+    if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(item)) {
+      let mapChanged = false;
+      const nextMap: Record<string, unknown> = { ...item };
+      for (const [propName, propSchema] of Object.entries(item)) {
+        if (key === "dependencies" && Array.isArray(propSchema)) {
+          setOwnField(nextMap, propName, propSchema);
+          continue;
+        }
+        if (key === "$defs" && newlyHoistedDefKeys.has(propName)) {
+          setOwnField(nextMap, propName, propSchema);
+          continue;
+        }
+        const propScopeStack = appendSegmentToScopeStack(
+          keyScopeStack,
+          encodeJsonPointerSegment(propName),
+        );
+        const res = normalizeSchemaNode(propSchema, true, propScopeStack, ctx);
+        if (ctx.budgetExceeded) {
+          return { value, changed: false };
+        }
+        if (res.changed) {
+          mapChanged = true;
+        }
+        setOwnField(nextMap, propName, res.value);
+      }
+      if (mapChanged) {
+        childChanged = true;
+        setOwnField(nextRecord, key, nextMap);
+      } else {
+        setOwnField(nextRecord, key, item);
+      }
+      continue;
+    }
+    const res = normalizeSchemaNode(
+      item,
+      BOOLEAN_SCHEMA_KEYWORDS.has(key) ||
+        key === "prefixItems" ||
+        key === "anyOf" ||
+        key === "oneOf" ||
+        key === "allOf",
+      keyScopeStack,
+      ctx,
+    );
+    if (ctx.budgetExceeded) {
+      return { value, changed: false };
+    }
+    if (res.changed) {
+      childChanged = true;
+    }
+    setOwnField(nextRecord, key, res.value);
+  }
+
+  if (!nodeChanged && !childChanged) {
+    return { value, changed: false };
+  }
+  return { value: nextRecord, changed: true };
+}
+
+function normalizeRootSchema(value: unknown): {
+  value: unknown;
+  changed: boolean;
+} {
+  const { refs: allRefs, externalRefs } = collectSchemaRefs(value);
+  const ctx: NormalizationContext = {
+    allRefs,
+    externalRefs,
+    refRewrites: new Map<string, string>(),
+    visitedNodeCount: 0,
+    budgetExceeded: false,
+  };
+  const res = normalizeSchemaNode(
+    value,
+    false,
+    [{ baseUri: ROOT_BASE_URI, pointer: "", trackRefAliases: true }],
+    ctx,
+  );
+  if (ctx.budgetExceeded || !res.changed) {
+    return { value, changed: false };
+  }
+  if (ctx.refRewrites.size > 0) {
+    return {
+      value: applyRefRewrites(res.value, ctx.refRewrites, ROOT_BASE_URI),
+      changed: true,
+    };
+  }
+  return res;
+}
+
+/**
+ * Normalize MCP tool parameter schemas for Copilot Gemini models, rewriting
+ * only constructs that Copilot Gemini rejects with HTTP 400
+ * `invalid_request_body`:
+ *  1. Array-level `enum` -> `items.enum` (e.g. IcM MCP `search_incidents`).
+ *  2. `anyOf` / `oneOf` nodes that also declare sibling `type`, `properties`,
+ *     or `required` on the same node (e.g. WorkIQ MCP `retrieve`).
+ *  3. Boolean property schemas (`true` -> `{}`, e.g. ETW MCP `add_condition`).
+ */
+export function normalizeCopilotToolSchema(value: unknown): unknown {
+  return normalizeRootSchema(value).value;
 }
 
 export function normalizeToolsForCopilotModel(
@@ -1266,15 +2304,32 @@ export function normalizeToolsForCopilotModel(
     client.vendor === supportedVendor &&
     (client.family.toLowerCase().includes("gemini") ||
       client.id.toLowerCase().includes("gemini"));
-  if (!isCopilotGemini || !Array.isArray(tools)) {
+  if (!isCopilotGemini || !Array.isArray(tools) || tools.length === 0) {
     return tools;
   }
-  return tools.map((tool) =>
-    tool.inputSchema && typeof tool.inputSchema === "object"
-      ? {
-          ...tool,
-          inputSchema: normalizeCopilotToolSchema(tool.inputSchema) as object,
-        }
-      : tool,
+
+  const rewrittenToolNames: string[] = [];
+  const nextTools = tools.map((tool) => {
+    if (!tool.inputSchema || typeof tool.inputSchema !== "object") {
+      return tool;
+    }
+    const { value, changed } = normalizeRootSchema(tool.inputSchema);
+    if (!changed) {
+      return tool;
+    }
+    rewrittenToolNames.push(tool.name);
+    return {
+      ...tool,
+      inputSchema: value as object,
+    };
+  });
+
+  if (rewrittenToolNames.length === 0) {
+    return tools;
+  }
+
+  logger.debug(
+    `Normalized Copilot Gemini tool schema(s) for ${client.id}: ${rewrittenToolNames.join(", ")}`,
   );
+  return nextTools;
 }
