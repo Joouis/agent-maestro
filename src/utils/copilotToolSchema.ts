@@ -1387,6 +1387,20 @@ function distributeUnionSiblingKeywords(
     return null;
   }
 
+  const savedAllRefs = new Set(allRefs);
+  const savedRefRewrites = new Map(refRewrites);
+  const rollbackReferenceBookkeeping = (): null => {
+    allRefs.clear();
+    for (const ref of savedAllRefs) {
+      allRefs.add(ref);
+    }
+    refRewrites.clear();
+    for (const [sourceRef, targetRef] of savedRefRewrites) {
+      refRewrites.set(sourceRef, targetRef);
+    }
+    return null;
+  };
+
   const hoistedDefKeysBySuffix = new Map<string, string>();
 
   const prepareTargetSchema = (
@@ -1646,7 +1660,7 @@ function distributeUnionSiblingKeywords(
     );
   });
   if (ctx.budgetExceeded) {
-    return null;
+    return rollbackReferenceBookkeeping();
   }
 
   let parentProps = rawParentProps;
@@ -1662,7 +1676,7 @@ function distributeUnionSiblingKeywords(
         parentPropsCopyCount,
       );
       if (ctx.budgetExceeded) {
-        return null;
+        return rollbackReferenceBookkeeping();
       }
       setOwnField(cleanedProps, propKey, preparedProp);
     }
@@ -1682,7 +1696,7 @@ function distributeUnionSiblingKeywords(
         parentPatternPropsCopyCount,
       );
       if (ctx.budgetExceeded) {
-        return null;
+        return rollbackReferenceBookkeeping();
       }
       setOwnField(cleanedPatternProps, propKey, preparedPatternProp);
     }
@@ -1698,7 +1712,7 @@ function distributeUnionSiblingKeywords(
       parentAdditionalPropsCopyCount,
     );
     if (ctx.budgetExceeded) {
-      return null;
+      return rollbackReferenceBookkeeping();
     }
   }
 
@@ -1803,7 +1817,7 @@ function distributeUnionSiblingKeywords(
     ctx.visitedNodeCount += 1;
     if (ctx.visitedNodeCount > MAX_NORMALIZED_SCHEMA_NODES) {
       ctx.budgetExceeded = true;
-      return null;
+      return rollbackReferenceBookkeeping();
     }
 
     const branch = inlineBranchRecord;
@@ -1883,7 +1897,7 @@ function distributeUnionSiblingKeywords(
           parentPropsScope.forProperty,
         );
         if (ctx.budgetExceeded) {
-          return null;
+          return rollbackReferenceBookkeeping();
         }
       }
       if (hasNonEmptyParentPatternProps) {
@@ -1913,7 +1927,7 @@ function distributeUnionSiblingKeywords(
             )
           : { ...parentPatternProps };
         if (ctx.budgetExceeded) {
-          return null;
+          return rollbackReferenceBookkeeping();
         }
       }
       if (parentRequired.length > 0) {
@@ -1967,7 +1981,7 @@ function distributeUnionSiblingKeywords(
               )
             : parentAdditionalProps;
         if (ctx.budgetExceeded) {
-          return null;
+          return rollbackReferenceBookkeeping();
         }
       }
       if (closureConjuncts.length > 0) {
@@ -2018,7 +2032,7 @@ function distributeUnionSiblingKeywords(
   }
 
   if (branches.length === 0) {
-    return null;
+    return rollbackReferenceBookkeeping();
   }
 
   for (const newRef of plannedNewRefs) {

@@ -1666,5 +1666,59 @@ suite("Chat Models QuickPick Test Suite", () => {
         },
       },
     );
+
+    // Round 18: Restore reference bookkeeping (`allRefs` and `refRewrites`)
+    // when all prepared branches are filtered out after preparation.
+    const round18RollbackSchema = {
+      type: "object",
+      properties: {
+        filteredUnion: {
+          type: "array",
+          properties: {
+            propWithRef: {
+              type: "object",
+              properties: {
+                a: { type: "string" },
+              },
+              anyOf: [{ required: ["a"] }],
+            },
+          },
+          anyOf: [
+            {
+              type: ["array", "null"],
+              enum: [null],
+            },
+          ],
+        },
+        refToA: {
+          $ref: "#/properties/filteredUnion/properties/propWithRef/properties/a",
+        },
+      },
+    };
+    const normalizedRound18 = normalizeCopilotToolSchema(
+      round18RollbackSchema,
+    ) as {
+      properties: {
+        filteredUnion: {
+          properties: {
+            propWithRef: {
+              $defs: Record<string, unknown>;
+              anyOf: Array<Record<string, unknown>>;
+            };
+          };
+        };
+        refToA: { $ref: string };
+      };
+    };
+    assert.deepStrictEqual(
+      normalizedRound18.properties.filteredUnion.properties.propWithRef.$defs,
+      {
+        a: { type: "string" },
+      },
+    );
+    assert.strictEqual(
+      normalizedRound18.properties.refToA.$ref,
+      "#/properties/filteredUnion/properties/propWithRef/$defs/a",
+    );
   });
 });
