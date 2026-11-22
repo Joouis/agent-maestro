@@ -566,7 +566,7 @@ export function toolHistoryToVSCode(
           new vscode.LanguageModelToolResultPart(part.callId, [
             ...text,
             new vscode.LanguageModelTextPart(
-              "[Binary tool result content is attached in the following user message.]",
+              "[Large binary tool result is attached in the following user message.]",
             ),
           ]),
         );
