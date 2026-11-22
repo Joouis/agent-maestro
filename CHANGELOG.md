@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.17.1 - 2026.11.22
+
+- Fix images returned by tools (for example Codex `view_image`): Gemini models now see them, and large images no longer fail the request (`400 invalid_request_body` / 413) or go unseen by Claude.
+- Keep long Codex sessions within the context limit by no longer sending discovered tool schemas twice after `tool_search`.
+- Keep text before and after a model's thinking as separate messages in OpenAI Responses output instead of merging it.
+
 ## v2.17.0 - 2026.11.17
 
 - Add an optional Admin API Key for `/api/v1`, `/openapi.json`, and the MCP server, plus browser origin allowlists (`proxyServerCorsOrigins`, `mcpServerCorsOrigins`) and a public `GET /health`. **Note:** with only the LLM API Key set, `/api/v1` and MCP return 403 until an Admin API Key is set; cross-origin browser apps must be allowlisted; an unreadable stored key now fails closed (503).
