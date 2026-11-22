@@ -679,9 +679,9 @@ suite("Tool history normalizer", () => {
       /tool result x/,
     );
   });
-  test("keeps small tool-result media inline", () => {
+  test("promotes small tool-result media too", () => {
     const image = new vscode.LanguageModelDataPart(
-      new Uint8Array(1_000_000),
+      new Uint8Array(10),
       "image/png",
     );
     const r = { ...result("x"), parts: [image] } as ToolHistoryPart;
@@ -689,8 +689,27 @@ suite("Tool history normalizer", () => {
     const actual = toolHistoryToVSCode([model(call("x")), user(r)], "Test");
 
     paired(actual, 1);
+    assert.strictEqual(actual.length, 3);
+    assert.ok(
+      results(actual)[0].content.every(
+        (part) => part instanceof vscode.LanguageModelTextPart,
+      ),
+    );
+    assert.ok(
+      actual[2].content.some(
+        (p) =>
+          p instanceof vscode.LanguageModelDataPart && p.data === image.data,
+      ),
+    );
+  });
+  test("leaves text-only tool results untouched", () => {
+    const history = [model(call("x")), user(result("x"))];
+
+    const actual = toolHistoryToVSCode(history, "Test");
+
+    paired(actual, 1);
     assert.strictEqual(actual.length, 2);
-    assert.ok(results(actual)[0].content.includes(image));
+    assert.ok(!text(actual).includes("following user message"));
   });
   test("preserves parallel result media groups and content order", () => {
     const x1 = new vscode.LanguageModelDataPart(
@@ -795,19 +814,24 @@ suite("Tool history normalizer", () => {
     ]);
 
     paired(actual, 2);
-    const inlineResult = results(actual).find((r) => r.callId === "inline")!;
-    const inlineImage = inlineResult.content[0] as vscode.LanguageModelDataPart;
-    assert.ok(inlineImage instanceof vscode.LanguageModelDataPart);
-    assert.strictEqual(inlineImage.mimeType, "image/webp");
-
+    // Promoted images go through VS Code's user-image resize: a 1024x935 WebP
+    // is re-encoded to PNG, so it is relabeled; the padded copy exceeds 768px
+    // on both sides too. Tool results keep only text.
+    assert.ok(
+      results(actual).every((r) =>
+        r.content.every((p) => p instanceof vscode.LanguageModelTextPart),
+      ),
+    );
     const promoted = actual
-      .at(-1)!
-      .content.find(
+      .flatMap((m) => m.content)
+      .filter(
         (p): p is vscode.LanguageModelDataPart =>
           p instanceof vscode.LanguageModelDataPart,
-      )!;
-    assert.ok(promoted instanceof vscode.LanguageModelDataPart);
-    assert.strictEqual(promoted.mimeType, "image/png");
+      );
+    assert.strictEqual(promoted.length, 2);
+    for (const image of promoted) {
+      assert.strictEqual(image.mimeType, "image/png");
+    }
   });
   test("keeps promoted media before the turn's later ordinary content", () => {
     const large = (byte: number) =>
@@ -900,7 +924,7 @@ suite("Tool history normalizer", () => {
       assert.deepStrictEqual(images, [1, 2, 3]);
     }
   });
-  test("promotes smaller sibling media to keep mixed-size results in order", () => {
+  test("keeps mixed-size parallel result media in order", () => {
     const image = (bytes: number, byte: number) =>
       new vscode.LanguageModelDataPart(
         new Uint8Array(bytes).fill(byte),
@@ -932,25 +956,6 @@ suite("Tool history normalizer", () => {
       )
       .map((p) => p.data[0]);
     assert.deepStrictEqual(images, [1, 2, 3]);
-  });
-  test("keeps small results inline when no sibling is oversized", () => {
-    const small = new vscode.LanguageModelDataPart(
-      new Uint8Array(10),
-      "image/png",
-    );
-    const actual = toolHistoryToVSCode(
-      [
-        model(call("a"), call("c")),
-        user(
-          { ...result("a"), parts: [small] } as ToolHistoryPart,
-          { ...result("c"), parts: [small] } as ToolHistoryPart,
-        ),
-      ],
-      "Test",
-    );
-
-    assert.strictEqual(actual.length, 2);
-    assert.ok(results(actual).every((r) => r.content.includes(small)));
   });
   test("logs promoted media at debug level", () => {
     const debug: string[] = [];
