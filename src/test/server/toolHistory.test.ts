@@ -847,6 +847,46 @@ suite("Tool history normalizer", () => {
     const last = actual.at(-1)!.content.at(-1) as vscode.LanguageModelTextPart;
     assert.strictEqual(last.value, "Compare the first and second images.");
   });
+  test("keeps media order across interleaved oversized parallel results", () => {
+    const big = (byte: number) =>
+      new vscode.LanguageModelDataPart(
+        new Uint8Array(1_000_001).fill(byte),
+        "image/png",
+      );
+    const withImage = (id: string, byte: number) =>
+      ({ ...result(id), parts: [big(byte)] }) as ToolHistoryPart;
+    const ordinary: ToolHistoryPart = { kind: "content", parts: [big(2)] };
+
+    for (const history of [
+      [
+        model(call("a"), call("c")),
+        user(withImage("a", 1), ordinary, withImage("c", 3)),
+      ],
+      // Consecutive result-bearing user messages are merged before promotion.
+      [
+        model(call("a"), call("c")),
+        user(withImage("a", 1), ordinary),
+        user(withImage("c", 3)),
+      ],
+    ]) {
+      const actual = toolHistoryToVSCode(history, "Test");
+
+      paired(actual, 2);
+      assert.ok(
+        actual[1].content.every(
+          (p) => p instanceof vscode.LanguageModelToolResultPart,
+        ),
+      );
+      const images = actual
+        .flatMap((m) => m.content)
+        .filter(
+          (p): p is vscode.LanguageModelDataPart =>
+            p instanceof vscode.LanguageModelDataPart,
+        )
+        .map((p) => p.data[0]);
+      assert.deepStrictEqual(images, [1, 2, 3]);
+    }
+  });
   test("logs promoted media at debug level", () => {
     const debug: string[] = [];
     const original = logger.debug;

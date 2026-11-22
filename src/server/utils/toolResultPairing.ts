@@ -498,10 +498,26 @@ export function toolHistoryToVSCode(
     previousHadCalls = (hasCalls || reasoningOnly) && !message.boundary;
   }
   const { retainedPairs: _pairs, ...recoveries } = diagnostics;
+  const oversized = (
+    part: unknown,
+  ): part is vscode.LanguageModelToolResultPart =>
+    part instanceof vscode.LanguageModelToolResultPart &&
+    part.content.reduce<number>(
+      (sum, item) =>
+        item instanceof vscode.LanguageModelDataPart
+          ? sum + item.data.byteLength
+          : sum,
+      0,
+    ) > MAX_INLINE_TOOL_RESULT_DATA_BYTES;
   // Copilot rejects ordinary content interleaved between parallel tool results.
   // Keep formal parts contiguous unless reasoning makes their original positions
   // significant. Responses keeps ordinary assistant text in separate messages.
+  // Messages with oversized results are grouped by the promotion pass below,
+  // which needs the original order to keep promoted media in place.
   for (const message of output) {
+    if (message.content.some(oversized)) {
+      continue;
+    }
     const tools = message.content.filter(
       (part) =>
         part instanceof vscode.LanguageModelToolCallPart ||
@@ -518,17 +534,6 @@ export function toolHistoryToVSCode(
   }
   const safeOutput: vscode.LanguageModelChatMessage[] = [];
   for (const message of output) {
-    const oversized = (
-      part: unknown,
-    ): part is vscode.LanguageModelToolResultPart =>
-      part instanceof vscode.LanguageModelToolResultPart &&
-      part.content.reduce<number>(
-        (sum, item) =>
-          item instanceof vscode.LanguageModelDataPart
-            ? sum + item.data.byteLength
-            : sum,
-        0,
-      ) > MAX_INLINE_TOOL_RESULT_DATA_BYTES;
     if (!message.content.some(oversized)) {
       safeOutput.push(message);
       continue;
