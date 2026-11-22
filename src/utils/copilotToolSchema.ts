@@ -461,6 +461,7 @@ function rebaseStrippedResourceRefs(
   enclosingBaseUri: string,
   hoistedPointer: string,
   plannedNewRefs: Set<string>,
+  refRewrites?: ReadonlyMap<string, string>,
   relPointer = "",
   currentSourceBaseUri = enclosingBaseUri,
   strippedScopeRoot?: { sourceBaseUri: string; hoistedScopePointer: string },
@@ -472,6 +473,7 @@ function rebaseStrippedResourceRefs(
         enclosingBaseUri,
         hoistedPointer,
         plannedNewRefs,
+        refRewrites,
         `${relPointer}/${idx}`,
         currentSourceBaseUri,
         strippedScopeRoot,
@@ -508,9 +510,17 @@ function rebaseStrippedResourceRefs(
     if ((key === "$ref" || key === "$dynamicRef") && typeof val === "string") {
       let rebasedRef = val;
       if (nextStrippedScopeRoot) {
+        const rewrittenVal =
+          refRewrites && refRewrites.size > 0
+            ? rewriteRefString(
+                val,
+                nextStrippedScopeRoot.sourceBaseUri,
+                refRewrites,
+              )
+            : val;
         const resolved = resolveScopedRef(
           nextStrippedScopeRoot.sourceBaseUri,
-          val,
+          rewrittenVal,
         );
         if (resolved.targetBaseUri === nextStrippedScopeRoot.sourceBaseUri) {
           if (resolved.fragment === "" || resolved.fragment.startsWith("/")) {
@@ -524,7 +534,7 @@ function rebaseStrippedResourceRefs(
               resolved.fragment,
             );
           }
-        } else if (!val.trim().startsWith("#")) {
+        } else if (!rewrittenVal.trim().startsWith("#")) {
           rebasedRef = formatRefRelativeToScope(
             enclosingBaseUri,
             resolved.targetBaseUri,
@@ -553,6 +563,7 @@ function rebaseStrippedResourceRefs(
               enclosingBaseUri,
               hoistedPointer,
               plannedNewRefs,
+              refRewrites,
               `${relPointer}/${keySeg}/${propSeg}`,
               nextSourceBaseUri,
               nextStrippedScopeRoot,
@@ -571,6 +582,7 @@ function rebaseStrippedResourceRefs(
           enclosingBaseUri,
           hoistedPointer,
           plannedNewRefs,
+          refRewrites,
           `${relPointer}/${keySeg}`,
           nextSourceBaseUri,
           nextStrippedScopeRoot,
@@ -695,15 +707,30 @@ function hasAnyIdentifierInSubtree(node: unknown): boolean {
   return false;
 }
 
-function hasAnyRefInSubtree(node: unknown): boolean {
+function chargeDuplicatedSubtreeBudget(
+  node: unknown,
+  extraCopies: number,
+  ctx: NormalizationContext,
+): void {
+  if (extraCopies <= 0 || ctx.budgetExceeded) {
+    return;
+  }
   if (Array.isArray(node)) {
-    return node.some((item) => hasAnyRefInSubtree(item));
+    for (const item of node) {
+      chargeDuplicatedSubtreeBudget(item, extraCopies, ctx);
+      if (ctx.budgetExceeded) {
+        return;
+      }
+    }
+    return;
   }
   if (!isPlainRecord(node)) {
-    return false;
+    return;
   }
-  if (typeof node.$ref === "string" || typeof node.$dynamicRef === "string") {
-    return true;
+  ctx.visitedNodeCount += extraCopies;
+  if (ctx.visitedNodeCount > MAX_NORMALIZED_SCHEMA_NODES) {
+    ctx.budgetExceeded = true;
+    return;
   }
   for (const [key, child] of Object.entries(node)) {
     if (LITERAL_SCHEMA_FIELDS.has(key)) {
@@ -714,17 +741,18 @@ function hasAnyRefInSubtree(node: unknown): boolean {
         if (key === "dependencies" && Array.isArray(mapEntry)) {
           continue;
         }
-        if (hasAnyRefInSubtree(mapEntry)) {
-          return true;
+        chargeDuplicatedSubtreeBudget(mapEntry, extraCopies, ctx);
+        if (ctx.budgetExceeded) {
+          return;
         }
       }
       continue;
     }
-    if (hasAnyRefInSubtree(child)) {
-      return true;
+    chargeDuplicatedSubtreeBudget(child, extraCopies, ctx);
+    if (ctx.budgetExceeded) {
+      return;
     }
   }
-  return false;
 }
 
 function hasAnyMultiBranchUnionInSubtree(node: unknown): boolean {
@@ -1365,9 +1393,10 @@ function distributeUnionSiblingKeywords(
     relativeSuffix: string,
     baseName: string,
     targetSchema: unknown,
-    willDuplicateTarget = false,
+    copyCount = 1,
     isDroppedBranch = false,
   ): unknown => {
+    const willDuplicateTarget = copyCount > 1;
     if (
       isDroppedBranch &&
       !(
@@ -1398,6 +1427,9 @@ function distributeUnionSiblingKeywords(
       targetScopeStack,
       ctx,
     ).value;
+    if (ctx.budgetExceeded) {
+      return normalizedTarget;
+    }
     const isReferencedByPointer =
       allRefs.size > 0 &&
       hasReferenceToRelativeSuffix(allRefs, scopeStack, relativeSuffix);
@@ -1416,9 +1448,7 @@ function distributeUnionSiblingKeywords(
       !relativeSuffix.startsWith(`/${unionKey}/`) &&
       willDuplicateTarget &&
       isUnionSubschema &&
-      !hasIdentifiers &&
-      !hasAnyRefInSubtree(targetSchema) &&
-      !hasAnyRefInSubtree(normalizedTarget);
+      !hasIdentifiers;
     const hasDistributedIdentifiers = willDuplicateTarget && hasIdentifiers;
     if (
       !isReferencedByPointer &&
@@ -1427,6 +1457,9 @@ function distributeUnionSiblingKeywords(
       !hasDistributedIdentifiers &&
       !shouldShareViaDefs
     ) {
+      if (copyCount > 1) {
+        chargeDuplicatedSubtreeBudget(normalizedTarget, copyCount - 1, ctx);
+      }
       return normalizedTarget;
     }
     if (!nextDefs) {
@@ -1447,19 +1480,34 @@ function distributeUnionSiblingKeywords(
       return { $ref: `#${hoistedPointer}` };
     }
     if (!hasIdentifiers) {
+      chargeDuplicatedSubtreeBudget(normalizedTarget, copyCount, ctx);
       return normalizedTarget;
     }
-    const rewrittenNormalizedTarget = applyRefRewrites(
-      normalizedTarget,
-      refRewrites,
-      baseUri,
-    );
-    return rebaseStrippedResourceRefs(
-      rewrittenNormalizedTarget,
+    const rebasedInline = rebaseStrippedResourceRefs(
+      targetSchema,
       baseUri,
       hoistedPointer,
       plannedNewRefs,
+      refRewrites,
     );
+    let inlineScopeStack = scopeStack;
+    for (const seg of targetRelativeSegments) {
+      inlineScopeStack = appendSegmentToScopeStack(
+        inlineScopeStack,
+        seg,
+        false,
+      );
+    }
+    const inlineNormalized = normalizeSchemaNode(
+      rebasedInline,
+      true,
+      inlineScopeStack,
+      ctx,
+    ).value;
+    if (copyCount > 1) {
+      chargeDuplicatedSubtreeBudget(inlineNormalized, copyCount - 1, ctx);
+    }
+    return inlineNormalized;
   };
 
   const buildSubpathScopeStack = (
@@ -1529,7 +1577,14 @@ function distributeUnionSiblingKeywords(
         return relocateArrayLevelEnum(
           {
             ...rootRecord,
-            ...(relocated.type !== undefined ? { type: relocated.type } : {}),
+            ...(relocated.type !== undefined
+              ? {
+                  type:
+                    relocated.type === "null"
+                      ? ["array", "null"]
+                      : relocated.type,
+                }
+              : {}),
             ...(relocated.items !== undefined &&
             !Object.hasOwn(rootRecord, "items")
               ? { items: relocated.items }
@@ -1586,7 +1641,7 @@ function distributeUnionSiblingKeywords(
       relativeSuffix,
       `${unionKey}_${branchIdx}`,
       rawBranch,
-      branchDuplicatesIdentifiers[branchIdx],
+      branchDuplicatesIdentifiers[branchIdx] ? 2 : 1,
       !branchSurvives[branchIdx],
     );
   });
@@ -1604,7 +1659,7 @@ function distributeUnionSiblingKeywords(
         relativeSuffix,
         propKey,
         propSchema,
-        parentPropsCopyCount > 1,
+        parentPropsCopyCount,
       );
       if (ctx.budgetExceeded) {
         return null;
@@ -1624,7 +1679,7 @@ function distributeUnionSiblingKeywords(
         relativeSuffix,
         propKey,
         propSchema,
-        parentPatternPropsCopyCount > 1,
+        parentPatternPropsCopyCount,
       );
       if (ctx.budgetExceeded) {
         return null;
@@ -1640,7 +1695,7 @@ function distributeUnionSiblingKeywords(
       "/additionalProperties",
       "additionalProperties",
       node.additionalProperties,
-      parentAdditionalPropsCopyCount > 1,
+      parentAdditionalPropsCopyCount,
     );
     if (ctx.budgetExceeded) {
       return null;
@@ -1911,6 +1966,7 @@ function distributeUnionSiblingKeywords(
       }
     }
 
+    const branchTypeBeforeRelocate = mergedBranch.type;
     const relocatedBranch = relocateArrayLevelEnum(
       mergedBranch,
       branchScopeStack,
@@ -1931,8 +1987,8 @@ function distributeUnionSiblingKeywords(
         const updatedHoistedBranch = relocateArrayLevelEnum(
           {
             ...hoistedBranch,
-            ...(mergedBranch.type !== undefined
-              ? { type: mergedBranch.type }
+            ...(branchTypeBeforeRelocate !== undefined
+              ? { type: branchTypeBeforeRelocate }
               : {}),
           },
           [],
@@ -2016,6 +2072,17 @@ function relocateArrayLevelEnum(
 
   const nonNullEnum = node.enum.filter((entry) => entry !== null);
   const { enum: _enumValues, ...rest } = node;
+  if (
+    nonNullEnum.length === 0 &&
+    node.enum.includes(null) &&
+    extractTypeList(node.type)?.includes("null")
+  ) {
+    const { items: _items, ...nullRest } = rest;
+    return {
+      ...nullRest,
+      type: "null",
+    };
+  }
   const ownItems = isPlainRecord(node.items) ? node.items : undefined;
   const ownItemTypes = ownItems ? extractTypeList(ownItems.type) : undefined;
   const parentItemTypes = fallbackParentItems
@@ -2040,14 +2107,12 @@ function relocateArrayLevelEnum(
     nonNullEnum.every((entry) =>
       isCompatibleScalarForItemType(entry, itemType),
     );
+  const canRelocateToItems = ownItems
+    ? !Array.isArray(ownItems.enum)
+    : !Object.hasOwn(node, "items") &&
+      (!fallbackParentItems || !Array.isArray(fallbackParentItems.enum));
 
-  if (
-    isCompatibleScalarEnum &&
-    ((ownItems && !Array.isArray(ownItems.enum)) ||
-      (!Object.hasOwn(node, "items") &&
-        fallbackParentItems &&
-        !Array.isArray(fallbackParentItems.enum)))
-  ) {
+  if (isCompatibleScalarEnum && canRelocateToItems) {
     if (allRefs.size > 0) {
       for (const frame of scopeStack) {
         if (!frame.trackRefAliases) {

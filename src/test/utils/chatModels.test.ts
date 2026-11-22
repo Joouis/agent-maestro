@@ -1211,10 +1211,12 @@ suite("Chat Models QuickPick Test Suite", () => {
       ).v.$ref,
       "#/$defs/V",
     );
+    assert.deepStrictEqual(r12Branch0Props.wrapped, {
+      $ref: "#/$defs/wrapped",
+    });
     const wrappedItemsBranch0 = (
-      (r12Branch0Props.wrapped.items as Record<string, unknown>).anyOf as Array<
-        Record<string, unknown>
-      >
+      (normalizedRound12.$defs.wrapped.items as Record<string, unknown>)
+        .anyOf as Array<Record<string, unknown>>
     )[0];
     assert.strictEqual(
       (
@@ -1528,5 +1530,89 @@ suite("Chat Models QuickPick Test Suite", () => {
     )[0];
     assert.strictEqual(incompatibleBranch0.enum, undefined);
     assert.deepStrictEqual(incompatibleBranch0.items, {});
+
+    // Round 16:
+    // 1. Nested unions containing `$ref` (or generated `$ref`s) still share via
+    //    `$defs`, and duplicated identifier-bearing subtrees charge the node
+    //    budget for every emitted copy.
+    // 2. Null-only array-level `enum: [null]` on `type: ["array", "null"]`
+    //    narrows to `type: "null"`.
+    // 3. Array-level scalar `enum` without an `items` keyword still relocates
+    //    to `items.enum`.
+    const round16EdgeCases = {
+      type: "object",
+      $defs: {
+        SharedStr: { type: "string" },
+      },
+      properties: {
+        refBearingUnion: {
+          type: "object",
+          properties: {
+            nestedUnionWithRef: {
+              type: "object",
+              properties: {
+                s: { $ref: "#/$defs/SharedStr" },
+              },
+              anyOf: [{ required: ["s"] }, { minProperties: 1 }],
+            },
+          },
+          anyOf: [{ required: ["nestedUnionWithRef"] }, { minProperties: 1 }],
+        },
+        nullableArrayNullBranch: {
+          type: ["array", "null"],
+          anyOf: [
+            { type: "array", items: { type: "integer" } },
+            { enum: [null] },
+          ],
+        },
+        untypedArrayEnum: {
+          type: "array",
+          enum: ["a", "b"],
+        },
+      },
+    };
+    const normalizedRound16 = normalizeCopilotToolSchema(round16EdgeCases) as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    const refBearingUnion = normalizedRound16.properties.refBearingUnion as {
+      $defs: Record<string, unknown>;
+      anyOf: Array<Record<string, unknown>>;
+    };
+    assert.ok(refBearingUnion.$defs.nestedUnionWithRef);
+    assert.deepStrictEqual(
+      (refBearingUnion.anyOf[0].properties as Record<string, unknown>)
+        .nestedUnionWithRef,
+      { $ref: "#/properties/refBearingUnion/$defs/nestedUnionWithRef" },
+    );
+    assert.deepStrictEqual(
+      normalizedRound16.properties.nullableArrayNullBranch,
+      {
+        anyOf: [
+          { type: "array", items: { type: "integer" } },
+          { type: "null" },
+        ],
+      },
+    );
+    assert.deepStrictEqual(normalizedRound16.properties.untypedArrayEnum, {
+      type: "array",
+      items: {
+        enum: ["a", "b"],
+      },
+    });
+
+    let deepIdentifiedUnion: Record<string, unknown> = { type: "string" };
+    for (let depth = 0; depth < 20; depth++) {
+      deepIdentifiedUnion = {
+        $id: `https://example.com/level-${depth}.json`,
+        type: "object",
+        properties: { child: deepIdentifiedUnion },
+        anyOf: [{ required: ["child"] }, { minProperties: 1 }],
+      };
+    }
+    const idUnionStartMs = Date.now();
+    const normalizedDeepIdentified =
+      normalizeCopilotToolSchema(deepIdentifiedUnion);
+    assert.ok(Date.now() - idUnionStartMs < 1000);
+    assert.deepStrictEqual(normalizedDeepIdentified, deepIdentifiedUnion);
   });
 });
