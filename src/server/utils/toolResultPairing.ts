@@ -538,9 +538,15 @@ export function toolHistoryToVSCode(
       safeOutput.push(message);
       continue;
     }
-    // Formal results stay first so pairing holds. Promoted media and the
-    // turn's ordinary content follow in their original order, so references
-    // like "the first image" still point at the same image.
+    // Formal results stay first so pairing holds. Once one result is oversized,
+    // media from every result in the message is promoted, so promoted groups
+    // and the turn's ordinary content can follow in their original order and
+    // references like "the first image" still point at the same image.
+    const hasMedia = (
+      part: ModelInputPart,
+    ): part is vscode.LanguageModelToolResultPart =>
+      part instanceof vscode.LanguageModelToolResultPart &&
+      part.content.some((item) => item instanceof vscode.LanguageModelDataPart);
     const formal: ModelInputPart[] = [];
     const following: ModelInputPart[][] = [];
     let ordinary: ModelInputPart[] = [];
@@ -551,7 +557,7 @@ export function toolHistoryToVSCode(
       }
     };
     for (const part of message.content as ModelInputPart[]) {
-      if (oversized(part)) {
+      if (hasMedia(part)) {
         const text = part.content.filter(
           (item): item is vscode.LanguageModelTextPart =>
             item instanceof vscode.LanguageModelTextPart,
@@ -560,7 +566,7 @@ export function toolHistoryToVSCode(
           new vscode.LanguageModelToolResultPart(part.callId, [
             ...text,
             new vscode.LanguageModelTextPart(
-              "[Large binary tool result is attached in the following user message.]",
+              "[Binary tool result content is attached in the following user message.]",
             ),
           ]),
         );
