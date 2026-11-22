@@ -93,8 +93,11 @@ const isReasoningOnlyAssistantMessage = (
   message.parts.length > 0 &&
   message.parts.every((part) => part.kind === "reasoning");
 
-// Copilot rejects large binary parts nested inside tool results even though the
-// same data is accepted as ordinary user image content.
+// Copilot rejects or drops large binary parts nested inside tool results (Gemini
+// 413, Claude cannot see the image), while the same image is accepted as
+// ordinary user content, which VS Code downscales before sending. Empirical:
+// 41 KB and 74 KB results pass and 1.2 MB fails. The limit is per tool result;
+// several smaller results that add up past it are not promoted.
 const MAX_INLINE_TOOL_RESULT_DATA_BYTES = 1_000_000;
 
 /** Analyze a complete request snapshot; no decisions depend on another request. */
@@ -515,61 +518,85 @@ export function toolHistoryToVSCode(
   }
   const safeOutput: vscode.LanguageModelChatMessage[] = [];
   for (const message of output) {
-    const promotedGroups: Array<{
-      callId: string;
-      parts: ToolHistoryContent[];
-    }> = [];
-    const content = message.content.map((part) => {
-      if (!(part instanceof vscode.LanguageModelToolResultPart)) {
-        return part;
-      }
-      const data = part.content.filter(
-        (item): item is vscode.LanguageModelDataPart =>
-          item instanceof vscode.LanguageModelDataPart,
-      );
-      const totalBytes = data.reduce(
-        (sum, item) => sum + item.data.byteLength,
+    const oversized = (
+      part: unknown,
+    ): part is vscode.LanguageModelToolResultPart =>
+      part instanceof vscode.LanguageModelToolResultPart &&
+      part.content.reduce<number>(
+        (sum, item) =>
+          item instanceof vscode.LanguageModelDataPart
+            ? sum + item.data.byteLength
+            : sum,
         0,
-      );
-      if (totalBytes <= MAX_INLINE_TOOL_RESULT_DATA_BYTES) {
-        return part;
+      ) > MAX_INLINE_TOOL_RESULT_DATA_BYTES;
+    if (!message.content.some(oversized)) {
+      safeOutput.push(message);
+      continue;
+    }
+    // Formal results stay first so pairing holds. Promoted media and the
+    // turn's ordinary content follow in their original order, so references
+    // like "the first image" still point at the same image.
+    const formal: ModelInputPart[] = [];
+    const following: ModelInputPart[][] = [];
+    let ordinary: ModelInputPart[] = [];
+    const flushOrdinary = () => {
+      if (ordinary.length) {
+        following.push(ordinary);
+        ordinary = [];
       }
-      promotedGroups.push({
-        callId: part.callId,
-        parts: part.content.reduce<ToolHistoryContent[]>((items, item) => {
+    };
+    for (const part of message.content as ModelInputPart[]) {
+      if (oversized(part)) {
+        const text = part.content.filter(
+          (item): item is vscode.LanguageModelTextPart =>
+            item instanceof vscode.LanguageModelTextPart,
+        );
+        formal.push(
+          new vscode.LanguageModelToolResultPart(part.callId, [
+            ...text,
+            new vscode.LanguageModelTextPart(
+              "[Large binary tool result is attached in the following user message.]",
+            ),
+          ]),
+        );
+        flushOrdinary();
+        const promoted: ModelInputPart[] = [
+          new vscode.LanguageModelTextPart(
+            "[Content promoted from tool result " + part.callId + ".]",
+          ),
+        ];
+        let bytes = 0;
+        for (const item of part.content) {
           if (item instanceof vscode.LanguageModelDataPart) {
-            items.push(
+            bytes += item.data.byteLength;
+            promoted.push(
               new vscode.LanguageModelDataPart(
                 item.data,
                 mimeForVscodeLm(Buffer.from(item.data), item.mimeType),
               ),
             );
           } else if (item instanceof vscode.LanguageModelTextPart) {
-            items.push(item);
+            promoted.push(item);
           }
-          return items;
-        }, []),
-      });
-      const text = part.content.filter(
-        (item): item is vscode.LanguageModelTextPart =>
-          item instanceof vscode.LanguageModelTextPart,
-      );
-      return new vscode.LanguageModelToolResultPart(part.callId, [
-        ...text,
-        new vscode.LanguageModelTextPart(
-          "[Large binary tool result is attached in the following user message.]",
-        ),
-      ]);
-    });
-    safeOutput.push(createModelMessage(message.role, content));
-    for (const group of promotedGroups) {
+        }
+        following.push(promoted);
+        logger.debug(
+          `${adapter} promoted ${bytes} bytes of tool-result media to user content`,
+        );
+      } else if (
+        part instanceof vscode.LanguageModelToolCallPart ||
+        part instanceof vscode.LanguageModelToolResultPart
+      ) {
+        formal.push(part);
+      } else {
+        ordinary.push(part);
+      }
+    }
+    flushOrdinary();
+    safeOutput.push(createModelMessage(message.role, formal));
+    for (const parts of following) {
       safeOutput.push(
-        vscode.LanguageModelChatMessage.User([
-          new vscode.LanguageModelTextPart(
-            "[Content promoted from tool result " + group.callId + ".]",
-          ),
-          ...group.parts,
-        ]),
+        createModelMessage(vscode.LanguageModelChatMessageRole.User, parts),
       );
     }
   }

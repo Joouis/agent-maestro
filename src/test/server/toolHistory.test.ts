@@ -796,6 +796,82 @@ suite("Tool history normalizer", () => {
     assert.ok(promoted instanceof vscode.LanguageModelDataPart);
     assert.strictEqual(promoted.mimeType, "image/png");
   });
+  test("keeps promoted media before the turn's later ordinary content", () => {
+    const large = (byte: number) =>
+      Buffer.alloc(1_000_001, byte).toString("base64");
+    const actual = convertAnthropicMessagesToVSCode([
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "a", name: "view", input: {} }],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "a",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: large(1),
+                },
+              },
+            ],
+          },
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: large(2) },
+          },
+          { type: "text", text: "Compare the first and second images." },
+        ],
+      },
+    ]);
+
+    paired(actual, 1);
+    const images = actual
+      .flatMap((m) => m.content)
+      .filter(
+        (p): p is vscode.LanguageModelDataPart =>
+          p instanceof vscode.LanguageModelDataPart,
+      )
+      .map((p) => p.data[0]);
+    assert.deepStrictEqual(images, [1, 2]);
+    assert.ok(
+      actual[1].content.every(
+        (p) => p instanceof vscode.LanguageModelToolResultPart,
+      ),
+    );
+    const last = actual.at(-1)!.content.at(-1) as vscode.LanguageModelTextPart;
+    assert.strictEqual(last.value, "Compare the first and second images.");
+  });
+  test("logs promoted media at debug level", () => {
+    const debug: string[] = [];
+    const original = logger.debug;
+    logger.debug = (message: string) => debug.push(message);
+    try {
+      const image = new vscode.LanguageModelDataPart(
+        new Uint8Array(1_000_001),
+        "image/png",
+      );
+      toolHistoryToVSCode(
+        [
+          model(call("x")),
+          user({ ...result("x"), parts: [image] } as ToolHistoryPart),
+        ],
+        "Test",
+      );
+      assert.ok(
+        debug.some((m) =>
+          /promoted 1000001 bytes of tool-result media/.test(m),
+        ),
+      );
+    } finally {
+      logger.debug = original;
+    }
+  });
   test("logs only counts, with no result bodies or IDs", () => {
     const warnings: string[] = [];
     const warn = logger.warn;
