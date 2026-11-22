@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import * as vscode from "vscode";
 
 import { logger } from "../../utils/logger";
+import { mimeForVscodeLm } from "./imageMime";
 import {
   ModelInputPart,
   ThinkingPart,
@@ -91,6 +92,17 @@ const isReasoningOnlyAssistantMessage = (
   message.role === "assistant" &&
   message.parts.length > 0 &&
   message.parts.every((part) => part.kind === "reasoning");
+
+// Copilot sends tool-result images unresized: VS Code's `_chat.resizeImage`
+// returns a bare Uint8Array that Copilot's image service rejects, so it falls
+// back to the original bytes, and `/chat/completions` rejects those above about
+// 1.1 MiB. Gemini on that path also ignores tool-result images of any size.
+// User images go through a resize that works, and Copilot's own `/responses`
+// path already moves tool-result images into a user message, so all
+// tool-result media is promoted the same way.
+const hasMedia = (part: unknown): part is vscode.LanguageModelToolResultPart =>
+  part instanceof vscode.LanguageModelToolResultPart &&
+  part.content.some((item) => item instanceof vscode.LanguageModelDataPart);
 
 /** Analyze a complete request snapshot; no decisions depend on another request. */
 export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
@@ -493,7 +505,12 @@ export function toolHistoryToVSCode(
   // Copilot rejects ordinary content interleaved between parallel tool results.
   // Keep formal parts contiguous unless reasoning makes their original positions
   // significant. Responses keeps ordinary assistant text in separate messages.
+  // Messages with tool-result media are grouped by the promotion pass below,
+  // which needs the original order to keep promoted media in place.
   for (const message of output) {
+    if (message.content.some(hasMedia)) {
+      continue;
+    }
     const tools = message.content.filter(
       (part) =>
         part instanceof vscode.LanguageModelToolCallPart ||
@@ -508,10 +525,83 @@ export function toolHistoryToVSCode(
       message.content.splice(0, message.content.length, ...tools, ...context);
     }
   }
+  const safeOutput: vscode.LanguageModelChatMessage[] = [];
+  for (const message of output) {
+    if (!message.content.some(hasMedia)) {
+      safeOutput.push(message);
+      continue;
+    }
+    // Formal results stay first so pairing holds. Promoted groups and the
+    // turn's ordinary content follow in their original order, so references
+    // like "the first image" still point at the same image.
+    const formal: ModelInputPart[] = [];
+    const following: ModelInputPart[][] = [];
+    let ordinary: ModelInputPart[] = [];
+    const flushOrdinary = () => {
+      if (ordinary.length) {
+        following.push(ordinary);
+        ordinary = [];
+      }
+    };
+    for (const part of message.content as ModelInputPart[]) {
+      if (hasMedia(part)) {
+        const text = part.content.filter(
+          (item): item is vscode.LanguageModelTextPart =>
+            item instanceof vscode.LanguageModelTextPart,
+        );
+        formal.push(
+          new vscode.LanguageModelToolResultPart(part.callId, [
+            ...text,
+            new vscode.LanguageModelTextPart(
+              "[Large binary tool result is attached in the following user message.]",
+            ),
+          ]),
+        );
+        flushOrdinary();
+        const promoted: ModelInputPart[] = [
+          new vscode.LanguageModelTextPart(
+            "[Content promoted from tool result " + part.callId + ".]",
+          ),
+        ];
+        let bytes = 0;
+        for (const item of part.content) {
+          if (item instanceof vscode.LanguageModelDataPart) {
+            bytes += item.data.byteLength;
+            promoted.push(
+              new vscode.LanguageModelDataPart(
+                item.data,
+                mimeForVscodeLm(Buffer.from(item.data), item.mimeType),
+              ),
+            );
+          } else if (item instanceof vscode.LanguageModelTextPart) {
+            promoted.push(item);
+          }
+        }
+        following.push(promoted);
+        logger.debug(
+          `${adapter} promoted ${bytes} bytes of tool-result media to user content`,
+        );
+      } else if (
+        part instanceof vscode.LanguageModelToolCallPart ||
+        part instanceof vscode.LanguageModelToolResultPart
+      ) {
+        formal.push(part);
+      } else {
+        ordinary.push(part);
+      }
+    }
+    flushOrdinary();
+    safeOutput.push(createModelMessage(message.role, formal));
+    for (const parts of following) {
+      safeOutput.push(
+        createModelMessage(vscode.LanguageModelChatMessageRole.User, parts),
+      );
+    }
+  }
   if (Object.values(recoveries).some((count) => count > 0)) {
     logger.warn(
       adapter + " tool history normalization: " + JSON.stringify(diagnostics),
     );
   }
-  return output;
+  return safeOutput;
 }

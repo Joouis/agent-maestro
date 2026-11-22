@@ -994,9 +994,48 @@ export const convertResponsesItemToVSCode = (
         "input",
       );
     }
+    // Only names (and custom formats) are replayed: the full schemas are
+    // already sent as tool declarations, so repeating them here doubles input.
+    // Names use the declared LM tool name so the model sees one spelling.
+    type DiscoveredToolSummary = string | { name: string; format: unknown };
+    type DiscoveredTool = {
+      type?: string;
+      name?: string;
+      format?: unknown;
+      tools?: DiscoveredTool[];
+    };
+    const summarize = (
+      tool: DiscoveredTool,
+      name: string,
+    ): DiscoveredToolSummary =>
+      tool.type === "custom" && tool.format
+        ? { name, format: tool.format }
+        : name;
+    const discoveredTools = (
+      item.tools as unknown[]
+    ).flatMap<DiscoveredToolSummary>((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return [];
+      }
+      const tool = entry as DiscoveredTool;
+      if (tool.type === "namespace") {
+        const namespace = tool.name;
+        if (!namespace || !Array.isArray(tool.tools)) {
+          return [];
+        }
+        return tool.tools.flatMap((member) =>
+          member?.name
+            ? [summarize(member, encodeNamespacedName(namespace, member.name))]
+            : [],
+        );
+      }
+      return tool.name ? [summarize(tool, tool.name)] : [];
+    });
     return vscode.LanguageModelChatMessage.User([
       new vscode.LanguageModelToolResultPart(item.call_id, [
-        new vscode.LanguageModelTextPart(JSON.stringify(item.tools)),
+        new vscode.LanguageModelTextPart(
+          JSON.stringify({ discovered_tools: discoveredTools }),
+        ),
       ]),
     ]);
   }

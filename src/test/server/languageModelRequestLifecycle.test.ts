@@ -391,7 +391,7 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     assert.strictEqual(cancellationObserved, true);
   });
 
-  test("passes tool-output images to Responses models as DataPart", async () => {
+  test("promotes tool-output images to user content for Responses models", async () => {
     let capturedMessages: readonly vscode.LanguageModelChatMessage[] = [];
     const model = {
       id: "gpt-5.6-test",
@@ -449,10 +449,22 @@ suite("LanguageModelRequestLifecycle Test Suite", () => {
     });
 
     assert.strictEqual(response.status, 200);
-    assert.strictEqual(capturedMessages.length, 2);
-    const toolResult = capturedMessages[1].content[0] as any;
-    assert.ok(toolResult.content[0] instanceof vscode.LanguageModelTextPart);
-    assert.ok(toolResult.content[1] instanceof vscode.LanguageModelDataPart);
+    // The tool result keeps its text; the image is promoted to the following
+    // user message, where VS Code resizes it (tool-result images are not).
+    assert.strictEqual(capturedMessages.length, 3);
+    const toolResult = capturedMessages[1]
+      .content[0] as vscode.LanguageModelToolResultPart;
+    assert.ok(toolResult instanceof vscode.LanguageModelToolResultPart);
+    assert.ok(
+      toolResult.content.every(
+        (p) => p instanceof vscode.LanguageModelTextPart,
+      ),
+    );
+    assert.ok(
+      capturedMessages[2].content.some(
+        (p) => p instanceof vscode.LanguageModelDataPart,
+      ),
+    );
   });
 
   test("recovers invalid tool IDs before both routes call the model", async () => {
