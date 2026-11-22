@@ -746,10 +746,7 @@ suite("Tool history normalizer", () => {
     const actual = convertAnthropicMessagesToVSCode([
       {
         role: "assistant",
-        content: [
-          { type: "tool_use", id: "inline", name: "read", input: {} },
-          { type: "tool_use", id: "promoted", name: "read", input: {} },
-        ],
+        content: [{ type: "tool_use", id: "inline", name: "read", input: {} }],
       },
       {
         role: "user",
@@ -768,6 +765,17 @@ suite("Tool history normalizer", () => {
               },
             ],
           },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "promoted", name: "read", input: {} },
+        ],
+      },
+      {
+        role: "user",
+        content: [
           {
             type: "tool_result",
             tool_use_id: "promoted",
@@ -792,9 +800,182 @@ suite("Tool history normalizer", () => {
     assert.ok(inlineImage instanceof vscode.LanguageModelDataPart);
     assert.strictEqual(inlineImage.mimeType, "image/webp");
 
-    const promoted = actual[2].content[1] as vscode.LanguageModelDataPart;
+    const promoted = actual
+      .at(-1)!
+      .content.find(
+        (p): p is vscode.LanguageModelDataPart =>
+          p instanceof vscode.LanguageModelDataPart,
+      )!;
     assert.ok(promoted instanceof vscode.LanguageModelDataPart);
     assert.strictEqual(promoted.mimeType, "image/png");
+  });
+  test("keeps promoted media before the turn's later ordinary content", () => {
+    const large = (byte: number) =>
+      Buffer.alloc(1_000_001, byte).toString("base64");
+    const actual = convertAnthropicMessagesToVSCode([
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "a", name: "view", input: {} }],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "a",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: large(1),
+                },
+              },
+            ],
+          },
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: large(2) },
+          },
+          { type: "text", text: "Compare the first and second images." },
+        ],
+      },
+    ]);
+
+    paired(actual, 1);
+    const images = actual
+      .flatMap((m) => m.content)
+      .filter(
+        (p): p is vscode.LanguageModelDataPart =>
+          p instanceof vscode.LanguageModelDataPart,
+      )
+      .map((p) => p.data[0]);
+    assert.deepStrictEqual(images, [1, 2]);
+    assert.ok(
+      actual[1].content.every(
+        (p) => p instanceof vscode.LanguageModelToolResultPart,
+      ),
+    );
+    const last = actual.at(-1)!.content.at(-1) as vscode.LanguageModelTextPart;
+    assert.strictEqual(last.value, "Compare the first and second images.");
+  });
+  test("keeps media order across interleaved oversized parallel results", () => {
+    const big = (byte: number) =>
+      new vscode.LanguageModelDataPart(
+        new Uint8Array(1_000_001).fill(byte),
+        "image/png",
+      );
+    const withImage = (id: string, byte: number) =>
+      ({ ...result(id), parts: [big(byte)] }) as ToolHistoryPart;
+    const ordinary: ToolHistoryPart = { kind: "content", parts: [big(2)] };
+
+    for (const history of [
+      [
+        model(call("a"), call("c")),
+        user(withImage("a", 1), ordinary, withImage("c", 3)),
+      ],
+      // Consecutive result-bearing user messages are merged before promotion.
+      [
+        model(call("a"), call("c")),
+        user(withImage("a", 1), ordinary),
+        user(withImage("c", 3)),
+      ],
+    ]) {
+      const actual = toolHistoryToVSCode(history, "Test");
+
+      paired(actual, 2);
+      assert.ok(
+        actual[1].content.every(
+          (p) => p instanceof vscode.LanguageModelToolResultPart,
+        ),
+      );
+      const images = actual
+        .flatMap((m) => m.content)
+        .filter(
+          (p): p is vscode.LanguageModelDataPart =>
+            p instanceof vscode.LanguageModelDataPart,
+        )
+        .map((p) => p.data[0]);
+      assert.deepStrictEqual(images, [1, 2, 3]);
+    }
+  });
+  test("promotes smaller sibling media to keep mixed-size results in order", () => {
+    const image = (bytes: number, byte: number) =>
+      new vscode.LanguageModelDataPart(
+        new Uint8Array(bytes).fill(byte),
+        "image/png",
+      );
+    const actual = toolHistoryToVSCode(
+      [
+        model(call("a"), call("c")),
+        user(
+          { ...result("a"), parts: [image(1_000_001, 1)] } as ToolHistoryPart,
+          { kind: "content", parts: [image(10, 2)] },
+          { ...result("c"), parts: [image(10, 3)] } as ToolHistoryPart,
+        ),
+      ],
+      "Test",
+    );
+
+    paired(actual, 2);
+    assert.ok(
+      results(actual).every((r) =>
+        r.content.every((p) => p instanceof vscode.LanguageModelTextPart),
+      ),
+    );
+    const images = actual
+      .flatMap((m) => m.content)
+      .filter(
+        (p): p is vscode.LanguageModelDataPart =>
+          p instanceof vscode.LanguageModelDataPart,
+      )
+      .map((p) => p.data[0]);
+    assert.deepStrictEqual(images, [1, 2, 3]);
+  });
+  test("keeps small results inline when no sibling is oversized", () => {
+    const small = new vscode.LanguageModelDataPart(
+      new Uint8Array(10),
+      "image/png",
+    );
+    const actual = toolHistoryToVSCode(
+      [
+        model(call("a"), call("c")),
+        user(
+          { ...result("a"), parts: [small] } as ToolHistoryPart,
+          { ...result("c"), parts: [small] } as ToolHistoryPart,
+        ),
+      ],
+      "Test",
+    );
+
+    assert.strictEqual(actual.length, 2);
+    assert.ok(results(actual).every((r) => r.content.includes(small)));
+  });
+  test("logs promoted media at debug level", () => {
+    const debug: string[] = [];
+    const original = logger.debug;
+    logger.debug = (message: string) => debug.push(message);
+    try {
+      const image = new vscode.LanguageModelDataPart(
+        new Uint8Array(1_000_001),
+        "image/png",
+      );
+      toolHistoryToVSCode(
+        [
+          model(call("x")),
+          user({ ...result("x"), parts: [image] } as ToolHistoryPart),
+        ],
+        "Test",
+      );
+      assert.ok(
+        debug.some((m) =>
+          /promoted 1000001 bytes of tool-result media/.test(m),
+        ),
+      );
+    } finally {
+      logger.debug = original;
+    }
   });
   test("logs only counts, with no result bodies or IDs", () => {
     const warnings: string[] = [];
