@@ -93,12 +93,16 @@ const isReasoningOnlyAssistantMessage = (
   message.parts.length > 0 &&
   message.parts.every((part) => part.kind === "reasoning");
 
-// Copilot rejects or drops large binary parts nested inside tool results (Gemini
-// 413, Claude cannot see the image), while the same image is accepted as
-// ordinary user content, which VS Code downscales before sending. Empirical:
-// 41 KB and 74 KB results pass and 1.2 MB fails. The limit is per tool result;
-// several smaller results that add up past it are not promoted.
-const MAX_INLINE_TOOL_RESULT_DATA_BYTES = 1_000_000;
+// Copilot sends tool-result images unresized: VS Code's `_chat.resizeImage`
+// returns a bare Uint8Array that Copilot's image service rejects, so it falls
+// back to the original bytes, and `/chat/completions` rejects those above about
+// 1.1 MiB. Gemini on that path also ignores tool-result images of any size.
+// User images go through a resize that works, and Copilot's own `/responses`
+// path already moves tool-result images into a user message, so all
+// tool-result media is promoted the same way.
+const hasMedia = (part: unknown): part is vscode.LanguageModelToolResultPart =>
+  part instanceof vscode.LanguageModelToolResultPart &&
+  part.content.some((item) => item instanceof vscode.LanguageModelDataPart);
 
 /** Analyze a complete request snapshot; no decisions depend on another request. */
 export function normalizeToolHistory(messages: readonly ToolHistoryMessage[]): {
@@ -498,24 +502,13 @@ export function toolHistoryToVSCode(
     previousHadCalls = (hasCalls || reasoningOnly) && !message.boundary;
   }
   const { retainedPairs: _pairs, ...recoveries } = diagnostics;
-  const oversized = (
-    part: unknown,
-  ): part is vscode.LanguageModelToolResultPart =>
-    part instanceof vscode.LanguageModelToolResultPart &&
-    part.content.reduce<number>(
-      (sum, item) =>
-        item instanceof vscode.LanguageModelDataPart
-          ? sum + item.data.byteLength
-          : sum,
-      0,
-    ) > MAX_INLINE_TOOL_RESULT_DATA_BYTES;
   // Copilot rejects ordinary content interleaved between parallel tool results.
   // Keep formal parts contiguous unless reasoning makes their original positions
   // significant. Responses keeps ordinary assistant text in separate messages.
-  // Messages with oversized results are grouped by the promotion pass below,
+  // Messages with tool-result media are grouped by the promotion pass below,
   // which needs the original order to keep promoted media in place.
   for (const message of output) {
-    if (message.content.some(oversized)) {
+    if (message.content.some(hasMedia)) {
       continue;
     }
     const tools = message.content.filter(
@@ -534,19 +527,13 @@ export function toolHistoryToVSCode(
   }
   const safeOutput: vscode.LanguageModelChatMessage[] = [];
   for (const message of output) {
-    if (!message.content.some(oversized)) {
+    if (!message.content.some(hasMedia)) {
       safeOutput.push(message);
       continue;
     }
-    // Formal results stay first so pairing holds. Once one result is oversized,
-    // media from every result in the message is promoted, so promoted groups
-    // and the turn's ordinary content can follow in their original order and
-    // references like "the first image" still point at the same image.
-    const hasMedia = (
-      part: ModelInputPart,
-    ): part is vscode.LanguageModelToolResultPart =>
-      part instanceof vscode.LanguageModelToolResultPart &&
-      part.content.some((item) => item instanceof vscode.LanguageModelDataPart);
+    // Formal results stay first so pairing holds. Promoted groups and the
+    // turn's ordinary content follow in their original order, so references
+    // like "the first image" still point at the same image.
     const formal: ModelInputPart[] = [];
     const following: ModelInputPart[][] = [];
     let ordinary: ModelInputPart[] = [];
