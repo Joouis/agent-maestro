@@ -1756,6 +1756,18 @@ function distributeUnionSiblingKeywords(
     const inlineBranchRecord = (
       isPlainRecord(preparedBranch) ? preparedBranch : branchRecord
     ) as Record<string, unknown>;
+    if (!branchHasDirectRef) {
+      const preparedBranchTypes = extractTypeList(inlineBranchRecord.type);
+      if (preparedBranchTypes !== undefined) {
+        effectiveTypes =
+          effectiveTypes !== undefined
+            ? intersectTypeLists(preparedBranchTypes, effectiveTypes)
+            : preparedBranchTypes;
+        if (effectiveTypes.length === 0) {
+          continue;
+        }
+      }
+    }
 
     const inlineHasNestedUnion =
       Array.isArray(inlineBranchRecord.anyOf) ||
@@ -2077,9 +2089,8 @@ function relocateArrayLevelEnum(
     node.enum.includes(null) &&
     extractTypeList(node.type)?.includes("null")
   ) {
-    const { items: _items, ...nullRest } = rest;
     return {
-      ...nullRest,
+      ...rest,
       type: "null",
     };
   }

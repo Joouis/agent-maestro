@@ -1614,5 +1614,57 @@ suite("Chat Models QuickPick Test Suite", () => {
       normalizeCopilotToolSchema(deepIdentifiedUnion);
     assert.ok(Date.now() - idUnionStartMs < 1000);
     assert.deepStrictEqual(normalizedDeepIdentified, deepIdentifiedUnion);
+
+    // Round 17:
+    // 1. Intersect `effectiveTypes` with prepared branch types so branches
+    //    narrowed to `type: "null"` during preparation do not regain `"array"`.
+    // 2. Retain `items` when narrowing nullable arrays with `enum: [null]` to
+    //    `type: "null"`, preserving `#/.../items` reference targets and nested
+    //    `$id` resources.
+    const round17EdgeCases = {
+      type: "object",
+      properties: {
+        preparedNullBranchUnion: {
+          type: ["array", "null"],
+          anyOf: [
+            { type: "array", items: { type: "integer" } },
+            { type: ["array", "null"], enum: [null] },
+          ],
+        },
+        nullArrayWithReferencedItems: {
+          type: ["array", "null"],
+          items: {
+            $id: "https://example.com/null-array-item.json",
+            type: "string",
+          },
+          enum: [null],
+        },
+        refToNullArrayItems: {
+          $ref: "#/properties/nullArrayWithReferencedItems/items",
+        },
+      },
+    };
+    const normalizedRound17 = normalizeCopilotToolSchema(round17EdgeCases) as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    assert.deepStrictEqual(
+      normalizedRound17.properties.preparedNullBranchUnion,
+      {
+        anyOf: [
+          { type: "array", items: { type: "integer" } },
+          { type: "null" },
+        ],
+      },
+    );
+    assert.deepStrictEqual(
+      normalizedRound17.properties.nullArrayWithReferencedItems,
+      {
+        type: "null",
+        items: {
+          $id: "https://example.com/null-array-item.json",
+          type: "string",
+        },
+      },
+    );
   });
 });
