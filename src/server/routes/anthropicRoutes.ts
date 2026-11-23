@@ -439,12 +439,6 @@ export function registerAnthropicRoutes(
       const copilotConfiguration = getCopilotModelConfiguration({
         reasoningEffort: output_config?.effort,
       });
-      const configuredRequestOptions = withCopilotConfiguration(
-        client,
-        lmRequestOptions,
-        copilotConfiguration,
-      );
-
       if (preparedTools.usesWebSearchLoop) {
         return await handleAnthropicWebSearch({
           c,
@@ -457,7 +451,11 @@ export function registerAnthropicRoutes(
           preparedTools,
           provider: options.webSearchProvider!,
           providerTimeoutMs,
-          requestOptions: configuredRequestOptions,
+          requestOptions: withCopilotConfiguration(
+            client,
+            lmRequestOptions,
+            copilotConfiguration,
+          ),
           stream: msgCreateParams.stream,
         });
       }

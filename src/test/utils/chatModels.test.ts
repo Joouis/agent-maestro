@@ -4,7 +4,10 @@ import * as vscode from "vscode";
 import {
   chatModelsCache,
   getChatModelsQuickPickItems,
+  normalizeCopilotToolSchema,
+  withCopilotConfiguration,
 } from "../../utils/chatModels";
+import { logger } from "../../utils/logger";
 
 function createMockModel(
   id: string,
@@ -151,6 +154,305 @@ suite("Chat Models QuickPick Test Suite", () => {
     assert.deepStrictEqual(
       items.slice(otherIndex + 1).map((item) => item.modelId),
       ["auto"],
+    );
+  });
+
+  test("rewrites only 400-inducing tool schemas for Copilot Gemini models and logs debug diagnostics", () => {
+    const geminiModel = createMockModel(
+      "gemini-4-argon",
+      "Gemini 4 Argon",
+      "gemini-4-argon",
+    );
+    const gptModel = createMockModel(
+      "gpt-6.1-sol",
+      "GPT-6.1 Sol",
+      "gpt-6.1-sol",
+    );
+
+    const cleanSchema = {
+      type: "object",
+      $defs: {
+        Tag: { type: "string" },
+      },
+      properties: {
+        tag: { $ref: "#/$defs/Tag" },
+        nullableText: { type: ["string", "null"] },
+      },
+      additionalProperties: false,
+    };
+
+    const rawTools: vscode.LanguageModelChatTool[] = [
+      {
+        name: "clean_tool",
+        description: "Already accepted by Gemini",
+        inputSchema: cleanSchema,
+      },
+      {
+        name: "mcp__workiq__retrieve",
+        description: "Retrieve M365 grounding",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string" },
+            capabilities: {
+              type: ["array", "null"],
+              items: {
+                type: ["object", "null"],
+                properties: {},
+                required: ["name"],
+                anyOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      include_related_content: { type: ["boolean", "null"] },
+                      name: { type: "string", enum: ["People"] },
+                    },
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      name: { type: "string", enum: ["Meetings"] },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          required: ["query"],
+        },
+      },
+      {
+        name: "mcp__icm__search_incidents",
+        description: "Search IcM incidents",
+        inputSchema: {
+          type: "object",
+          properties: {
+            severity: {
+              type: ["array", "null"],
+              enum: [0, 1, 2, 3, 4, 25],
+              items: { type: "integer" },
+            },
+            matrix: {
+              type: "array",
+              enum: [[1], [2]],
+              items: { type: "integer" },
+            },
+          },
+        },
+      },
+      {
+        name: "mcp__etw__add_condition",
+        description: "Add ETW condition",
+        inputSchema: {
+          type: "object",
+          properties: {
+            value: true,
+          },
+        },
+      },
+    ];
+
+    const gptOptions = withCopilotConfiguration(gptModel, { tools: rawTools });
+    assert.strictEqual(gptOptions.tools, rawTools);
+
+    const debugLogs: string[] = [];
+    const origDebug = logger.debug;
+    logger.debug = (...args: unknown[]) => {
+      debugLogs.push(args.map(String).join(" "));
+    };
+
+    let options: vscode.LanguageModelChatRequestOptions;
+    try {
+      options = withCopilotConfiguration(geminiModel, { tools: rawTools });
+    } finally {
+      logger.debug = origDebug;
+    }
+
+    assert.strictEqual(options.tools?.[0], rawTools[0]);
+    assert.ok(
+      debugLogs.some(
+        (msg) =>
+          msg.includes(
+            "Normalized Copilot Gemini tool schema(s) for gemini-4-argon",
+          ) &&
+          msg.includes("mcp__workiq__retrieve") &&
+          msg.includes("mcp__icm__search_incidents") &&
+          msg.includes("mcp__etw__add_condition") &&
+          !msg.includes("clean_tool"),
+      ),
+    );
+
+    const retrieveSchema = options.tools?.[1].inputSchema as Record<
+      string,
+      unknown
+    >;
+    const capabilities = (
+      retrieveSchema.properties as Record<string, Record<string, unknown>>
+    ).capabilities;
+    assert.deepStrictEqual(capabilities, {
+      type: ["array", "null"],
+      items: {
+        anyOf: [
+          {
+            type: "object",
+            properties: {
+              include_related_content: { type: ["boolean", "null"] },
+              name: { type: "string", enum: ["People"] },
+            },
+            required: ["name"],
+          },
+          {
+            type: "object",
+            properties: {
+              name: { type: "string", enum: ["Meetings"] },
+            },
+            required: ["name"],
+          },
+        ],
+      },
+    });
+
+    const icmSchema = options.tools?.[2].inputSchema as Record<string, unknown>;
+    const icmProps = icmSchema.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    assert.deepStrictEqual(icmProps.severity, {
+      type: ["array", "null"],
+      items: {
+        type: "integer",
+        enum: [0, 1, 2, 3, 4, 25],
+      },
+    });
+    assert.deepStrictEqual(icmProps.matrix, {
+      type: "array",
+      items: { type: "integer" },
+    });
+
+    const etwSchema = options.tools?.[3].inputSchema as Record<string, unknown>;
+    assert.deepStrictEqual(etwSchema, {
+      type: "object",
+      properties: {
+        value: {},
+      },
+    });
+    assert.strictEqual(normalizeCopilotToolSchema(cleanSchema), cleanSchema);
+  });
+
+  test("preserves non-empty parent properties in place via allOf and handles union/array edge cases", () => {
+    // Non-empty parent `properties` stays in place while `anyOf` and undeclared
+    // `required` keys move into `allOf`.
+    const withParentProps = {
+      type: "object",
+      properties: {
+        shared: { type: "string" },
+      },
+      required: ["shared", "mode"],
+      additionalProperties: false,
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            mode: { type: "string", enum: ["fast"] },
+          },
+        },
+        {
+          type: "object",
+          properties: {
+            mode: { type: "string", enum: ["thorough"] },
+          },
+        },
+      ],
+    };
+    assert.deepStrictEqual(normalizeCopilotToolSchema(withParentProps), {
+      type: "object",
+      properties: {
+        shared: { type: "string" },
+      },
+      required: ["shared"],
+      additionalProperties: false,
+      allOf: [
+        { required: ["mode"] },
+        {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                mode: { type: "string", enum: ["fast"] },
+              },
+            },
+            {
+              type: "object",
+              properties: {
+                mode: { type: "string", enum: ["thorough"] },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    // Untyped union branches inherit the parent type constraint, and
+    // array-level enums on non-array schemas remain untouched.
+    const untypedBranchesAndObjectEnum = {
+      type: "object",
+      properties: {
+        unionProp: {
+          type: "object",
+          anyOf: [
+            { properties: { a: { type: "string" } } },
+            { properties: { b: { type: "number" } } },
+          ],
+        },
+        objectEnum: {
+          type: "object",
+          enum: [{ mode: "read" }],
+        },
+        nullableNullOnlyArray: {
+          type: ["array", "null"],
+          enum: [null],
+          items: { type: "integer" },
+        },
+        itemsAbsentArrayEnum: {
+          type: "array",
+          enum: ["a", "b"],
+        },
+        integerParentNumberBranch: {
+          type: "integer",
+          anyOf: [{ type: "number", minimum: 0 }],
+        },
+      },
+    };
+    assert.deepStrictEqual(
+      normalizeCopilotToolSchema(untypedBranchesAndObjectEnum),
+      {
+        type: "object",
+        properties: {
+          unionProp: {
+            anyOf: [
+              { type: "object", properties: { a: { type: "string" } } },
+              { type: "object", properties: { b: { type: "number" } } },
+            ],
+          },
+          objectEnum: {
+            type: "object",
+            enum: [{ mode: "read" }],
+          },
+          nullableNullOnlyArray: {
+            type: "null",
+            items: { type: "integer" },
+          },
+          itemsAbsentArrayEnum: {
+            type: "array",
+            items: {
+              enum: ["a", "b"],
+            },
+          },
+          integerParentNumberBranch: {
+            anyOf: [{ type: "integer", minimum: 0 }],
+          },
+        },
+      },
     );
   });
 });

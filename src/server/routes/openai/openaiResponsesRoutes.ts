@@ -358,12 +358,6 @@ export function registerOpenaiResponsesRoutes(
       const copilotConfiguration = getCopilotModelConfiguration({
         reasoningEffort: responseReasoning?.effort,
       });
-      const configuredRequestOptions = withCopilotConfiguration(
-        client,
-        lmRequestOptions,
-        copilotConfiguration,
-      );
-
       if (preparedTools.usesWebSearchLoop) {
         return await handleOpenAIResponsesWebSearch({
           c,
@@ -382,7 +376,11 @@ export function registerOpenaiResponsesRoutes(
           provider: options.webSearchProvider!,
           providerTimeoutMs,
           publicTools: tools ?? [],
-          requestOptions: configuredRequestOptions,
+          requestOptions: withCopilotConfiguration(
+            client,
+            lmRequestOptions,
+            copilotConfiguration,
+          ),
           stream,
           toolChoice: tool_choice,
         });
