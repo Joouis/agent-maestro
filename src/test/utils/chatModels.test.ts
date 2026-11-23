@@ -417,6 +417,10 @@ suite("Chat Models QuickPick Test Suite", () => {
           type: "array",
           enum: ["a", "b"],
         },
+        integerParentNumberBranch: {
+          type: "integer",
+          anyOf: [{ type: "number", minimum: 0 }],
+        },
       },
     };
     assert.deepStrictEqual(
@@ -443,6 +447,9 @@ suite("Chat Models QuickPick Test Suite", () => {
             items: {
               enum: ["a", "b"],
             },
+          },
+          integerParentNumberBranch: {
+            anyOf: [{ type: "integer", minimum: 0 }],
           },
         },
       },

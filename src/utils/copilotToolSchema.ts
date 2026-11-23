@@ -60,11 +60,21 @@ function intersectSchemaTypes(
   parentTypes: string[],
   branchTypes: string[],
 ): string[] {
-  return branchTypes.filter(
-    (bt) =>
-      parentTypes.includes(bt) ||
-      (bt === "integer" && parentTypes.includes("number")),
-  );
+  const result: string[] = [];
+  for (const bt of branchTypes) {
+    let intersected: string | undefined;
+    if (parentTypes.includes(bt)) {
+      intersected = bt;
+    } else if (bt === "integer" && parentTypes.includes("number")) {
+      intersected = "integer";
+    } else if (bt === "number" && parentTypes.includes("integer")) {
+      intersected = "integer";
+    }
+    if (intersected && !result.includes(intersected)) {
+      result.push(intersected);
+    }
+  }
+  return result;
 }
 
 function isScalarMatchesType(entry: unknown, typeName: string): boolean {
@@ -118,6 +128,15 @@ function hasAnyLocalReference(root: unknown): boolean {
     }
     for (const [key, val] of Object.entries(cur)) {
       if (LITERAL_SCHEMA_FIELDS.has(key)) {
+        continue;
+      }
+      if (SCHEMA_MAP_FIELDS.has(key) && isPlainRecord(val)) {
+        for (const subSchema of Object.values(val)) {
+          if (key === "dependencies" && Array.isArray(subSchema)) {
+            continue;
+          }
+          stack.push(subSchema);
+        }
         continue;
       }
       stack.push(val);
@@ -179,7 +198,6 @@ function distributeUnionSiblingKeywords(
     if (hasRefsInTree) {
       return null;
     }
-    const parentTypes = getSchemaTypes(node);
     const parentRequired = Array.isArray(node.required)
       ? node.required.filter((k): k is string => typeof k === "string")
       : undefined;
@@ -214,9 +232,6 @@ function distributeUnionSiblingKeywords(
       ...rest
     } = node;
     const result: Record<string, unknown> = { ...rest };
-    if (hasNonEmptyParentProps && !parentTypes) {
-      result.type = "object";
-    }
     if (retainedRequired.length > 0) {
       result.required = retainedRequired;
     }
