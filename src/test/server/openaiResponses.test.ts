@@ -1108,6 +1108,76 @@ suite("OpenAI Responses Conversion Utils Test Suite", () => {
       );
       assert.notStrictEqual(output[0].id, output[1].id);
       assert.ok(!JSON.stringify(output).includes("private gemini thought"));
+      assert.strictEqual(
+        output[0].type === "message" ? output[0].phase : undefined,
+        "commentary",
+      );
+      assert.strictEqual(
+        output[1].type === "message" ? output[1].phase : undefined,
+        "final_answer",
+      );
+    });
+
+    test("round-trips chatCompletions encrypted thinking (Gemini thoughtSignature) with originApi intact", () => {
+      const runtime = getThinkingRuntime()!;
+      const geminiThinking = new runtime.Thinking("", "gemini-sig-id", {
+        encrypted_content: "gemini-opaque-signature",
+        vscode_thinking_origin_api: "chatCompletions",
+      });
+      const output = thinkingToResponseReasoning(geminiThinking)!;
+      assert.ok(output);
+      assert.ok(
+        output.encrypted_content.startsWith("am_reasoning_v2:chatCompletions:"),
+      );
+      const rewritten = { ...output, id: "client-rewritten-id" };
+      const restored = convertResponsesItemToVSCode(rewritten)!
+        .content[0] as unknown as ThinkingPart;
+      assert.strictEqual(restored.id, "gemini-sig-id");
+      assert.strictEqual(
+        restored.metadata?.encrypted_content,
+        "gemini-opaque-signature",
+      );
+      assert.strictEqual(
+        restored.metadata?.vscode_thinking_origin_api,
+        "chatCompletions",
+      );
+    });
+
+    test("drops Copilot pre-tool whitespace spacer after thinking while preserving tool-turn commentary phase", () => {
+      const runtime = getThinkingRuntime()!;
+      const geminiThinking = new runtime.Thinking("", "gemini-sig-1", {
+        encrypted_content: "sig-bytes",
+        vscode_thinking_origin_api: "chatCompletions",
+      });
+      const output = buildResponseOutputFromParts(
+        [
+          new vscode.LanguageModelTextPart("Checking repository state."),
+          geminiThinking,
+          new vscode.LanguageModelTextPart(" "),
+          new vscode.LanguageModelToolCallPart("call-1", "read_file", {
+            path: "README.md",
+          }),
+        ],
+        new Map(),
+      );
+      assert.deepStrictEqual(
+        output.map((item) =>
+          item.type === "message"
+            ? [
+                item.type,
+                item.phase,
+                item.content[0].type === "output_text"
+                  ? item.content[0].text
+                  : "",
+              ]
+            : [item.type],
+        ),
+        [
+          ["message", "commentary", "Checking repository state."],
+          ["reasoning"],
+          ["function_call"],
+        ],
+      );
     });
   });
   suite("ID Generation Functions", () => {

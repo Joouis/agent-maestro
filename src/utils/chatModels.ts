@@ -356,8 +356,15 @@ export function withCopilotConfiguration(
   // Copilot treats contextSize as the prompt/input budget; response tokens stay
   // controlled separately by max_tokens/max_output_tokens in modelOptions.
   const contextSize = client.maxInputTokens;
+  const normalizedEffort = normalizeCopilotReasoningEffort(
+    client,
+    configuration.reasoningEffort,
+  );
   const copilotConfiguration: CopilotModelConfiguration = {
     ...configuration,
+    ...(normalizedEffort !== undefined
+      ? { reasoningEffort: normalizedEffort }
+      : {}),
     contextSize,
   };
 
@@ -369,6 +376,24 @@ export function withCopilotConfiguration(
     ...options,
     configuration: copilotConfiguration,
   } as ChatRequestOptionsWithConfig;
+}
+
+// Copilot CAPI declares [low, medium, high] for Gemini models and drops
+// higher OpenAI-style tiers instead of clamping them.
+function normalizeCopilotReasoningEffort(
+  client: vscode.LanguageModelChat,
+  effort: CopilotReasoningEffort | undefined,
+): CopilotReasoningEffort | undefined {
+  if (!effort) {
+    return effort;
+  }
+  const isGemini =
+    client.family.toLowerCase().includes("gemini") ||
+    client.id.toLowerCase().includes("gemini");
+  if (isGemini && (effort === "xhigh" || effort === "max")) {
+    return "high";
+  }
+  return effort;
 }
 
 /**

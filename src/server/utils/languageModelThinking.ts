@@ -4,6 +4,14 @@ import { logger } from "../../utils/logger";
 
 // Some released hosts expose these runtime objects without stable typings.
 // Keep the optional contract local; do not enable or augment a proposed API.
+export type EncryptedThinkingOriginApi = "responses" | "chatCompletions";
+
+export function isSupportedEncryptedOriginApi(
+  value: unknown,
+): value is EncryptedThinkingOriginApi {
+  return value === "responses" || value === "chatCompletions";
+}
+
 export interface ThinkingPart {
   value: string | string[];
   id?: string;
@@ -14,10 +22,13 @@ export function hasEncryptedThinking(
   part: ThinkingPart,
 ): part is ThinkingPart & {
   id: string;
-  metadata: Readonly<Record<string, unknown>> & { encrypted_content: string };
+  metadata: Readonly<Record<string, unknown>> & {
+    encrypted_content: string;
+    vscode_thinking_origin_api: EncryptedThinkingOriginApi;
+  };
 } {
   return (
-    part.metadata?.vscode_thinking_origin_api === "responses" &&
+    isSupportedEncryptedOriginApi(part.metadata?.vscode_thinking_origin_api) &&
     typeof part.id === "string" &&
     part.id.length > 0 &&
     typeof part.metadata.encrypted_content === "string" &&

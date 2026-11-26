@@ -244,6 +244,48 @@ suite("Model Resolution Test Suite", () => {
       assert.strictEqual(result.configuration?.contextSize, 936000);
       assert.strictEqual(result.configuration?.reasoningEffort, "medium");
     });
+
+    test("clamps xhigh and max reasoningEffort to high for Copilot Gemini models", () => {
+      const gemini = createMockModel({
+        id: "gemini-4-carbon",
+        name: "Gemini 4 Carbon",
+        family: "gemini-4-carbon",
+        maxInputTokens: 935793,
+      });
+      for (const effort of ["xhigh", "max"] as const) {
+        const result = withCopilotConfiguration(
+          gemini,
+          { justification: "test" },
+          { reasoningEffort: effort },
+        ) as vscode.LanguageModelChatRequestOptions & {
+          configuration?: CopilotModelConfiguration;
+        };
+        assert.strictEqual(result.configuration?.reasoningEffort, "high");
+      }
+      const medium = withCopilotConfiguration(
+        gemini,
+        { justification: "test" },
+        { reasoningEffort: "medium" },
+      ) as vscode.LanguageModelChatRequestOptions & {
+        configuration?: CopilotModelConfiguration;
+      };
+      assert.strictEqual(medium.configuration?.reasoningEffort, "medium");
+
+      const gpt = createMockModel({
+        id: "gpt-6.2-astra",
+        name: "GPT-6.2 Astra",
+        family: "gpt-6.2-astra",
+        maxInputTokens: 921793,
+      });
+      const gptResult = withCopilotConfiguration(
+        gpt,
+        { justification: "test" },
+        { reasoningEffort: "xhigh" },
+      ) as vscode.LanguageModelChatRequestOptions & {
+        configuration?: CopilotModelConfiguration;
+      };
+      assert.strictEqual(gptResult.configuration?.reasoningEffort, "xhigh");
+    });
   });
 
   suite("getCopilotModelConfiguration", () => {

@@ -37,6 +37,7 @@ import {
   ResponsesModelPart,
   ToolChoice,
   ToolMap,
+  assignMessagePhases,
   buildResponseOutputFromParts,
   convertResponsesToolsToVSCode,
   convertToolChoice,
@@ -1229,6 +1230,7 @@ export async function runOpenAIResponsesWebSearchLoop({
     finalMessage = createMessageOutput("", [], false);
     output.push(finalMessage);
   }
+  assignMessagePhases(output);
   if (searchSucceeded && results.length > 0) {
     const cited = await appendSourcesAndBuildCitations({
       textParts: output.flatMap((item) =>

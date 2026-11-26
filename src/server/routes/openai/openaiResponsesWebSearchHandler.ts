@@ -261,6 +261,7 @@ export async function handleOpenAIResponsesWebSearch({
                 {
                   annotations: part.annotations,
                   status: item.status,
+                  phase: item.phase,
                 },
               );
               outputIndex++;

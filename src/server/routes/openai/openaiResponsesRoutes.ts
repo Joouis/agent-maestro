@@ -552,15 +552,76 @@ export function registerOpenaiResponsesRoutes(
               let contentIndex = 0;
               let currentMessageId: string | null = null;
               let accumulatedText = "";
+              // Buffer whitespace before opening a new message so Copilot's
+              // pre-tool spacer (" ") never becomes a standalone empty message.
+              let pendingLeadingWhitespace = "";
+              // Defer closing an open message across thinking parts until the
+              // next output arrives or the stream ends so `phase` is exact.
+              let pendingThinkingBoundary = false;
+              const pendingReasoningItems: Array<
+                NonNullable<ReturnType<typeof thinkingToResponseReasoning>>
+              > = [];
               let totalOutputText = ""; // Track all output for token counting
               let responseUsage: ResponseUsage | undefined;
+
+              const flushPendingReasoning = async () => {
+                while (pendingReasoningItems.length > 0) {
+                  const reasoningItem = pendingReasoningItems.shift()!;
+                  output.push(reasoningItem);
+                  await writeReasoningOutputItem(
+                    writeSSE,
+                    reasoningItem,
+                    outputIndex++,
+                    sequenceNumberRef,
+                  );
+                }
+              };
+
+              const closeOpenMessage = async (
+                phase: "commentary" | "final_answer",
+              ) => {
+                if (!currentMessageId) {
+                  return;
+                }
+                const outputItem = await closeMessageOutputItem(
+                  writeSSE,
+                  currentMessageId,
+                  outputIndex++,
+                  contentIndex,
+                  accumulatedText,
+                  sequenceNumberRef,
+                  { phase },
+                );
+                output.push(outputItem);
+                currentMessageId = null;
+                accumulatedText = "";
+              };
 
               for await (const chunk of interruptibleLanguageModelStream(
                 response.stream,
                 requestLifecycle!,
               )) {
                 if (chunk instanceof vscode.LanguageModelTextPart) {
+                  if (!chunk.value) {
+                    continue;
+                  }
+                  if (pendingThinkingBoundary) {
+                    if (!chunk.value.trim()) {
+                      pendingLeadingWhitespace += chunk.value;
+                      continue;
+                    }
+                    await closeOpenMessage("commentary");
+                    await flushPendingReasoning();
+                    pendingThinkingBoundary = false;
+                  } else if (!currentMessageId && !chunk.value.trim()) {
+                    pendingLeadingWhitespace += chunk.value;
+                    continue;
+                  }
+
+                  const delta = pendingLeadingWhitespace + chunk.value;
+                  pendingLeadingWhitespace = "";
                   if (!currentMessageId) {
+                    await flushPendingReasoning();
                     currentMessageId = generateMessageId();
                     contentIndex = 0;
                     await openMessageOutputItem(
@@ -572,32 +633,22 @@ export function registerOpenaiResponsesRoutes(
                     );
                   }
 
-                  accumulatedText += chunk.value;
-                  totalOutputText += chunk.value;
+                  accumulatedText += delta;
+                  totalOutputText += delta;
                   await writeMessageOutputTextDelta(
                     writeSSE,
                     currentMessageId,
                     outputIndex,
                     contentIndex,
-                    chunk.value,
+                    delta,
                     sequenceNumberRef,
                   );
                 } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
-                  // Close current message if open
-                  if (currentMessageId) {
-                    const outputItem = await closeMessageOutputItem(
-                      writeSSE,
-                      currentMessageId,
-                      outputIndex,
-                      contentIndex,
-                      accumulatedText,
-                      sequenceNumberRef,
-                    );
-                    output.push(outputItem);
-                    outputIndex++;
-                    currentMessageId = null;
-                    accumulatedText = "";
-                  }
+                  // Drop any Copilot whitespace spacer right before tool calls.
+                  pendingLeadingWhitespace = "";
+                  pendingThinkingBoundary = false;
+                  await closeOpenMessage("commentary");
+                  await flushPendingReasoning();
 
                   totalOutputText += JSON.stringify(chunk);
 
@@ -663,18 +714,9 @@ export function registerOpenaiResponsesRoutes(
                   outputIndex++;
                 } else if (isThinkingPart(chunk)) {
                   if (currentMessageId) {
-                    output.push(
-                      await closeMessageOutputItem(
-                        writeSSE,
-                        currentMessageId,
-                        outputIndex++,
-                        contentIndex,
-                        accumulatedText,
-                        sequenceNumberRef,
-                      ),
-                    );
-                    currentMessageId = null;
-                    accumulatedText = "";
+                    pendingThinkingBoundary = true;
+                  } else {
+                    pendingLeadingWhitespace = "";
                   }
                   const item = thinkingToResponseReasoning(chunk);
                   if (
@@ -683,13 +725,17 @@ export function registerOpenaiResponsesRoutes(
                   ) {
                     continue;
                   }
-                  output.push(item);
-                  await writeReasoningOutputItem(
-                    writeSSE,
-                    item,
-                    outputIndex++,
-                    sequenceNumberRef,
-                  );
+                  if (currentMessageId) {
+                    pendingReasoningItems.push(item);
+                  } else {
+                    output.push(item);
+                    await writeReasoningOutputItem(
+                      writeSSE,
+                      item,
+                      outputIndex++,
+                      sequenceNumberRef,
+                    );
+                  }
                 } else if (chunk instanceof vscode.LanguageModelDataPart) {
                   responseUsage =
                     extractOpenAIResponsesUsage(chunk) ?? responseUsage;
@@ -698,17 +744,38 @@ export function registerOpenaiResponsesRoutes(
 
               // Close any remaining message
               if (currentMessageId) {
-                const outputItem = await closeMessageOutputItem(
+                await closeOpenMessage("final_answer");
+              } else if (output.length === 0 && pendingLeadingWhitespace) {
+                const whitespaceMessageId = generateMessageId();
+                contentIndex = 0;
+                await openMessageOutputItem(
                   writeSSE,
-                  currentMessageId,
+                  whitespaceMessageId,
                   outputIndex,
                   contentIndex,
-                  accumulatedText,
                   sequenceNumberRef,
                 );
+                totalOutputText += pendingLeadingWhitespace;
+                await writeMessageOutputTextDelta(
+                  writeSSE,
+                  whitespaceMessageId,
+                  outputIndex,
+                  contentIndex,
+                  pendingLeadingWhitespace,
+                  sequenceNumberRef,
+                );
+                const outputItem = await closeMessageOutputItem(
+                  writeSSE,
+                  whitespaceMessageId,
+                  outputIndex++,
+                  contentIndex,
+                  pendingLeadingWhitespace,
+                  sequenceNumberRef,
+                  { phase: "final_answer" },
+                );
                 output.push(outputItem);
-                outputIndex++;
               }
+              await flushPendingReasoning();
 
               if (!responseUsage) {
                 const [fallbackInputTokens, outputTokens] =
