@@ -32,10 +32,12 @@ import * as vscode from "vscode";
 import { logger } from "../../utils/logger";
 import { mimeForVscodeLm } from "./imageMime";
 import {
+  EncryptedThinkingOriginApi,
   ThinkingPart,
   createModelMessage,
   getThinkingRuntime,
   hasEncryptedThinking,
+  isSupportedEncryptedOriginApi,
   isThinkingPart,
 } from "./languageModelThinking";
 import { SSE_HEARTBEAT_INTERVAL_MS } from "./sseHeartbeat";
@@ -127,25 +129,12 @@ export class ReasoningItems {
 }
 
 const REASONING_STATE_PREFIX = "am_reasoning_v1:";
+const REASONING_STATE_V2_PREFIX = "am_reasoning_v2:";
 
-function decodeReasoningState(item: Record<string, unknown>): {
+function decodeLengthFramedState(state: string): {
   id: string;
   encrypted: string;
-} {
-  const encrypted = item.encrypted_content as string;
-  if (!encrypted.startsWith(REASONING_STATE_PREFIX)) {
-    if (typeof item.id === "string" && item.id) {
-      return { id: item.id, encrypted };
-    }
-    logger.warn(
-      "Rejecting Responses reasoning: provider ID missing from raw state",
-    );
-    throw new ResponsesReasoningError(
-      "Encrypted reasoning without its provider ID must use AM's opaque replay state",
-      "invalid_reasoning",
-    );
-  }
-  const state = encrypted.slice(REASONING_STATE_PREFIX.length);
+} | null {
   const separator = state.indexOf(":");
   const lengthText = state.slice(0, separator);
   const idByteLength = Number(lengthText);
@@ -168,6 +157,51 @@ function decodeReasoningState(item: Record<string, unknown>): {
       return { id, encrypted: payload.slice(id.length) };
     }
   }
+  return null;
+}
+
+function decodeReasoningState(item: Record<string, unknown>): {
+  id: string;
+  encrypted: string;
+  originApi: EncryptedThinkingOriginApi;
+} {
+  const encrypted = item.encrypted_content as string;
+  if (encrypted.startsWith(REASONING_STATE_V2_PREFIX)) {
+    const remainder = encrypted.slice(REASONING_STATE_V2_PREFIX.length);
+    const originSeparator = remainder.indexOf(":");
+    const originApi = remainder.slice(0, originSeparator);
+    if (originSeparator > 0 && isSupportedEncryptedOriginApi(originApi)) {
+      const decoded = decodeLengthFramedState(
+        remainder.slice(originSeparator + 1),
+      );
+      if (decoded) {
+        return { ...decoded, originApi };
+      }
+    }
+    logger.warn("Rejecting Responses reasoning: malformed opaque replay state");
+    throw new ResponsesReasoningError(
+      "Invalid AM reasoning replay state",
+      "invalid_reasoning",
+    );
+  }
+  if (!encrypted.startsWith(REASONING_STATE_PREFIX)) {
+    if (typeof item.id === "string" && item.id) {
+      return { id: item.id, encrypted, originApi: "responses" };
+    }
+    logger.warn(
+      "Rejecting Responses reasoning: provider ID missing from raw state",
+    );
+    throw new ResponsesReasoningError(
+      "Encrypted reasoning without its provider ID must use AM's opaque replay state",
+      "invalid_reasoning",
+    );
+  }
+  const decoded = decodeLengthFramedState(
+    encrypted.slice(REASONING_STATE_PREFIX.length),
+  );
+  if (decoded) {
+    return { ...decoded, originApi: "responses" };
+  }
   logger.warn("Rejecting Responses reasoning: malformed opaque replay state");
   throw new ResponsesReasoningError(
     "Invalid AM reasoning replay state",
@@ -178,6 +212,7 @@ function decodeReasoningState(item: Record<string, unknown>): {
 export function restoreReasoningPart(
   item: ResponseReasoningItem,
   runtime: ReturnType<typeof getThinkingRuntime>,
+  originApi: EncryptedThinkingOriginApi = "responses",
 ): ThinkingPart {
   if (!runtime) {
     logger.warn(
@@ -190,12 +225,13 @@ export function restoreReasoningPart(
   }
   const part = new runtime.Thinking("", item.id, {
     encrypted_content: item.encrypted_content,
-    vscode_thinking_origin_api: "responses",
+    vscode_thinking_origin_api: originApi,
   });
   if (
     !hasEncryptedThinking(part) ||
     part.id !== item.id ||
-    part.metadata.encrypted_content !== item.encrypted_content
+    part.metadata.encrypted_content !== item.encrypted_content ||
+    part.metadata.vscode_thinking_origin_api !== originApi
   ) {
     logger.warn(
       "Rejecting Responses reasoning: host cannot preserve encrypted state metadata",
@@ -220,15 +256,51 @@ export const thinkingToResponseReasoning = (
     throw new ProviderReasoningError("Invalid provider reasoning ID encoding");
   }
   const encrypted = part.metadata.encrypted_content;
+  const originApi = part.metadata.vscode_thinking_origin_api;
+  // Keep Responses-origin envelopes in v1 for backwards compatibility; use v2
+  // with explicit originApi for chatCompletions (e.g. Gemini thoughtSignature).
+  const prefix =
+    originApi === "responses"
+      ? REASONING_STATE_PREFIX
+      : `${REASONING_STATE_V2_PREFIX}${originApi}:`;
   return {
     type: "reasoning",
     id: part.id,
     // Codex can drop item IDs on replay. Length framing preserves the provider's
     // ID without re-encoding the ciphertext or adding server-side storage.
-    encrypted_content:
-      REASONING_STATE_PREFIX + idBytes.length + ":" + part.id + encrypted,
+    encrypted_content: prefix + idBytes.length + ":" + part.id + encrypted,
     summary: [],
   };
+};
+
+const isToolCallOutputItem = (item: OutputItem): boolean =>
+  item.type === "function_call" ||
+  item.type === "custom_tool_call" ||
+  item.type === "tool_search_call" ||
+  item.type === "web_search_call";
+
+export const assignMessagePhases = (output: OutputItem[]): OutputItem[] => {
+  let lastMessageIndex = -1;
+  let lastToolCallIndex = -1;
+  for (let index = 0; index < output.length; index++) {
+    const item = output[index];
+    if (item.type === "message") {
+      lastMessageIndex = index;
+    } else if (isToolCallOutputItem(item)) {
+      lastToolCallIndex = index;
+    }
+  }
+  for (let index = 0; index < output.length; index++) {
+    const item = output[index];
+    if (item.type !== "message") {
+      continue;
+    }
+    item.phase =
+      index === lastMessageIndex && index > lastToolCallIndex
+        ? "final_answer"
+        : "commentary";
+  }
+  return output;
 };
 
 export const buildResponseOutputFromParts = (
@@ -238,23 +310,33 @@ export const buildResponseOutputFromParts = (
   const output: OutputItem[] = [];
   const reasoning = new ReasoningItems("provider");
   let text = "";
-  const flushText = () => {
-    if (text) {
-      output.push(...buildResponseOutput(text, [], toolMap));
-      text = "";
+  let fallbackWhitespace = "";
+  const flushText = (dropWhitespaceOnly: boolean) => {
+    if (!text) {
+      return;
     }
+    if (dropWhitespaceOnly && !text.trim()) {
+      if (!fallbackWhitespace) {
+        fallbackWhitespace = text;
+      }
+      text = "";
+      return;
+    }
+    output.push(...buildResponseOutput(text, [], toolMap));
+    text = "";
+    fallbackWhitespace = "";
   };
   for (const part of parts) {
     if (part instanceof vscode.LanguageModelTextPart) {
       text += part.value;
     } else if (isThinkingPart(part)) {
-      flushText();
+      flushText(true);
       const item = thinkingToResponseReasoning(part);
       if (item && reasoning.accept(item.id, item.encrypted_content)) {
         output.push(item);
       }
     } else {
-      flushText();
+      flushText(true);
       output.push(
         ...buildResponseOutput(
           "",
@@ -264,8 +346,11 @@ export const buildResponseOutputFromParts = (
       );
     }
   }
-  flushText();
-  return output;
+  flushText(output.length > 0);
+  if (output.length === 0 && fallbackWhitespace) {
+    output.push(...buildResponseOutput(fallbackWhitespace, [], toolMap));
+  }
+  return assignMessagePhases(output);
 };
 
 export const writeReasoningOutputItem = async (
@@ -531,6 +616,7 @@ export const closeMessageOutputItem = async (
   options: {
     annotations?: ResponseOutputText["annotations"];
     status?: ResponseOutputMessage["status"];
+    phase?: ResponseOutputMessage["phase"];
   } = {},
 ): Promise<OutputItem> => {
   const nextSeq = () =>
@@ -593,6 +679,7 @@ export const closeMessageOutputItem = async (
       },
     ],
     status,
+    ...(options.phase ? { phase: options.phase } : {}),
   };
 
   await writeSSE({
@@ -941,7 +1028,7 @@ export const convertResponsesItemToVSCode = (
         "invalid_reasoning",
       );
     }
-    const { id, encrypted } = decodeReasoningState(typedItem);
+    const { id, encrypted, originApi } = decodeReasoningState(typedItem);
     return createModelMessage(vscode.LanguageModelChatMessageRole.Assistant, [
       restoreReasoningPart(
         {
@@ -951,6 +1038,7 @@ export const convertResponsesItemToVSCode = (
           summary: [],
         },
         getThinkingRuntime(),
+        originApi,
       ),
     ]);
   }

@@ -588,6 +588,7 @@ suite("Normalized history through official SDKs", () => {
           item.type === "message"
             ? [
                 item.type,
+                item.phase,
                 item.content
                   .map((part) => (part.type === "output_text" ? part.text : ""))
                   .join(""),
@@ -595,10 +596,263 @@ suite("Normalized history through official SDKs", () => {
             : [item.type],
         ),
         [
-          ["message", "一切干净、完备，直接输出简洁的中文汇报。"],
-          ["message", "已将这两处存量测试偏差修复并完成验证与提交。"],
+          ["message", "commentary", "一切干净、完备，直接输出简洁的中文汇报。"],
+          [
+            "message",
+            "final_answer",
+            "已将这两处存量测试偏差修复并完成验证与提交。",
+          ],
         ],
       );
+    }
+  });
+
+  test("Responses preserves Gemini chatCompletions encrypted thinking, drops pre-tool space, and sets phase in JSON and SSE", async () => {
+    const runtime = getThinkingRuntime()!;
+    for (const stream of [false, true]) {
+      const capturedMessages: vscode.LanguageModelChatMessage[][] = [];
+      let callCount = 0;
+      const model = {
+        ...modelMetadata,
+        id: "gemini-4-neon",
+        family: "gemini-4-neon",
+        sendRequest: async (messages: vscode.LanguageModelChatMessage[]) => {
+          capturedMessages.push(messages);
+          callCount++;
+          if (callCount === 1) {
+            return {
+              stream: (async function* () {
+                yield new vscode.LanguageModelTextPart("Checking files first.");
+                yield new runtime.Thinking("", "gem-sig-1", {
+                  encrypted_content: "opaque-gemini-thought-sig",
+                  vscode_thinking_origin_api: "chatCompletions",
+                });
+                yield new vscode.LanguageModelTextPart(" ");
+                yield new vscode.LanguageModelToolCallPart("call_1", "lookup", {
+                  q: "status",
+                });
+              })(),
+              text: (async function* () {})(),
+            };
+          }
+          return {
+            stream: (async function* () {
+              yield new vscode.LanguageModelTextPart("All systems healthy.");
+              yield new runtime.Thinking("", "gem-sig-2", {
+                encrypted_content: "opaque-gemini-final-sig",
+                vscode_thinking_origin_api: "chatCompletions",
+              });
+            })(),
+            text: (async function* () {})(),
+          };
+        },
+      } as unknown as vscode.LanguageModelChat;
+
+      const app = responsesApp(model);
+      const client = responsesClient(app);
+      const firstResponse = await client.responses.create({
+        model: model.id,
+        input: "Check status",
+        tools: [
+          {
+            type: "function",
+            name: "lookup",
+            description: "Lookup",
+            parameters: {
+              type: "object",
+              properties: { q: { type: "string" } },
+            },
+            strict: false,
+          },
+        ],
+        stream,
+      });
+      let firstOutput: OpenAI.Responses.ResponseOutputItem[] = [];
+      const donePhases: Array<string | null | undefined> = [];
+      if ("output" in firstResponse) {
+        firstOutput = firstResponse.output;
+      } else {
+        for await (const event of firstResponse) {
+          if (
+            event.type === "response.output_item.done" &&
+            event.item.type === "message"
+          ) {
+            donePhases.push(event.item.phase);
+          } else if (event.type === "response.completed") {
+            firstOutput = event.response.output;
+          }
+        }
+        assert.deepStrictEqual(donePhases, ["commentary"]);
+      }
+      assert.deepStrictEqual(
+        firstOutput.map((item) =>
+          item.type === "message"
+            ? [
+                item.type,
+                item.phase,
+                item.content[0].type === "output_text"
+                  ? item.content[0].text
+                  : "",
+              ]
+            : [item.type],
+        ),
+        [
+          ["message", "commentary", "Checking files first."],
+          ["reasoning"],
+          ["function_call"],
+        ],
+      );
+      const reasoningItem = firstOutput.find(
+        (item): item is OpenAI.Responses.ResponseReasoningItem =>
+          item.type === "reasoning",
+      )!;
+      assert.ok(
+        reasoningItem.encrypted_content?.startsWith(
+          "am_reasoning_v2:chatCompletions:",
+        ),
+      );
+
+      const secondResponse = await client.responses.create({
+        model: model.id,
+        input: [
+          { role: "user", content: "Check status" },
+          ...(firstOutput as OpenAI.Responses.ResponseInputItem[]),
+          {
+            type: "function_call_output",
+            call_id: "call_1",
+            output: "ok",
+          },
+        ],
+        stream,
+      });
+      let secondOutput: OpenAI.Responses.ResponseOutputItem[] = [];
+      if ("output" in secondResponse) {
+        secondOutput = secondResponse.output;
+      } else {
+        for await (const event of secondResponse) {
+          if (event.type === "response.completed") {
+            secondOutput = event.response.output;
+          }
+        }
+      }
+      assert.deepStrictEqual(
+        secondOutput.map((item) =>
+          item.type === "message"
+            ? [
+                item.type,
+                item.phase,
+                item.content[0].type === "output_text"
+                  ? item.content[0].text
+                  : "",
+              ]
+            : [item.type],
+        ),
+        [["message", "final_answer", "All systems healthy."], ["reasoning"]],
+      );
+
+      // Verify the second upstream dispatch preserved Gemini thoughtSignature on the tool-call assistant message.
+      const replayedAssistantWithTool = capturedMessages[1].find((msg) =>
+        msg.content.some(
+          (part) => part instanceof vscode.LanguageModelToolCallPart,
+        ),
+      )!;
+      const replayedThinking = replayedAssistantWithTool.content.find(
+        (part) => part instanceof runtime.Thinking,
+      ) as unknown as { id?: string; metadata?: Record<string, unknown> };
+      assert.ok(replayedThinking);
+      assert.strictEqual(replayedThinking.id, "gem-sig-1");
+      assert.strictEqual(
+        replayedThinking.metadata?.encrypted_content,
+        "opaque-gemini-thought-sig",
+      );
+      assert.strictEqual(
+        replayedThinking.metadata?.vscode_thinking_origin_api,
+        "chatCompletions",
+      );
+    }
+  });
+
+  test("Responses matches JSON and SSE whitespace handling across repeated thinking boundaries", async () => {
+    const runtime = getThinkingRuntime()!;
+    const scenarios: Array<{
+      name: string;
+      chunks: () => Array<
+        vscode.LanguageModelTextPart | InstanceType<typeof runtime.Thinking>
+      >;
+      expected: Array<[string, string | null | undefined, string]>;
+    }> = [
+      {
+        name: "whitespace-only followed by unencrypted thinking retains fallback message",
+        chunks: () => [
+          new vscode.LanguageModelTextPart("   "),
+          new runtime.Thinking("private thought", "thought-1"),
+        ],
+        expected: [["message", "final_answer", "   "]],
+      },
+      {
+        name: "spacer whitespace between consecutive thinking boundaries is cleared before next message",
+        chunks: () => [
+          new vscode.LanguageModelTextPart("A"),
+          new runtime.Thinking("thought-1", "t1"),
+          new vscode.LanguageModelTextPart(" "),
+          new runtime.Thinking("thought-2", "t2"),
+          new vscode.LanguageModelTextPart("B"),
+        ],
+        expected: [
+          ["message", "commentary", "A"],
+          ["message", "final_answer", "B"],
+        ],
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      for (const stream of [false, true]) {
+        const model = {
+          ...modelMetadata,
+          sendRequest: async () => ({
+            stream: (async function* () {
+              for (const chunk of scenario.chunks()) {
+                yield chunk;
+              }
+            })(),
+            text: (async function* () {})(),
+          }),
+        } as vscode.LanguageModelChat;
+        const app = responsesApp(model);
+        const client = responsesClient(app);
+        const response = await client.responses.create({
+          model: model.id,
+          input: scenario.name,
+          stream,
+        });
+        let output: OpenAI.Responses.ResponseOutputItem[] = [];
+        if ("output" in response) {
+          output = response.output;
+        } else {
+          for await (const event of response) {
+            if (event.type === "response.completed") {
+              output = event.response.output;
+            }
+          }
+        }
+        assert.deepStrictEqual(
+          output.map((item) =>
+            item.type === "message"
+              ? [
+                  item.type,
+                  item.phase,
+                  item.content
+                    .map((part) =>
+                      part.type === "output_text" ? part.text : "",
+                    )
+                    .join(""),
+                ]
+              : [item.type, null, ""],
+          ),
+          scenario.expected,
+          `${scenario.name} (stream=${stream})`,
+        );
+      }
     }
   });
 
@@ -618,6 +872,8 @@ suite("Normalized history through official SDKs", () => {
         "am_reasoning_v1:9007199254740992:private-state",
         "am_reasoning_v1:3:🧠private-state",
         "am_reasoning_v1:3:abc",
+        "am_reasoning_v2:messages:3:abcprivate-state",
+        "am_reasoning_v2:chatCompletions:3:abc",
       ]) {
         const response = await app.request("/v1/responses", {
           method: "POST",

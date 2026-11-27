@@ -1646,8 +1646,49 @@ suite("OpenAI Responses Server Web Search Test Suite", () => {
           message.content[0].type === "output_text"
         ) {
           assert.strictEqual(message.content[0].text, "");
+          assert.strictEqual(message.phase, "final_answer");
         }
       }
+    });
+
+    test("reuses the synthesis answer message as final_answer when encrypted thinking trails it", async () => {
+      const prepared = prepareSearch();
+      const result = await runLoop({
+        prepared,
+        rounds: [
+          { chunks: [internalCall(prepared), usagePart()] },
+          {
+            chunks: [
+              new vscode.LanguageModelTextPart("Synthesized final answer."),
+              new (getThinkingRuntime()!.Thinking)("", "gem_trailing", {
+                encrypted_content: "gemini-trailing-sig",
+                vscode_thinking_origin_api: "chatCompletions",
+              }),
+              usagePart(),
+            ],
+          },
+        ],
+        provider: createProvider(async () => []),
+      });
+
+      assert.deepStrictEqual(
+        result.output.map((item) =>
+          item.type === "message"
+            ? [
+                item.type,
+                item.phase,
+                item.content[0].type === "output_text"
+                  ? item.content[0].text
+                  : "",
+              ]
+            : [item.type],
+        ),
+        [
+          ["web_search_call"],
+          ["message", "final_answer", "Synthesized final answer."],
+          ["reasoning"],
+        ],
+      );
     });
 
     test("marks buffered partial no-search text as an incomplete message", async () => {
