@@ -772,6 +772,90 @@ suite("Normalized history through official SDKs", () => {
     }
   });
 
+  test("Responses matches JSON and SSE whitespace handling across repeated thinking boundaries", async () => {
+    const runtime = getThinkingRuntime()!;
+    const scenarios: Array<{
+      name: string;
+      chunks: () => Array<
+        vscode.LanguageModelTextPart | InstanceType<typeof runtime.Thinking>
+      >;
+      expected: Array<[string, string | null | undefined, string]>;
+    }> = [
+      {
+        name: "whitespace-only followed by unencrypted thinking retains fallback message",
+        chunks: () => [
+          new vscode.LanguageModelTextPart("   "),
+          new runtime.Thinking("private thought", "thought-1"),
+        ],
+        expected: [["message", "final_answer", "   "]],
+      },
+      {
+        name: "spacer whitespace between consecutive thinking boundaries is cleared before next message",
+        chunks: () => [
+          new vscode.LanguageModelTextPart("A"),
+          new runtime.Thinking("thought-1", "t1"),
+          new vscode.LanguageModelTextPart(" "),
+          new runtime.Thinking("thought-2", "t2"),
+          new vscode.LanguageModelTextPart("B"),
+        ],
+        expected: [
+          ["message", "commentary", "A"],
+          ["message", "final_answer", "B"],
+        ],
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      for (const stream of [false, true]) {
+        const model = {
+          ...modelMetadata,
+          sendRequest: async () => ({
+            stream: (async function* () {
+              for (const chunk of scenario.chunks()) {
+                yield chunk;
+              }
+            })(),
+            text: (async function* () {})(),
+          }),
+        } as vscode.LanguageModelChat;
+        const app = responsesApp(model);
+        const client = responsesClient(app);
+        const response = await client.responses.create({
+          model: model.id,
+          input: scenario.name,
+          stream,
+        });
+        let output: OpenAI.Responses.ResponseOutputItem[] = [];
+        if ("output" in response) {
+          output = response.output;
+        } else {
+          for await (const event of response) {
+            if (event.type === "response.completed") {
+              output = event.response.output;
+            }
+          }
+        }
+        assert.deepStrictEqual(
+          output.map((item) =>
+            item.type === "message"
+              ? [
+                  item.type,
+                  item.phase,
+                  item.content
+                    .map((part) =>
+                      part.type === "output_text" ? part.text : "",
+                    )
+                    .join(""),
+                ]
+              : [item.type, null, ""],
+          ),
+          scenario.expected,
+          `${scenario.name} (stream=${stream})`,
+        );
+      }
+    }
+  });
+
   test("Responses rejects malformed encrypted reasoning before dispatch", async () => {
     let requests = 0;
     const model = {

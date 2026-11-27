@@ -555,6 +555,9 @@ export function registerOpenaiResponsesRoutes(
               // Buffer whitespace before opening a new message so Copilot's
               // pre-tool spacer (" ") never becomes a standalone empty message.
               let pendingLeadingWhitespace = "";
+              // Mirror JSON fallback when an entire response only emits whitespace
+              // around thinking boundaries and produces no other output items.
+              let fallbackWhitespace = "";
               // Defer closing an open message across thinking parts until the
               // next output arrives or the stream ends so `phase` is exact.
               let pendingThinkingBoundary = false;
@@ -620,6 +623,7 @@ export function registerOpenaiResponsesRoutes(
 
                   const delta = pendingLeadingWhitespace + chunk.value;
                   pendingLeadingWhitespace = "";
+                  fallbackWhitespace = "";
                   if (!currentMessageId) {
                     await flushPendingReasoning();
                     currentMessageId = generateMessageId();
@@ -646,6 +650,7 @@ export function registerOpenaiResponsesRoutes(
                 } else if (chunk instanceof vscode.LanguageModelToolCallPart) {
                   // Drop any Copilot whitespace spacer right before tool calls.
                   pendingLeadingWhitespace = "";
+                  fallbackWhitespace = "";
                   pendingThinkingBoundary = false;
                   await closeOpenMessage("commentary");
                   await flushPendingReasoning();
@@ -713,10 +718,18 @@ export function registerOpenaiResponsesRoutes(
                   );
                   outputIndex++;
                 } else if (isThinkingPart(chunk)) {
+                  if (pendingLeadingWhitespace) {
+                    if (
+                      !currentMessageId &&
+                      output.length === 0 &&
+                      !fallbackWhitespace
+                    ) {
+                      fallbackWhitespace = pendingLeadingWhitespace;
+                    }
+                    pendingLeadingWhitespace = "";
+                  }
                   if (currentMessageId) {
                     pendingThinkingBoundary = true;
-                  } else {
-                    pendingLeadingWhitespace = "";
                   }
                   const item = thinkingToResponseReasoning(chunk);
                   if (
@@ -743,9 +756,11 @@ export function registerOpenaiResponsesRoutes(
               }
 
               // Close any remaining message
+              const trailingFallback =
+                pendingLeadingWhitespace || fallbackWhitespace;
               if (currentMessageId) {
                 await closeOpenMessage("final_answer");
-              } else if (output.length === 0 && pendingLeadingWhitespace) {
+              } else if (output.length === 0 && trailingFallback) {
                 const whitespaceMessageId = generateMessageId();
                 contentIndex = 0;
                 await openMessageOutputItem(
@@ -755,13 +770,13 @@ export function registerOpenaiResponsesRoutes(
                   contentIndex,
                   sequenceNumberRef,
                 );
-                totalOutputText += pendingLeadingWhitespace;
+                totalOutputText += trailingFallback;
                 await writeMessageOutputTextDelta(
                   writeSSE,
                   whitespaceMessageId,
                   outputIndex,
                   contentIndex,
-                  pendingLeadingWhitespace,
+                  trailingFallback,
                   sequenceNumberRef,
                 );
                 const outputItem = await closeMessageOutputItem(
@@ -769,7 +784,7 @@ export function registerOpenaiResponsesRoutes(
                   whitespaceMessageId,
                   outputIndex++,
                   contentIndex,
-                  pendingLeadingWhitespace,
+                  trailingFallback,
                   sequenceNumberRef,
                   { phase: "final_answer" },
                 );
